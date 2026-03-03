@@ -1771,7 +1771,7 @@ func TestRunViewMulti_JSONArray(t *testing.T) {
 	w.Close()
 	os.Stdout = old
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1815,7 +1815,7 @@ func TestRunViewMulti_TableWithSeparator(t *testing.T) {
 	w.Close()
 	os.Stdout = old
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1865,9 +1865,9 @@ func TestRunViewMulti_InvalidIssuePartialSuccess(t *testing.T) {
 	os.Stdout = old
 	os.Stderr = oldErr
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	var errBuf bytes.Buffer
-	io.Copy(&errBuf, rErr)
+	_, _ = io.Copy(&errBuf, rErr)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1965,7 +1965,7 @@ func TestRunViewMulti_JQWithArray(t *testing.T) {
 	w.Close()
 	os.Stdout = old
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

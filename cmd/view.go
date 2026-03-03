@@ -46,7 +46,6 @@ type viewResult struct {
 	subIssues   []api.SubIssue
 	parentIssue *api.Issue
 	comments    []api.Comment
-	err         error
 }
 
 type viewOptions struct {
