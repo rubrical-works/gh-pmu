@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Create a branch with tracker issue (project)
 argument-hint: "<branch-name> (e.g., release/v0.16.0, my-feature, bugfix-123)"
 ---
@@ -77,6 +77,13 @@ git push -u origin "$BRANCH"
 ```bash
 node .claude/scripts/shared/lib/active-label.js ensure [TRACKER_NUMBER]
 ```
+### Step 5.6: Auto-Assign Tracker to Branch
+Assign the tracker issue to its own branch and apply the "assigned" label:
+```bash
+gh pmu move [TRACKER_NUMBER] --branch "$BRANCH"
+gh issue edit [TRACKER_NUMBER] --add-label assigned
+```
+This ensures the tracker is born assigned -- no separate `/assign-branch` step needed for the tracker itself.
 
 <!-- USER-EXTENSION-START: post-create -->
 <!-- USER-EXTENSION-END: post-create -->

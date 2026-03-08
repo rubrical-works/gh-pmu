@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Evaluate tests for charter alignment and functional authenticity (project)
 argument-hint: "[--full] [--status]"
 ---

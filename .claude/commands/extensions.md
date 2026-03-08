@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Discover, view, and manage extension points in release commands
 argument-hint: "list|view|edit|validate|summary|recipes [args]"
 ---
@@ -30,6 +30,7 @@ If `extension-points.json` does not exist or cannot be parsed:
 1. **Warn:** `Extension registry not found. Scanning command files directly (slower).`
 2. **Fallback:** Scan `.claude/commands/*.md` for EXTENSIBLE markers and USER-EXTENSION-START/END blocks
 ---
+
 ## Script Delegation
 Read-only subcommands (`list`, `view`, `validate`, `summary`, `matrix`, `recipes`, `help`) are handled by extensions-cli.js. Run the script and display stdout directly.
 **Script path:** `node .claude/scripts/shared/extensions-cli.js`
@@ -75,6 +76,16 @@ Use the **Edit tool** on the command file. This preserves surrounding formatting
 - For "add" intents: insert the new content between markers
 - For "remove" intents: remove the specified content, leave markers (block may become empty)
 - For "replace" intents: replace the specified content between markers
+### Step 4b: Validate Extension Content (Guardrail)
+After implementing the edit, validate the content against the `command-spec-audit` skill (Category 4: Extension Points). If the skill is installed, check:
+- **Formatting** -- content matches parent command's formatting standards
+- **Conflicts** -- content doesn't duplicate or contradict built-in step behavior
+- **Size** -- flag if >50 lines (recommend script refactoring)
+- **Marker integrity** -- START/END markers preserved correctly
+
+**If validation finds issues:** Report findings with severity and recommendation. Ask user: `"Fix these issues? (yes/skip)"`. If yes, apply fixes and re-validate. If skip, proceed with current content.
+**If skill not installed:** Skip validation silently (non-blocking).
+**If validation passes:** Proceed to Step 5.
 ### Step 5: Confirm Change
 Report the updated extension block content. Show a before/after summary.
 **Do NOT rebuild the extension registry.** The `hasContent` state is computed at runtime by scanning command files.

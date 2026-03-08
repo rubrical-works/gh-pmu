@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Tag beta from feature branch (no merge to main)
 argument-hint: "[--skip-coverage] [--dry-run] [--help]"
 ---
@@ -34,6 +34,10 @@ if [ "$BRANCH" = "main" ]; then
 fi
 ```
 ---
+
+<!-- USER-EXTENSION-START: pre-phase-1 -->
+<!-- USER-EXTENSION-END: pre-phase-1 -->
+
 ## Phase 1: Analysis
 ### Step 1.1: Analyze Changes
 ```bash

@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: View, create, or manage project charter
 argument-hint: "[update|refresh|validate]"
 ---
@@ -71,6 +71,34 @@ grep -E '\{[a-z][a-z0-9-]*\}' CHARTER.md
 | C#/.NET | Yes | xUnit, NUnit, MSTest |
 | Documentation-only | Skip | N/A |
 **Skip Detection:** If Q3 contains "documentation", "docs", "config", "terraform", "ansible" → skip Q5, set framework to "N/A - non-code project"
+#### Deployment Platform Question (Q3a — Conditional)
+**Trigger:** Deployable project detected from Q3 — web framework (React, Next.js, Express, Flask, Rails, Django, etc.), frontend build tool, Docker, or description containing "web app", "API", "service", "site".
+**Skip:** CLI tools, libraries, documentation-only, infrastructure repos (terraform, ansible, pulumi).
+**ASK USER (single-select via AskUserQuestion):**
+```
+Where will this project be deployed?
+- Vercel — Best for frontend, Next.js, static sites
+- Railway — Best for full-stack apps, background workers
+- DigitalOcean (App Platform) — Best for multi-component apps with databases
+- Render — Best for web services with managed infrastructure
+- Other/Not decided — No deployment skill installed
+- Self-hosted/Not applicable — No deployment skill installed
+```
+**After answer:**
+1. Write `deploymentTarget` to `framework-config.json`:
+   - Vercel → `"vercel"`, Railway → `"railway"`, DigitalOcean → `"digitalocean"`, Render → `"render"`
+   - Other/Not decided → `"other"`, Self-hosted/Not applicable → `null`
+2. If platform selected (not "other" or null), auto-install deployment skill:
+   ```bash
+   node .claude/scripts/shared/install-skill.js <skill-name>
+   ```
+   | Platform | Skill |
+   |----------|-------|
+   | Vercel | `vercel-project-setup` |
+   | Railway | `railway-project-setup` |
+   | DigitalOcean | `digitalocean-app-setup` |
+   | Render | `render-project-setup` |
+3. After skill install, query `recipe-tech-mapping.json` for deployment recipes matching the platform
 #### Complexity-Triggered Questions
 | Trigger | Follow-Up |
 |---------|-----------|
@@ -126,16 +154,17 @@ What review mode should be used for this project?
 **Note:** Directories created after questions to avoid orphaned directories if user abandons mid-flow.
 ### /charter update
 **Step 1:** Read current CHARTER.md and Inception/Charter-Details.md
-**Step 2:** Ask what to update (Vision, Current Focus, Tech Stack, Scope, Milestones)
+**Step 2:** Ask what to update (Vision, Current Focus, Tech Stack, Scope, Milestones, Deployment Target)
 **Step 3:** Apply updates, sync to CHARTER.md if vision changes, update Last Updated date
-**Step 4:** If Tech Stack modified, trigger skill and recipe suggestions (NEW items only)
+**Step 4:** If Tech Stack modified, trigger skill and recipe suggestions (NEW items only). Also detect new default skills not in current `projectSkills` (via `getDefaultSkills()` from `manage-skills.js`) and add them additively.
+**Step 4b:** If Deployment Target selected: read existing `deploymentTarget` from `framework-config.json`. If changing platforms, uninstall old deployment skill and install new one. Update `deploymentTarget` in config. If no previous target existed, treat as fresh install.
 ### /charter refresh
 **Step 1:** Load `Skills/codebase-analysis/SKILL.md`
 **Step 2:** Analyze codebase
 **Step 3:** Compare with existing Inception/ artifacts, identify differences
 **Step 4:** Present diff, ask for confirmation
 **Step 5:** Merge changes, commit "Charter refresh"
-**Step 6:** If tech stack changed, trigger skill and recipe suggestions (NEW items only)
+**Step 6:** Trigger skill and recipe suggestions. Detect new default skills not in current `projectSkills` (via `getDefaultSkills()` from `manage-skills.js`) — add them additively and report additions. Also, if tech stack changed, trigger keyword-based skill suggestions (NEW items only).
 ### /charter validate
 **Step 1:** Load CHARTER.md and Inception/Scope-Boundaries.md
 **Step 2:** Identify current work (issue, recent commits, staged changes)
@@ -147,13 +176,14 @@ What review mode should be used for this project?
 | Possibly out of scope | Ask user to confirm intent |
 | Clearly out of scope | Suggest updating charter or revising work |
 ## Project Skills Selection
-After charter creation, suggest relevant skills based on tech stack using `.claude/metadata/skill-keywords.json`.
-**Step 1:** Load `.claude/metadata/skill-keywords.json` (contains `skillKeywords` and `groupKeywords`) and `.claude/metadata/skill-registry.json` (for descriptions)
+After charter creation, suggest relevant skills based on defaults and tech stack using `.claude/metadata/skill-keywords.json`.
+**Step 1:** Re-read `.claude/metadata/skill-keywords.json` from disk (not memory) — contains `defaultSkills`, `skillKeywords`, and `groupKeywords`. Also re-read `.claude/metadata/skill-registry.json` from disk (not memory) for descriptions. Use `getDefaultSkills()` from `manage-skills.js` to load defaults.
 **If `skill-keywords.json` missing:** Warn and skip (non-blocking).
-**Step 2:** Match tech stack keywords against skillKeywords entries (case-insensitive, whole-word). Collect all skills with at least 1 keyword match as candidates — no false positive from partial string matching. Also match groupKeywords — if group keyword matches, add ALL group.skills. Deduplicate against existing `projectSkills`.
-**If tech stack unknown:** Skip. **If zero matches found:** Report "No matching skills" and continue.
-**Step 3:** Present candidates via `AskUserQuestion` with multi-select. Show skill name and description for each candidate.
-**Step 3b: Existing Project — Additive Merge:** Read existing `projectSkills`, filter already-present candidates. If all relevant skills enabled, report and skip. Present only NEW candidates. Merge additively.
+**Step 1b: Load Default Skills:** Read `defaultSkills` array from `skill-keywords.json`. These are universally applicable skills that apply regardless of tech stack. Add all defaults to the candidate list before keyword matching. If `defaultSkills` is missing or empty, continue without defaults (non-blocking).
+**Step 2:** Match tech stack keywords against skillKeywords entries (case-insensitive, whole-word). Collect all skills with at least 1 keyword match as candidates — no false positive from partial string matching. Also match groupKeywords — if group keyword matches, add ALL group.skills. Merge keyword-matched candidates with defaults. Deduplicate against existing `projectSkills`.
+**If tech stack unknown:** Still present defaults. **If zero keyword matches found:** Present defaults only and continue.
+**Step 3:** Present candidates via `AskUserQuestion` with multi-select. Show skill name and description for each candidate. **Default skills are pre-selected** (checked by default). Users can deselect defaults if desired. Mark default skills with `[default]` in the description.
+**Step 3b: Existing Project — Additive Merge:** Read existing `projectSkills`, filter already-present candidates. If all relevant skills (including defaults) are enabled, report and skip. Present only NEW candidates. Merge additively.
 **Step 4:** Store confirmed skills in `framework-config.json` `projectSkills` array, sorted alphabetically. Additive merge with existing.
 **Step 4b:** Deploy skills via `node .claude/scripts/shared/install-skill.js <skill-names...>`
 **Step 5:** Report installed skills
@@ -161,7 +191,7 @@ After charter creation, suggest relevant skills based on tech stack using `.clau
 After skill selection, suggest relevant extension recipes.
 **Triggers:** `/charter` (creation), `/charter update` (if Tech Stack modified), `/charter refresh`
 **Skip if:** `"extensionSuggestions": false` or no release commands installed
-**Step 1:** Load `.claude/metadata/recipe-tech-mapping.json`
+**Step 1:** Re-read `.claude/metadata/recipe-tech-mapping.json` from disk (not memory)
 **Step 2:** Match tech stack against indicators and groupMappings
 **Step 3:** Filter already-installed recipes (check extension points for content)
 **Step 4: ASK USER:**
@@ -178,24 +208,6 @@ Install? (y/n/select)
 | Extension point has content | Skip: "{point} already configured" |
 | No release commands | Skip: "Extension recipes require release commands" |
 | All suggestions installed | Report: "Extension recipes are up to date" |
-## Praxis Diagram Configuration
-After extension recipe suggestions, check if project uses Praxis Diagram and generate `.praxis-diagram.json`.
-**Triggers:** `/charter` (creation), `/charter refresh`
-**Skip if:** `.praxis-diagram.json` already exists
-**Step 1:** Use `detectShapeLibrary()` from `.claude/scripts/shared/praxis-diagram-config.js`
-| Tech Stack Contains | Shape Library |
-|---------------------|---------------|
-| `flowbite-svelte` or (`flowbite` + `svelte`) | `flowbite-svelte` |
-| `flowbite-react` or (`flowbite` + `react`) | `flowbite-react` |
-| Neither | `null` → prompt user |
-**Step 2:** If undetectable, ASK USER via `AskUserQuestion` (options from `getAvailableShapeLibraries()`). Include "Skip" option.
-**Step 3:** Generate `.praxis-diagram.json` via `generateConfig(shapeLibrary)`:
-```json
-{
-  "shapes": "flowbite-svelte"
-}
-```
-**Step 4:** Report configuration result
 ## Token Budget
 | Artifact | Tokens |
 |----------|--------|

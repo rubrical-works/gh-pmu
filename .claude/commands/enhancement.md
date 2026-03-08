@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Create an enhancement issue with standard template (project)
 argument-hint: "<title>"
 ---
@@ -7,11 +7,7 @@ argument-hint: "<title>"
 <!-- EXTENSIBLE -->
 # /enhancement
 Creates a properly labeled enhancement issue with a standard template and adds it to the project board.
-## Available Extension Points
-| Point | Location | Purpose |
-|-------|----------|---------|
-| `pre-create` | Before issue creation | Duplicate detection, template customization |
-| `post-create` | After issue created | Notifications, auto-assignment to branch |
+**Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command enhancement`
 ---
 ## Prerequisites
 - `gh pmu` extension installed
@@ -38,7 +34,7 @@ Extract `<title>` from command arguments.
 **If title contains special characters** (backticks, quotes): Escape for shell. On Windows, use temp file approach.
 ### Step 2: Gather Description
 Extract `<body>` from command arguments.
-**If insufficient detail provided**, ask the user:
+**IF** there is insufficient detail provided in the arguments to create the issue, **THEN**:
 ```
 Describe the enhancement (what it does, why it's useful):
 ```

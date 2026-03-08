@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Resolve review findings for an issue (project)
 argument-hint: "#issue"
 ---
@@ -180,11 +180,11 @@ All findings resolved.
 After all findings resolved, re-run the appropriate review:
 | Review Type | Re-Run Command |
 |-------------|----------------|
-| Issue | `/review-issue #$ISSUE` |
-| Proposal | `/review-proposal #$ISSUE` |
-| PRD | `/review-prd #$ISSUE` |
-| Test Plan | `/review-test-plan #$ISSUE` |
-**Invoke the command** using the Skill tool. The re-review verifies all findings are resolved and posts an updated review comment.
+| Issue | `/review-issue #$ISSUE --force` |
+| Proposal | `/review-proposal #$ISSUE --force` |
+| PRD | `/review-prd #$ISSUE --force` |
+| Test Plan | `/review-test-plan #$ISSUE --force` |
+**Invoke the command** using the Skill tool with `--force` to bypass the early-exit gate (the issue may still have the `reviewed` label from a prior cycle). The re-review verifies all findings are resolved and posts an updated review comment.
 **Pending label cleanup:** The re-invoked review command handles label swap via its Step 5.5/6.5. If re-review passes ("Ready for"), it applies `reviewed` and removes `pending`. If still not passing, `pending` remains:
 ```bash
 gh issue edit $ISSUE --add-label=reviewed --remove-label=pending   # if Ready for

@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Create a proposal document and tracking issue (project)
 argument-hint: "<title>"
 ---
@@ -7,11 +7,7 @@ argument-hint: "<title>"
 <!-- EXTENSIBLE -->
 # /proposal
 Creates a proposal document (`Proposal/[Name].md`) and a tracking issue with the `proposal` label. Also triggered by the `idea:` alias.
-## Available Extension Points
-| Point | Location | Purpose |
-|-------|----------|---------|
-| `pre-create` | Before proposal creation | Duplicate detection, template customization |
-| `post-create` | After proposal and issue created | Notifications, auto-assignment to branch |
+**Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command proposal`
 ---
 ## Prerequisites
 - `gh pmu` extension installed

@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Create a bug issue with standard template (project)
 argument-hint: "<title>"
 ---
@@ -7,11 +7,7 @@ argument-hint: "<title>"
 <!-- EXTENSIBLE -->
 # /bug
 Creates a properly labeled bug issue with a standard template and adds it to the project board.
-## Available Extension Points
-| Point | Location | Purpose |
-|-------|----------|---------|
-| `pre-create` | Before issue creation | Duplicate detection, template customization |
-| `post-create` | After issue created | Notifications, auto-assignment to branch |
+**Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command bug`
 ---
 ## Prerequisites
 - `gh pmu` extension installed
@@ -38,7 +34,8 @@ Extract `<title>` from command arguments.
 **If title contains special characters** (backticks, quotes): Escape for shell. On Windows, use temp file approach.
 ### Step 2: Gather Description
 Extract `<body>` from command arguments.
-**If insufficient detail provided**, ask the user:
+**IF** there is insufficient detail provided in the arguments to create the issue, **THEN**:
+Ask the user:
 ```
 Describe the bug (steps to reproduce, expected vs actual behavior):
 ```

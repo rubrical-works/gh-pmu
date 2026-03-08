@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Merge branch to main with gated checks (project)
 argument-hint: "[--skip-gates] [--dry-run]"
 ---
@@ -19,7 +19,7 @@ Merge current branch to main with gated validation. For non-versioned merges (fe
 **REQUIRED:** Before executing:
 1. **Generate Todo List:** Parse phases and extension points, use `TodoWrite` to create todos
 2. **Include Extensions:** Add todo item for each non-empty `USER-EXTENSION` block
-3. **Track Progress:** Mark todos `in_progress` -> `completed` as you work
+3. **Track Progress:** Mark todos `in_progress` → `completed` as you work
 4. **Post-Compaction:** Re-read spec and regenerate todos after context compaction
 **Todo Rules:** One todo per numbered phase/step; one todo per active extension; skip commented-out extensions.
 ---
@@ -71,7 +71,7 @@ E2E tests validate complete workflows against the test project.
 <!-- USER-EXTENSION-END: gates -->
 
 ### Gate Summary
-Report: ✅ Gate passed / ❌ Gate failed (with details)
+Report: Gate passed / Gate failed (with details)
 **If any gate fails, STOP and report.**
 
 <!-- USER-EXTENSION-START: post-gate -->

@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Safely delete branch with confirmation (project)
 argument-hint: "[branch-name] [--force]"
 ---
@@ -39,7 +39,7 @@ git rev-parse --verify "$BRANCH" 2>/dev/null
 <!-- USER-EXTENSION-END: pre-destroy -->
 
 ## Phase 1: Confirmation
-**DESTRUCTIVE OPERATION** — will permanently delete:
+**DESTRUCTIVE OPERATION** -- will permanently delete:
 - Local branch: `$BRANCH`
 - Remote branch: `origin/$BRANCH`
 - Release artifacts: `Releases/[prefix]/[identifier]/`

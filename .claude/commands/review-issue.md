@@ -1,7 +1,7 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Review issues with type-specific criteria (project)
-argument-hint: "#issue [#issue...]"
+argument-hint: "#issue [#issue...] [--force]"
 ---
 
 <!-- EXTENSIBLE -->
@@ -19,6 +19,7 @@ Reviews one or more GitHub issues with type-specific criteria based on labels (b
 | `#issue` | Yes | One or more issue numbers (e.g., `#42` or `42 43 44`) |
 | `--with` | No | Comma-separated domain extensions (e.g., `--with security,performance`) or `--with all` |
 | `--mode` | No | Transient review mode override: `solo`, `team`, or `enterprise`. Does not modify `framework-config.json`. |
+| `--force` | No | Force re-review even if issue has `reviewed` label |
 Accepts multiple issue numbers: `/review-issue #42 #43 #44` -- reviews each sequentially.
 ---
 ## Execution Instructions
@@ -36,6 +37,12 @@ gh issue view $ISSUE --json number,title,body,state,labels
 ```
 **If not found:** `"Issue #$ISSUE not found."` -> **STOP** (skip to next if batch)
 **If closed:** `"Issue #$ISSUE is closed. Review anyway? (y/n)"` -- proceed only if user confirms.
+**Early-exit gate:** If the issue has the `reviewed` label and `--force` is NOT present, skip the full review:
+```
+"Issue #$ISSUE already reviewed (Review #N). Use --force to re-review."
+```
+Extract the review count from the `**Reviews:** N` field in the issue body (if present). -> **STOP**
+**If `--force` is present:** Bypass the early-exit gate and proceed with full review.
 ### Step 2: Determine Issue Type
 Use the shared `getIssueType()` utility from `.claude/scripts/shared/lib/issue-type.js` to determine issue type from labels already fetched in Step 1 (no additional API call needed):
 ```javascript
@@ -85,7 +92,7 @@ const mode = getReviewMode(process.cwd(), modeOverride); // 'solo', 'team', or '
 **Step 3b: Auto-Evaluate Objective Criteria**
 For each **objective** criterion applicable to the current reviewMode, evaluate autonomously. Do NOT ask the user.
 **Common Objective Criteria:** Evaluate each criterion from `.claude/metadata/review-mode-criteria.json` where `type: "objective"` and `shouldEvaluate()` returns true for the current reviewMode. Use the `autoCheck` field for evaluation guidance.
-**Type-Specific Objective Checks:** Load criteria from `.claude/metadata/review-criteria.json` for the detected issue type. Each entry has `name` and `autoCheck` fields describing what to check. For epic type, the `sub-issue-review` criterion requires recursive review of each sub-issue through Steps 3b-3c, including 3b-ii (auto-generate proposed solution/fix) with per-sub-issue body updates.
+**Type-Specific Objective Checks:** Re-read `.claude/metadata/review-criteria.json` from disk (not memory) for the detected issue type. Each entry has `name` and `autoCheck` fields describing what to check. For epic type, the `sub-issue-review` criterion requires recursive review of each sub-issue through Steps 3b-3c, including 3b-ii (auto-generate proposed solution/fix) with per-sub-issue body updates.
 Emit ✅ for pass, ⚠️ for partial/uncertain, ❌ for missing/fail. Include brief evidence.
 **Step 3b-ii: Auto-Generate Proposed Solution/Fix (Enhancement, Bug, and Story)**
 **Trigger:** (Enhancement or Story type AND `proposed-solution` check is ❌/⚠️) OR (Bug type AND `proposed-fix-described` check is ❌/⚠️). Does NOT apply to epic types.
@@ -115,7 +122,7 @@ Design Decisions: N found | Tech Debt: M found
 ```
 **No-match path:** Report `No Construction context found for this epic's sub-issues.`
 **Step 3c: Ask Subjective Criteria**
-For **subjective** criteria applicable to the current reviewMode, use `AskUserQuestion`. Load criteria from `.claude/metadata/review-mode-criteria.json` where `type: "subjective"` — each entry has `question`, `header`, and `options` fields.
+For **subjective** criteria applicable to the current reviewMode, use `AskUserQuestion`. Re-read `.claude/metadata/review-mode-criteria.json` from disk (not memory) where `type: "subjective"` — each entry has `question`, `header`, and `options` fields.
 **Solo mode:** No subjective criteria -- skip entirely.
 **Team/enterprise mode -- description preview:** Emit 3-5 line summary before `AskUserQuestion`.
 If no subjective criteria apply, skip the question step entirely.
@@ -201,7 +208,7 @@ Review #N complete for Issue #$ISSUE: $TITLE
 **If `--with` is not specified**, append a discoverability tip:
 ```
 Tip: Use --with security,performance to add domain-specific review criteria.
-Available: security, accessibility, performance, chaos, contract, qa (or --with all)
+Available: security, accessibility, performance, chaos, contract, qa, seo, privacy (or --with all)
 ```
 ---
 ## Error Handling

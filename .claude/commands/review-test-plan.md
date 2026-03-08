@@ -1,7 +1,7 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Review a test plan against its PRD (project)
-argument-hint: "#issue"
+argument-hint: "#issue [--force]"
 ---
 
 <!-- MANAGED -->
@@ -20,6 +20,7 @@ Unlike `/review-issue`, reads two linked documents (test plan and PRD) and perfo
 |----------|----------|-------------|
 | `#issue` | Yes | Issue number linked to the test plan (e.g., `#42` or `42`) |
 | `--mode` | No | Transient review mode override: `solo`, `team`, or `enterprise`. Does not modify `framework-config.json`. |
+| `--force` | No | Force re-review even if issue has `reviewed` label |
 ---
 ## Execution Instructions
 **REQUIRED:** Before executing:
@@ -34,6 +35,12 @@ gh issue view $ISSUE --json number,title,body,state,labels
 ```
 **If not found:** -> **STOP**
 **If closed:** Ask user to confirm.
+**Early-exit gate:** If the issue has the `reviewed` label and `--force` is NOT present, skip the full review:
+```
+"Issue #$ISSUE already reviewed (Review #N). Use --force to re-review."
+```
+Extract the review count from the `**Reviews:** N` field in the issue body (if present). -> **STOP**
+**If `--force` is present:** Bypass the early-exit gate and proceed with full review.
 Extract document paths from issue body:
 ```
 Pattern: **Test Plan:** PRD/[Name]/Test-Plan-[Name].md

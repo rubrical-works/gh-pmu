@@ -1,9 +1,8 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Create GitHub epics/stories from PRD (project)
 argument-hint: "<issue-number> (e.g., 151)"
 ---
-
 <!-- MANAGED -->
 # /create-backlog
 Create GitHub epics and stories from an approved PRD with embedded TDD test cases.
@@ -16,7 +15,7 @@ Create GitHub epics and stories from an approved PRD with embedded TDD test case
 ## Execution Instructions
 **REQUIRED:** Before executing:
 1. **Create Todo List:** Use `TodoWrite` from steps below
-2. **Track Progress:** Mark todos `in_progress` -> `completed`
+2. **Track Progress:** Mark todos `in_progress` → `completed`
 3. **Resume Point:** Todos show where to continue if interrupted
 ---
 ## Prerequisites
@@ -26,7 +25,7 @@ Create GitHub epics and stories from an approved PRD with embedded TDD test case
 - Test plan approval issue is **closed** (approved)
 ---
 ## Phase 1: Fetch and Validate PRD Issue
-**Step 1: Parse issue number** - Accept `151` or `#151` format
+**Step 1: Parse issue number** — Accept `151` or `#151` format
 **Step 2: Fetch and validate issue**
 ```bash
 gh issue view $issue_num --json labels,body --jq '.labels[].name' | grep -q "prd"
@@ -74,9 +73,9 @@ gh issue list --label "test-plan" --label "approval-required" --state open --jso
 **Step 2:** Check approval status
 | State | Action |
 |-------|--------|
-| Open | BLOCK - Show message and exit |
+| Open | BLOCK — show message and exit |
 | Closed | PROCEED |
-| Not found | WARN - Proceed but note missing test plan |
+| Not found | WARN — proceed but note missing test plan |
 ---
 ## Phase 3: Parse PRD for Epics and Stories
 **Step 1:** Load PRD document — Read `PRD/{name}/PRD-{name}.md`
@@ -125,11 +124,11 @@ gh pmu create \
 Clean up: `rm .tmp-story-body.md`
 Link to parent: `gh pmu sub add {epic_number} {story_number} || true`
 ### Story Body Template
-**DEPENDENCY:** Uses `/add-story` Phase 3 Story Body Template (atomic - all sections required).
+**DEPENDENCY:** Uses `/add-story` Phase 3 Story Body Template (atomic — all sections required).
 | Template Section | Source |
 |-----------------|--------|
 | Description | PRD user story |
-| Relevant Skills | `framework-config.json` -> `projectSkills` |
+| Relevant Skills | `framework-config.json` → `projectSkills` |
 | Acceptance Criteria | PRD criteria (checkbox list) |
 | Documentation | Standard checkboxes |
 | TDD Test Cases | From approved test plan |
@@ -169,7 +168,7 @@ test('{criterion} rejects invalid input', () => {
 **Step 1:** Change PRD document status to "Backlog Created"
 **Step 2:** Prepend banner to PRD tracker issue:
 ```markdown
-> **PRD In Progress** - When all stories complete, run `/complete-prd {issue_number}`
+> **PRD In Progress** — When all stories complete, run `/complete-prd {issue_number}`
 ## Backlog Summary
 Epics: {count} | Stories: {count} | Test cases embedded
 ```
@@ -179,17 +178,22 @@ Use `gh pmu edit` with temp file to update the body.
 ---
 ## Phase 8: Skill Suggestions (Optional)
 **Step 1:** Check `framework-config.json` for `skillSuggestions: false` (skip if false)
-**Step 2:** Load `.claude/metadata/skill-keywords.json`
-**Step 3:** Collect story content, match keywords (case-insensitive)
-**Step 4:** Filter already-installed skills from `projectSkills`
-**Step 5:** Display matches table if found
+**Step 2:** Run keyword matching:
+```bash
+node .claude/scripts/shared/lib/skill-keyword-matcher.js \
+  --content-file .tmp-skill-content.txt \
+  --installed "{comma-separated projectSkills from framework-config.json}"
+rm .tmp-skill-content.txt
+```
+Parse JSON output: array of `{skill, matchedKeywords}` objects. Already-installed skills excluded automatically.
+**Step 3:** If matches found, display table
 **ASK USER:** Install suggested skills? (y/n/select)
 | Response | Action |
 |----------|--------|
 | `y` | Install all matched skills |
 | `n` | Skip |
 | `select` | Present numbered list |
-**Step 6:** Install via `node .claude/scripts/shared/install-skill.js {skill-names...}`
+**Step 4:** Install via `node .claude/scripts/shared/install-skill.js {skill-names...}`
 ---
 ## Output Summary
 ```

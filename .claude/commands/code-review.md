@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Comprehensive code review with manifest-driven incremental tracking (project)
 argument-hint: "[--full] [--status] [--scope <globs>] [--batch <N>]"
 ---
@@ -78,10 +78,10 @@ For each discovered file, compute SHA-256 content hash and compare against manif
 | File State | Manifest Entry | Hash Match? | Action |
 |------------|---------------|-------------|--------|
 | New file | Not in manifest | N/A | **Queue** for review |
-| Existing | `approved` | Yes | **Skip** — already approved |
-| Existing | `approved` | No | **Queue** for re-review |
-| Existing | `flagged` | Yes | **Skip** — already tracked |
-| Existing | `flagged` | No | **Queue** for re-review |
+| Existing | `approved` | Yes (unchanged) | **Skip** — already approved |
+| Existing | `approved` | No (changed) | **Queue** for re-review |
+| Existing | `flagged` | Yes (unchanged) | **Skip** — flagged unchanged, already tracked |
+| Existing | `flagged` | No (changed) | **Queue** for re-review |
 | Existing | `deferred` | Any | **Skip** — user deferred |
 | Deleted | In manifest | N/A | **Remove** from manifest |
 **Charter change detection:** If CHARTER.md hash differs from manifest's `charter.contentHash`, re-review all files.
@@ -98,6 +98,7 @@ Read `CHARTER.md` to extract project goals, conventions, quality standards, tech
 | **Documentation** | Missing JSDoc/docstrings for public APIs (per charter requirements) |
 ### Step 5b: Skill Loading
 Check `projectSkills` in `framework-config.json` for relevant skills.
+Re-read `.claude/metadata/skill-keywords.json` from disk (not memory) and match keywords against review categories:
 | Skill | Domain | When Loaded |
 |-------|--------|-------------|
 | `anti-pattern-analysis` | Code smells, design pattern violations | When reviewing implementation files |

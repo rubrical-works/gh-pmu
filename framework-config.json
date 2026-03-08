@@ -4,6 +4,10 @@
   "reviewMode": "solo",
   "projectSkills": [
     "anti-pattern-analysis",
+    "codebase-analysis",
+    "command-spec-audit",
+    "drawio-generation",
+    "error-handling-patterns",
     "mutation-testing",
     "tdd-failure-recovery",
     "tdd-green-phase",
@@ -11,7 +15,7 @@
     "tdd-refactor-phase",
     "test-writing-patterns"
   ],
-  "frameworkVersion": "0.54.0",
+  "frameworkVersion": "0.58.0",
   "installedDate": "2026-02-28",
   "frameworkPath": "C:\\ProgramData\\Praxis Hub Manager\\framework_root",
   "platform": "win32"

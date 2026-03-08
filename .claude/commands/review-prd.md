@@ -1,7 +1,7 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Review a PRD with tracked history (project)
-argument-hint: "#issue"
+argument-hint: "#issue [--force]"
 ---
 
 <!-- EXTENSIBLE -->
@@ -20,6 +20,7 @@ Reviews a PRD document linked from a GitHub issue, tracking review history with 
 | `#issue` | Yes | Issue number linked to the PRD (e.g., `#42` or `42`) |
 | `--with` | No | Comma-separated domain extensions (e.g., `--with security,performance`) or `--with all` |
 | `--mode` | No | Transient review mode override: `solo`, `team`, or `enterprise`. Does not modify `framework-config.json`. |
+| `--force` | No | Force re-review even if issue has `reviewed` label |
 ---
 ## Execution Instructions
 **REQUIRED:** Before executing:
@@ -36,6 +37,12 @@ gh issue view $ISSUE --json number,title,body,state,labels
 ```
 **If not found:** `"Issue #$ISSUE not found."` -> **STOP**
 **If closed:** `"Issue #$ISSUE is closed. Review anyway? (y/n)"` -- proceed only if user confirms.
+**Early-exit gate:** If the issue has the `reviewed` label and `--force` is NOT present, skip the full review:
+```
+"Issue #$ISSUE already reviewed (Review #N). Use --force to re-review."
+```
+Extract the review count from the `**Reviews:** N` field in the issue body (if present). -> **STOP**
+**If `--force` is present:** Bypass the early-exit gate and proceed with full review.
 Extract PRD file path from issue body. Look for:
 - `**File:** PRD/[Name]/PRD-[Name].md`
 - `**PRD:** PRD/[Name]/PRD-[Name].md`
@@ -236,7 +243,7 @@ Review #N complete for PRD: [Title]
 **If `--with` is not specified**, append:
 ```
 Tip: Use --with security,performance to add domain-specific review criteria.
-Available: security, accessibility, performance, chaos, contract, qa (or --with all)
+Available: security, accessibility, performance, chaos, contract, qa, seo, privacy (or --with all)
 ```
 ---
 ## Error Handling

@@ -1,5 +1,5 @@
 ---
-version: "v0.54.0"
+version: "v0.58.0"
 description: Prepare release with PR, merge to main, and tag
 argument-hint: "[version] [--skip-coverage] [--dry-run] [--help]"
 ---
@@ -55,6 +55,10 @@ Record as `$BRANCH`.
 ```
 **Do not add `--json`** -- `status` is not a valid JSON field for `gh pmu list`.
 ---
+
+<!-- USER-EXTENSION-START: pre-phase-1 -->
+<!-- USER-EXTENSION-END: pre-phase-1 -->
+
 ## Phase 1: Analysis
 ### Step 1.1: Analyze Changes
 ```bash
