@@ -497,7 +497,7 @@ func TestFindConfigFile_InCurrentDir_ReturnsPath(t *testing.T) {
 	// ARRANGE: Create temp dir with config file
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
@@ -521,7 +521,7 @@ func TestFindConfigFile_InParentDir_ReturnsPath(t *testing.T) {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}
 	configPath := filepath.Join(parentDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
@@ -546,7 +546,7 @@ func TestFindConfigFile_InGrandparentDir_ReturnsPath(t *testing.T) {
 		t.Fatalf("Failed to create nested dirs: %v", err)
 	}
 	configPath := filepath.Join(grandparentDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
@@ -587,12 +587,7 @@ func TestLoadFromDirectory_FromSubdir_FindsParentConfig(t *testing.T) {
 		t.Fatalf("Failed to create nested dirs: %v", err)
 	}
 
-	configContent := `project:
-  owner: rubrical-works
-  number: 13
-repositories:
-  - rubrical-works/gh-pmu
-`
+	configContent := `{"project":{"owner":"rubrical-works","number":13},"repositories":["rubrical-works/gh-pmu"]}`
 	configPath := filepath.Join(parentDir, ConfigFileName)
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
@@ -726,15 +721,10 @@ func TestConfig_Save_WithVersion_RoundTrip(t *testing.T) {
 }
 
 func TestConfig_Load_WithoutVersion_BackwardCompatible(t *testing.T) {
-	// ARRANGE: Config YAML without version field (existing configs)
+	// ARRANGE: Config JSON without version field (existing configs)
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	configContent := `project:
-  owner: test-owner
-  number: 1
-repositories:
-  - test-owner/test-repo
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
@@ -752,16 +742,10 @@ repositories:
 }
 
 func TestConfig_Load_WithVersion_ReadsCorrectly(t *testing.T) {
-	// ARRANGE: Config YAML with version field
+	// ARRANGE: Config JSON with version field
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	configContent := `version: "1.0.0"
-project:
-  owner: test-owner
-  number: 1
-repositories:
-  - test-owner/test-repo
-`
+	configContent := `{"version":"1.0.0","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
@@ -1177,12 +1161,7 @@ func TestLoadFromDirectoryAndNormalize_NormalizesEmptyFramework(t *testing.T) {
 	// ARRANGE: Create temp dir with config without framework
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	configContent := `project:
-  owner: test-owner
-  number: 1
-repositories:
-  - test-owner/test-repo
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
@@ -1212,13 +1191,7 @@ func TestLoadFromDirectoryAndNormalize_PreservesExistingFramework(t *testing.T) 
 	// ARRANGE: Create temp dir with config with framework: none
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	configContent := `project:
-  owner: test-owner
-  number: 1
-repositories:
-  - test-owner/test-repo
-framework: none
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"],"framework":"none"}`
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
@@ -1243,7 +1216,7 @@ func TestGetTempDir_CreatesTmpDirectory(t *testing.T) {
 	// ARRANGE: Create temp dir with config file and change to it
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
@@ -1284,7 +1257,7 @@ func TestGetTempDir_AddsToGitignore(t *testing.T) {
 	// ARRANGE: Create temp dir with config file
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
@@ -1321,7 +1294,7 @@ func TestGetTempDir_DoesNotDuplicateGitignoreEntry(t *testing.T) {
 	// ARRANGE: Create temp dir with config file and existing .gitignore
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
@@ -1360,7 +1333,7 @@ func TestGetTempDir_AppendsToExistingGitignore(t *testing.T) {
 	// ARRANGE: Create temp dir with config file and existing .gitignore with other entries
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
@@ -1402,7 +1375,7 @@ func TestCreateTempFile_CreatesFileInTmpDir(t *testing.T) {
 	// ARRANGE: Create temp dir with config file
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
@@ -1442,7 +1415,7 @@ func TestCreateTempFile_UsesPattern(t *testing.T) {
 	// ARRANGE: Create temp dir with config file
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
@@ -1747,24 +1720,12 @@ func TestGetCoverageSkipPatterns_CustomPatterns(t *testing.T) {
 	}
 }
 
-func TestCoverageConfig_YAMLParsing(t *testing.T) {
-	// ARRANGE: YAML config with coverage section
-	yamlContent := `project:
-  owner: test
-  number: 1
-repositories:
-  - test/repo
-release:
-  coverage:
-    enabled: false
-    threshold: 85
-    skip_patterns:
-      - "*_generated.go"
-      - "mock_*.go"
-`
+func TestCoverageConfig_JSONParsing(t *testing.T) {
+	// ARRANGE: JSON config with coverage section
+	jsonContent := `{"project":{"owner":"test","number":1},"repositories":["test/repo"],"release":{"coverage":{"enabled":false,"threshold":85,"skip_patterns":["*_generated.go","mock_*.go"]}}}`
 	testDir := t.TempDir()
 	configPath := filepath.Join(testDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(jsonContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
@@ -1794,7 +1755,7 @@ release:
 // Config File Protection Test
 // ============================================================================
 
-// TestRealConfigFileNotCorrupted verifies that the real .gh-pmu.yml file
+// TestRealConfigFileNotCorrupted verifies that the real .gh-pmu.json file
 // at the project root has not been corrupted by tests writing test data to it.
 // This test acts as a canary to detect when test isolation fails.
 func TestRealConfigFileNotCorrupted(t *testing.T) {
@@ -1804,10 +1765,10 @@ func TestRealConfigFileNotCorrupted(t *testing.T) {
 		t.Skipf("Could not get current directory: %v", err)
 	}
 
-	// Walk up to find project root (where .gh-pmu.yml should be)
+	// Walk up to find project root (where .gh-pmu.json should be)
 	configPath, err := FindConfigFile(cwd)
 	if err != nil {
-		t.Skipf("No .gh-pmu.yml found in path: %v", err)
+		t.Skipf("No .gh-pmu.json found in path: %v", err)
 	}
 
 	// Read the config file
@@ -1818,7 +1779,7 @@ func TestRealConfigFileNotCorrupted(t *testing.T) {
 
 	// Verify it contains the real project owner, not test data
 	if strings.Contains(string(content), "testowner") {
-		t.Error("Real .gh-pmu.yml contains 'testowner' - tests have corrupted the config file! " +
+		t.Error("Real .gh-pmu.json contains 'testowner' - tests have corrupted the config file! " +
 			"Tests that call cfg.Save() must use setupBranchTestDir for isolation.")
 	}
 
@@ -1828,9 +1789,9 @@ func TestRealConfigFileNotCorrupted(t *testing.T) {
 	}
 }
 
-func TestSave_WritesBothYAMLAndJSON(t *testing.T) {
+func TestSave_WritesBothJSONAndYAML(t *testing.T) {
 	tmpDir := t.TempDir()
-	yamlPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	jsonPath := filepath.Join(tmpDir, ConfigFileName)
 
 	cfg := &Config{
 		Project: Project{
@@ -1841,25 +1802,24 @@ func TestSave_WritesBothYAMLAndJSON(t *testing.T) {
 	}
 
 	// ACT: Save config
-	err := cfg.Save(yamlPath)
+	err := cfg.Save(jsonPath)
 	if err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
 	// ASSERT: Both files exist
-	jsonPath := filepath.Join(tmpDir, ".gh-pmu.json")
-	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
-		t.Error("Expected .gh-pmu.yml to exist")
-	}
+	yamlPath := filepath.Join(tmpDir, ConfigFileNameYAML)
 	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
 		t.Error("Expected .gh-pmu.json to exist")
 	}
+	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
+		t.Error("Expected .gh-pmu.yml to exist")
+	}
 }
 
-func TestSave_JSONContentsEquivalent(t *testing.T) {
+func TestSave_BothFormatsContainExpectedData(t *testing.T) {
 	tmpDir := t.TempDir()
-	yamlPath := filepath.Join(tmpDir, ".gh-pmu.yml")
-	jsonPath := filepath.Join(tmpDir, ".gh-pmu.json")
+	jsonPath := filepath.Join(tmpDir, ConfigFileName)
 
 	cfg := &Config{
 		Project: Project{
@@ -1871,11 +1831,11 @@ func TestSave_JSONContentsEquivalent(t *testing.T) {
 	}
 
 	// ACT: Save config
-	if err := cfg.Save(yamlPath); err != nil {
+	if err := cfg.Save(jsonPath); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	// ASSERT: Load JSON and verify fields match
+	// ASSERT: JSON primary contains expected fields
 	jsonData, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Fatalf("Failed to read JSON file: %v", err)
@@ -1891,29 +1851,41 @@ func TestSave_JSONContentsEquivalent(t *testing.T) {
 	if !strings.Contains(jsonStr, "IDPF-Agile") {
 		t.Error("JSON file should contain framework")
 	}
+
+	// ASSERT: YAML companion contains expected fields
+	yamlPath := filepath.Join(tmpDir, ConfigFileNameYAML)
+	yamlData, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatalf("Failed to read YAML file: %v", err)
+	}
+
+	yamlStr := string(yamlData)
+	if !strings.Contains(yamlStr, "test-owner") {
+		t.Error("YAML file should contain project owner")
+	}
 }
 
-func TestFindConfigFile_FallsBackToJSON(t *testing.T) {
+func TestFindConfigFile_FallsBackToYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Only create JSON file, no YAML
-	jsonPath := filepath.Join(tmpDir, ".gh-pmu.json")
-	if err := os.WriteFile(jsonPath, []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
-		t.Fatalf("Failed to write JSON config: %v", err)
+	// Only create YAML file, no JSON
+	yamlPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	if err := os.WriteFile(yamlPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
+		t.Fatalf("Failed to write YAML config: %v", err)
 	}
 
-	// ACT: FindConfigFile should find JSON
+	// ACT: FindConfigFile should find YAML as fallback
 	found, err := FindConfigFile(tmpDir)
 	if err != nil {
-		t.Fatalf("Expected FindConfigFile to find JSON fallback, got error: %v", err)
+		t.Fatalf("Expected FindConfigFile to find YAML fallback, got error: %v", err)
 	}
 
-	if !strings.HasSuffix(found, ".gh-pmu.json") {
-		t.Errorf("Expected JSON path, got: %s", found)
+	if !strings.HasSuffix(found, ".gh-pmu.yml") {
+		t.Errorf("Expected YAML path, got: %s", found)
 	}
 }
 
-func TestFindConfigFile_YAMLTakesPrecedence(t *testing.T) {
+func TestFindConfigFile_JSONTakesPrecedence(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create both files
@@ -1926,13 +1898,13 @@ func TestFindConfigFile_YAMLTakesPrecedence(t *testing.T) {
 		t.Fatalf("Failed to write JSON: %v", err)
 	}
 
-	// ACT: FindConfigFile should find YAML
+	// ACT: FindConfigFile should find JSON (primary)
 	found, err := FindConfigFile(tmpDir)
 	if err != nil {
 		t.Fatalf("FindConfigFile failed: %v", err)
 	}
 
-	if !strings.HasSuffix(found, ".gh-pmu.yml") {
-		t.Errorf("Expected YAML to take precedence, got: %s", found)
+	if !strings.HasSuffix(found, ".gh-pmu.json") {
+		t.Errorf("Expected JSON to take precedence, got: %s", found)
 	}
 }

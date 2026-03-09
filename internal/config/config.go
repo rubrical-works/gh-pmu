@@ -90,11 +90,11 @@ type OptionMetadata struct {
 	ID   string `yaml:"id" json:"id"`
 }
 
-// ConfigFileName is the default configuration file name
-const ConfigFileName = ".gh-pmu.yml"
+// ConfigFileName is the default (primary) configuration file name
+const ConfigFileName = ".gh-pmu.json"
 
-// ConfigFileNameJSON is the JSON companion configuration file name
-const ConfigFileNameJSON = ".gh-pmu.json"
+// ConfigFileNameYAML is the legacy YAML configuration file name (fallback)
+const ConfigFileNameYAML = ".gh-pmu.yml"
 
 // Load reads and parses a configuration file from the given path.
 // Detects format (YAML or JSON) based on file extension.
@@ -119,7 +119,7 @@ func Load(path string) (*Config, error) {
 }
 
 // LoadFromDirectory finds and loads the config file from the given directory.
-// It searches up the directory tree until it finds a .gh-pmu.yml file or
+// It searches up the directory tree until it finds a .gh-pmu.json file or
 // reaches the filesystem root.
 func LoadFromDirectory(dir string) (*Config, error) {
 	configPath, err := FindConfigFile(dir)
@@ -156,16 +156,16 @@ func LoadFromDirectoryAndNormalize(dir string) (*Config, error) {
 	return cfg, nil
 }
 
-// FindConfigFile searches for .gh-pmu.yml starting from dir and walking up
+// FindConfigFile searches for .gh-pmu.json starting from dir and walking up
 // the directory tree until found or filesystem root is reached.
-// Falls back to .gh-pmu.json if no YAML file is found.
+// Falls back to .gh-pmu.yml if no JSON file is found.
 func FindConfigFile(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// First pass: look for YAML
+	// First pass: look for JSON (primary)
 	searchDir := dir
 	for {
 		configPath := filepath.Join(searchDir, ConfigFileName)
@@ -180,10 +180,10 @@ func FindConfigFile(startDir string) (string, error) {
 		searchDir = parent
 	}
 
-	// Second pass: look for JSON fallback
+	// Second pass: look for YAML fallback
 	searchDir = dir
 	for {
-		configPath := filepath.Join(searchDir, ConfigFileNameJSON)
+		configPath := filepath.Join(searchDir, ConfigFileNameYAML)
 		if _, err := os.Stat(configPath); err == nil {
 			return configPath, nil
 		}
@@ -296,34 +296,32 @@ func (c *Config) ApplyEnvOverrides() {
 // Save writes the configuration back to the given path and its JSON companion.
 // The JSON companion file is derived by replacing the extension with .json.
 func (c *Config) Save(path string) error {
-	data, err := yaml.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
+	dir := filepath.Dir(path)
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	// Write JSON companion
+	// Write JSON (primary format)
 	jsonData, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON config: %w", err)
 	}
 	jsonData = append(jsonData, '\n')
 
-	jsonPath := jsonCompanionPath(path)
+	jsonPath := filepath.Join(dir, ConfigFileName)
 	if err := os.WriteFile(jsonPath, jsonData, 0644); err != nil {
-		return fmt.Errorf("failed to write JSON config file: %w", err)
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	// Write YAML companion
+	yamlData, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML config: %w", err)
+	}
+
+	yamlPath := filepath.Join(dir, ConfigFileNameYAML)
+	if err := os.WriteFile(yamlPath, yamlData, 0644); err != nil {
+		return fmt.Errorf("failed to write YAML config file: %w", err)
 	}
 
 	return nil
-}
-
-// jsonCompanionPath returns the JSON companion path for a YAML config path.
-func jsonCompanionPath(yamlPath string) string {
-	dir := filepath.Dir(yamlPath)
-	return filepath.Join(dir, ConfigFileNameJSON)
 }
 
 // IsIDPF returns true if the config uses IDPF framework validation.

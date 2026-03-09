@@ -1674,7 +1674,7 @@ func TestWriteConfig_CreatesJSONCompanion(t *testing.T) {
 	}
 
 	// Verify JSON companion exists
-	jsonPath := filepath.Join(tmpDir, config.ConfigFileNameJSON)
+	jsonPath := filepath.Join(tmpDir, config.ConfigFileName)
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Fatalf("Expected JSON companion to exist: %v", err)
@@ -1719,7 +1719,7 @@ func seedAcceptance(t *testing.T, dir, version string) {
 		t.Fatalf("Failed to marshal seed config: %v", err)
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile(filepath.Join(dir, config.ConfigFileNameJSON), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, config.ConfigFileName), data, 0644); err != nil {
 		t.Fatalf("Failed to write seed config: %v", err)
 	}
 }
@@ -1753,7 +1753,7 @@ func TestWriteConfigWithMetadata_PreservesAcceptance_PatchVersion(t *testing.T) 
 	}
 
 	// Read the JSON output and check acceptance
-	jsonPath := filepath.Join(tmpDir, config.ConfigFileNameJSON)
+	jsonPath := filepath.Join(tmpDir, config.ConfigFileName)
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Fatalf("Failed to read JSON config: %v", err)
@@ -1802,7 +1802,7 @@ func TestWriteConfigWithMetadata_ClearsAcceptance_MajorVersion(t *testing.T) {
 		t.Fatalf("writeConfigWithMetadata failed: %v", err)
 	}
 
-	jsonPath := filepath.Join(tmpDir, config.ConfigFileNameJSON)
+	jsonPath := filepath.Join(tmpDir, config.ConfigFileName)
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Fatalf("Failed to read JSON config: %v", err)
@@ -1851,7 +1851,7 @@ func TestWriteConfigWithMetadata_ClearsAcceptance_MinorVersion(t *testing.T) {
 		t.Fatalf("writeConfigWithMetadata failed: %v", err)
 	}
 
-	jsonPath := filepath.Join(tmpDir, config.ConfigFileNameJSON)
+	jsonPath := filepath.Join(tmpDir, config.ConfigFileName)
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Fatalf("Failed to read JSON config: %v", err)
@@ -1889,7 +1889,7 @@ func TestWriteConfigWithMetadata_PreservesAcceptance_SameVersion(t *testing.T) {
 		t.Fatalf("writeConfigWithMetadata failed: %v", err)
 	}
 
-	jsonPath := filepath.Join(tmpDir, config.ConfigFileNameJSON)
+	jsonPath := filepath.Join(tmpDir, config.ConfigFileName)
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Fatalf("Failed to read JSON config: %v", err)

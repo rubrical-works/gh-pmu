@@ -1050,7 +1050,7 @@ func writeConfig(dir string, cfg *InitConfig) error {
 		return fmt.Errorf("failed to marshal JSON config: %w", err)
 	}
 	jsonData = append(jsonData, '\n')
-	jsonPath := filepath.Join(dir, config.ConfigFileNameJSON)
+	jsonPath := filepath.Join(dir, config.ConfigFileName)
 	if err := os.WriteFile(jsonPath, jsonData, 0644); err != nil {
 		return fmt.Errorf("failed to write JSON config file: %w", err)
 	}
@@ -1087,7 +1087,7 @@ func writeConfigWithMetadata(dir string, cfg *InitConfig, metadata *ProjectMetad
 
 	// Read existing acceptance from config before writing
 	var existingAcceptance *config.Acceptance
-	existingJSONPath := filepath.Join(dir, config.ConfigFileNameJSON)
+	existingJSONPath := filepath.Join(dir, config.ConfigFileName)
 	if existingCfg, err := config.Load(existingJSONPath); err == nil && existingCfg.Acceptance != nil {
 		if !config.RequiresReAcceptance(existingCfg.Acceptance.Version, getVersion()) {
 			existingAcceptance = existingCfg.Acceptance
@@ -1142,7 +1142,7 @@ func writeConfigWithMetadata(dir string, cfg *InitConfig, metadata *ProjectMetad
 		return fmt.Errorf("failed to marshal JSON config: %w", err)
 	}
 	jsonData = append(jsonData, '\n')
-	jsonPath := filepath.Join(dir, config.ConfigFileNameJSON)
+	jsonPath := filepath.Join(dir, config.ConfigFileName)
 	if err := os.WriteFile(jsonPath, jsonData, 0644); err != nil {
 		return fmt.Errorf("failed to write JSON config file: %w", err)
 	}
