@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/rubrical-studios/gh-pmu)](https://github.com/rubrical-studios/gh-pmu/releases/latest)
 [![License](https://img.shields.io/github/license/rubrical-studios/gh-pmu)](LICENSE)
 
-**P**roject **M**anagement **U**nified — a GitHub CLI extension for project management and sub-issue hierarchy.
+**P**raxis **M**anagement **U**tility — a GitHub CLI extension for project workflows, sub-issue hierarchies, and batch operations.
 
 > **Note:** gh-pmu is designed for **Kanban-style GitHub Projects** with status-based columns (Backlog, In Progress, In Review, Done). It integrates seamlessly with the [IDPF-Praxis](https://github.com/rubrical-studios/idpf-praxis-dist) framework for structured development workflows, but works standalone without any framework.
 
