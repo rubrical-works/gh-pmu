@@ -1499,8 +1499,8 @@ func TestInitNonInteractive_ExistingConfigWithoutYes(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Write existing config
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n"), 0644); err != nil {
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
+	if err := os.WriteFile(configPath, []byte(`{"project":{"owner":"test"}}`), 0644); err != nil {
 		t.Fatalf("Failed to write existing config: %v", err)
 	}
 

@@ -58,13 +58,13 @@ func newInitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize gh-pmu configuration for the current project",
-		Long: `Initialize gh-pmu configuration by creating a .gh-pmu.yml file.
+		Long: `Initialize gh-pmu configuration by creating a .gh-pmu.json file.
 
 This command will:
 - Auto-detect the current repository from git remote
 - Discover and list available projects for selection
 - Fetch and cache project field metadata from GitHub
-- Create a .gh-pmu.yml configuration file
+- Create a .gh-pmu.json configuration file
 
 Non-interactive mode (--non-interactive) disables all prompts and requires
 --source-project and --repo flags. It creates a new project by copying
@@ -99,13 +99,13 @@ func runInit(cmd *cobra.Command, args []string, opts *initOptions) error {
 
 	// Check if config already exists and preserve framework
 	var existingFramework string
-	if _, err := os.Stat(".gh-pmu.yml"); err == nil {
+	if _, err := os.Stat(".gh-pmu.json"); err == nil {
 		// Try to load existing config to preserve framework
 		if existingCfg, err := loadExistingFramework("."); err == nil {
 			existingFramework = existingCfg
 		}
 		if !opts.yes {
-			u.Warning("Configuration file .gh-pmu.yml already exists")
+			u.Warning("Configuration file .gh-pmu.json already exists")
 			fmt.Fprint(cmd.OutOrStdout(), u.Prompt("Overwrite?", "y/N"))
 			response, _ := reader.ReadString('\n')
 			response = strings.TrimSpace(strings.ToLower(response))
@@ -583,7 +583,7 @@ projectSelected:
 		"Project":    fmt.Sprintf("%s (#%d)", selectedProject.Title, selectedProject.Number),
 		"Repository": repo,
 		"Fields":     fmt.Sprintf("%d cached", len(fields)),
-		"Config":     ".gh-pmu.yml",
+		"Config":     ".gh-pmu.json",
 	}, []string{"Project", "Repository", "Fields", "Config"})
 
 	return nil
@@ -628,12 +628,12 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 
 	// Check if config already exists
 	var existingFramework string
-	if _, err := os.Stat(".gh-pmu.yml"); err == nil {
+	if _, err := os.Stat(".gh-pmu.json"); err == nil {
 		if existingCfg, err := loadExistingFramework("."); err == nil {
 			existingFramework = existingCfg
 		}
 		if !opts.yes {
-			fmt.Fprintf(os.Stderr, "error: .gh-pmu.yml already exists (use --yes to overwrite)\n")
+			fmt.Fprintf(os.Stderr, "error: .gh-pmu.json already exists (use --yes to overwrite)\n")
 			return fmt.Errorf("config already exists")
 		}
 	}
@@ -790,7 +790,7 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 	}
 
 	// Output success to stdout (minimal for CI/CD parsing)
-	fmt.Fprintf(cmd.OutOrStdout(), "Created .gh-pmu.yml for %s (#%d) [copied from source project #%d]\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "Created .gh-pmu.json for %s (#%d) [copied from source project #%d]\n",
 		newProject.Title, newProject.Number, opts.sourceProject)
 
 	return nil

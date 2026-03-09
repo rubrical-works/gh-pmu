@@ -1823,8 +1823,8 @@ func TestRealConfigFileNotCorrupted(t *testing.T) {
 	}
 
 	// Verify it contains expected owner
-	if !strings.Contains(string(content), "rubrical-studios") {
-		t.Error("Real .gh-pmu.yml does not contain 'rubrical-studios' - the config may be corrupted")
+	if !strings.Contains(string(content), "rubrical-works") {
+		t.Error("Real config does not contain 'rubrical-works' - the config may be corrupted")
 	}
 }
 
