@@ -31,12 +31,15 @@ var exemptCommands = map[string]bool{
 func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "gh pmu",
-		Short: "Streamline GitHub project workflows",
-		Long: `gh pmu streamlines GitHub project workflows with unified issue tracking and sub-issue hierarchy.
+		Short: "GitHub Praxis Management Utility",
+		Long: `gh pmu — GitHub Praxis Management Utility.
 
-Designed for Kanban-style GitHub Projects with status-based columns
-(Backlog, In Progress, In Review, Done). Works seamlessly with the
-IDPF-Praxis framework for structured development workflows.
+A GitHub CLI extension for project workflows, sub-issue hierarchies,
+and batch operations. Designed for Kanban-style GitHub Projects with
+status-based columns (Backlog, In Progress, In Review, Done).
+
+Works seamlessly with the IDPF-Praxis framework for structured
+development workflows, or standalone without any framework.
 
 This extension combines and replaces:
   - gh-pm (https://github.com/yahsan2/gh-pm) - Project management
