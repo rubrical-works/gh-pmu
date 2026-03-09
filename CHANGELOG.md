@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-09
+
 ### Changed
 - Rebranded from "Project Management Unified" to "Praxis Management Utility" — PMU acronym unchanged (#698)
+- Renamed organization from rubrical-studios to rubrical-works (#736)
+- Made `.gh-pmu.json` the primary config file with `.gh-pmu.yml` as fallback (#737)
+- Updated `gh pmu init` display strings to reference `.gh-pmu.json` (#735)
+- Updated LICENSE copyright to rubrical-works 2026 (#698)
+
+### Optimized
+- `gh pmu list --state all` uses dual search calls (open + closed) instead of full project scan (#740)
+- `gh pmu filter` eliminates dead-code `GetProjectItems` fallback; errors when no repos configured (#741)
+- `gh pmu board --state all` uses dual search calls instead of full project scan (#742)
+- `gh pmu move --recursive` resolves sub-issues via targeted API instead of full project scan (#743)
+- `gh pmu branch current` optimized with active label lookup and `--json` support; removed `--refresh` (#738)
+- `gh pmu branch close` optimized to use tracker sub-issues instead of full project scan (#739)
 
 ## [1.1.0] - 2026-03-03
 

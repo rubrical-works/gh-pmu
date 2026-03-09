@@ -818,16 +818,6 @@ func branchCurrentOutputJSON(cmd *cobra.Command, opts *branchCurrentOptions, own
 	return nil
 }
 
-// generateBranchTrackerBody generates the body content for a release tracker issue
-func generateBranchTrackerBody(issues []api.Issue) string {
-	var sb strings.Builder
-	sb.WriteString("## Issues in this release\n\n")
-	for _, issue := range issues {
-		sb.WriteString(fmt.Sprintf("- #%d %s\n", issue.Number, issue.Title))
-	}
-	return sb.String()
-}
-
 // generateBranchTrackerTemplate generates the initial body template for a branch tracker issue
 func generateBranchTrackerTemplate(branchName string) string {
 	return fmt.Sprintf(`> **Branch Tracker Issue**
