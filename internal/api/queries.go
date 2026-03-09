@@ -2011,6 +2011,80 @@ func (c *Client) GetOpenIssuesByLabel(owner, repo, label string) ([]Issue, error
 	return c.getIssuesByLabelPaginated(owner, repo, label, []IssueState{IssueStateOpen})
 }
 
+// GetOpenIssuesByLabels fetches open issues matching ALL specified labels.
+// Includes SubIssueCount for each issue (from subIssues.totalCount).
+func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]Issue, error) {
+	if c.gql == nil {
+		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
+	}
+
+	var gqlLabels []graphql.String
+	for _, l := range labels {
+		gqlLabels = append(gqlLabels, graphql.String(l))
+	}
+
+	var query struct {
+		Repository struct {
+			Issues struct {
+				Nodes []struct {
+					ID     string
+					Number int
+					Title  string
+					State  string
+					URL    string `graphql:"url"`
+					Labels struct {
+						Nodes []struct {
+							Name string
+						}
+					} `graphql:"labels(first: 10)"`
+					SubIssues struct {
+						TotalCount int
+					} `graphql:"subIssues(first: 0)"`
+				}
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+			} `graphql:"issues(first: 100, states: $states, labels: $labels)"`
+		} `graphql:"repository(owner: $owner, name: $repo)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner":  graphql.String(owner),
+		"repo":   graphql.String(repo),
+		"labels": gqlLabels,
+		"states": []IssueState{IssueStateOpen},
+	}
+
+	err := c.gql.Query("GetIssuesByLabels", &query, variables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get issues with labels %v from %s/%s: %w", labels, owner, repo, err)
+	}
+
+	var issues []Issue
+	for _, node := range query.Repository.Issues.Nodes {
+		var issueLabels []Label
+		for _, l := range node.Labels.Nodes {
+			issueLabels = append(issueLabels, Label{Name: l.Name})
+		}
+		issues = append(issues, Issue{
+			ID:     node.ID,
+			Number: node.Number,
+			Title:  node.Title,
+			State:  node.State,
+			URL:    node.URL,
+			Labels: issueLabels,
+			Repository: Repository{
+				Owner: owner,
+				Name:  repo,
+			},
+			SubIssueCount: node.SubIssues.TotalCount,
+		})
+	}
+
+	return issues, nil
+}
+
 // getIssuesByLabelPaginated fetches all issues with a specific label using cursor-based pagination
 func (c *Client) getIssuesByLabelPaginated(owner, repo, label string, states []IssueState) ([]Issue, error) {
 	if c.gql == nil {

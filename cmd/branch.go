@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -104,6 +105,8 @@ type branchClient interface {
 	CreateIssue(owner, repo, title, body string, labels []string) (*api.Issue, error)
 	// GetOpenIssuesByLabel returns open issues with a specific label
 	GetOpenIssuesByLabel(owner, repo, label string) ([]api.Issue, error)
+	// GetOpenIssuesByLabels returns open issues matching ALL specified labels
+	GetOpenIssuesByLabels(owner, repo string, labels []string) ([]api.Issue, error)
 	// GetClosedIssuesByLabel returns closed issues with a specific label
 	GetClosedIssuesByLabel(owner, repo, label string) ([]api.Issue, error)
 	// AddIssueToProject adds an issue to a project and returns the item ID
@@ -126,6 +129,8 @@ type branchClient interface {
 	GetProjectItemsByIssues(projectID string, refs []api.IssueRef) ([]api.ProjectItem, error)
 	// UpdateIssueBody updates an issue's body
 	UpdateIssueBody(issueID, body string) error
+	// GetSubIssues returns sub-issues for a given issue
+	GetSubIssues(owner, repo string, number int) ([]api.SubIssue, error)
 	// WriteFile writes content to a file path
 	WriteFile(path, content string) error
 	// MkdirAll creates a directory and all parents
@@ -163,7 +168,8 @@ type branchRemoveOptions struct {
 
 // branchCurrentOptions holds the options for the branch current command
 type branchCurrentOptions struct {
-	refresh bool
+	jsonFlag string // empty=text output, "*"=full JSON, "field,field"=selected fields
+	jsonSet  bool   // whether --json flag was provided (even without value)
 }
 
 // branchCloseOptions holds the options for the branch close command
@@ -316,11 +322,18 @@ func newBranchCurrentCommand() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 			client := api.NewClient()
+			// Detect if --json was explicitly provided (even without a value)
+			if cmd.Flags().Changed("json") {
+				opts.jsonSet = true
+				if opts.jsonFlag == "" {
+					opts.jsonFlag = "*"
+				}
+			}
 			return runBranchCurrentWithDeps(cmd, opts, cfg, client)
 		},
 	}
 
-	cmd.Flags().BoolVar(&opts.refresh, "refresh", false, "Update tracker issue body with current issue list")
+	cmd.Flags().StringVar(&opts.jsonFlag, "json", "", "Output as JSON. Optional field selection: --json=tracker,issues")
 
 	return cmd
 }
@@ -687,6 +700,13 @@ func runBranchRemoveWithDeps(cmd *cobra.Command, opts *branchRemoveOptions, cfg 
 	return nil
 }
 
+// branchCurrentIssueJSON represents a sub-issue in the JSON output
+type branchCurrentIssueJSON struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+}
+
 // runBranchCurrentWithDeps is the testable entry point for release current
 // It receives all dependencies as parameters for easy mocking in tests
 func runBranchCurrentWithDeps(cmd *cobra.Command, opts *branchCurrentOptions, cfg *config.Config, client branchClient) error {
@@ -695,14 +715,25 @@ func runBranchCurrentWithDeps(cmd *cobra.Command, opts *branchCurrentOptions, cf
 		return err
 	}
 
-	// Get open release issues
-	issues, err := client.GetOpenIssuesByLabel(owner, repo, "branch")
+	// Fast path: try active+branch label query (O(1) lookup)
+	var activeRelease *api.Issue
+	issues, err := client.GetOpenIssuesByLabels(owner, repo, []string{"active", "branch"})
 	if err != nil {
-		return fmt.Errorf("failed to get release issues: %w", err)
+		return fmt.Errorf("failed to get branch issues: %w", err)
+	}
+	if len(issues) > 0 {
+		activeRelease = &issues[0]
 	}
 
-	// Find active release tracker
-	activeRelease := findActiveBranch(issues)
+	// Fallback: scan all branch-labeled issues by title pattern
+	if activeRelease == nil {
+		fallbackIssues, err := client.GetOpenIssuesByLabel(owner, repo, "branch")
+		if err != nil {
+			return fmt.Errorf("failed to get release issues: %w", err)
+		}
+		activeRelease = findActiveBranch(fallbackIssues)
+	}
+
 	if activeRelease == nil {
 		fmt.Fprintf(cmd.OutOrStdout(), "No active release\n")
 		return nil
@@ -710,79 +741,80 @@ func runBranchCurrentWithDeps(cmd *cobra.Command, opts *branchCurrentOptions, cf
 
 	// Extract version from title
 	releaseVersion := extractBranchVersion(activeRelease.Title)
+	issueCount := activeRelease.SubIssueCount
 
-	// Get project to query items
-	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
+	// JSON output mode
+	if opts.jsonSet {
+		return branchCurrentOutputJSON(cmd, opts, owner, repo, activeRelease, releaseVersion, issueCount, client)
 	}
 
-	// OPTIMIZATION: Two-phase query to avoid fetching full issue details for non-matching items
-	// Phase 1: Get minimal data (issue ID, number, state, field values) for filtering
-	repoFilter := fmt.Sprintf("%s/%s", owner, repo)
-	filter := &api.ProjectItemsFilter{Repository: repoFilter}
-	minimalItems, err := client.GetProjectItemsMinimal(project.ID, filter)
-	if err != nil {
-		return fmt.Errorf("failed to get project items: %w", err)
-	}
-
-	// Filter items by Branch field matching releaseVersion
-	// Check both "Branch" (new) and "Release" (legacy) field names
-	var matchingRefs []api.IssueRef
-	for _, item := range minimalItems {
-		// Check if this item has a Branch/Release field matching the target version
-		for _, fv := range item.FieldValues {
-			if (fv.Field == BranchFieldName || fv.Field == LegacyReleaseFieldName) && fv.Value == releaseVersion {
-				// Parse repository from item
-				parts := strings.SplitN(item.Repository, "/", 2)
-				if len(parts) == 2 {
-					matchingRefs = append(matchingRefs, api.IssueRef{
-						Owner:  parts[0],
-						Repo:   parts[1],
-						Number: item.IssueNumber,
-					})
-				}
-				break
-			}
-		}
-	}
-
-	// Display branch details (AC-036-1)
+	// Default text output (unchanged format)
 	fmt.Fprintf(cmd.OutOrStdout(), "Current Branch: %s\n", releaseVersion)
 	fmt.Fprintf(cmd.OutOrStdout(), "Tracker: #%d\n", activeRelease.Number)
-	fmt.Fprintf(cmd.OutOrStdout(), "Issues: %d\n", len(matchingRefs))
+	fmt.Fprintf(cmd.OutOrStdout(), "Issues: %d\n", issueCount)
 
-	// If refresh flag is set, update tracker issue body (AC-036-3)
-	// Phase 2: Only fetch full details when we need titles for the tracker body
-	if opts.refresh && len(matchingRefs) > 0 {
-		fullItems, err := client.GetProjectItemsByIssues(project.ID, matchingRefs)
-		if err != nil {
-			return fmt.Errorf("failed to get issue details: %w", err)
-		}
+	return nil
+}
 
-		var releaseIssues []api.Issue
-		for _, item := range fullItems {
-			if item.Issue != nil {
-				releaseIssues = append(releaseIssues, *item.Issue)
+// branchCurrentOutputJSON handles --json output for branch current
+func branchCurrentOutputJSON(cmd *cobra.Command, opts *branchCurrentOptions, owner, repo string, tracker *api.Issue, branchName string, issueCount int, client branchClient) error {
+	fields := opts.jsonFlag
+	wantAll := fields == "*"
+
+	// Parse requested fields
+	wantName := wantAll
+	wantTracker := wantAll
+	wantIssues := wantAll
+	if !wantAll {
+		for _, f := range strings.Split(fields, ",") {
+			switch strings.TrimSpace(f) {
+			case "name":
+				wantName = true
+			case "tracker":
+				wantTracker = true
+			case "issues":
+				wantIssues = true
 			}
 		}
-
-		body := generateBranchTrackerBody(releaseIssues)
-		err = client.UpdateIssueBody(activeRelease.ID, body)
-		if err != nil {
-			return fmt.Errorf("failed to update tracker body: %w", err)
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Tracker body updated\n")
-	} else if opts.refresh && len(matchingRefs) == 0 {
-		// No matching issues, update with empty list
-		body := generateBranchTrackerBody(nil)
-		err = client.UpdateIssueBody(activeRelease.ID, body)
-		if err != nil {
-			return fmt.Errorf("failed to update tracker body: %w", err)
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Tracker body updated\n")
 	}
 
+	// Build output using a map for field selection
+	output := make(map[string]interface{})
+	if wantName {
+		output["name"] = branchName
+	}
+	if wantTracker {
+		output["tracker"] = tracker.Number
+	}
+	if wantIssues {
+		// Fetch sub-issues for detailed issue list
+		subIssues, err := client.GetSubIssues(owner, repo, tracker.Number)
+		if err != nil {
+			return fmt.Errorf("failed to get sub-issues: %w", err)
+		}
+		var issueList []branchCurrentIssueJSON
+		for _, si := range subIssues {
+			state := "open"
+			if si.State == "CLOSED" || si.State == "closed" {
+				state = "done"
+			}
+			issueList = append(issueList, branchCurrentIssueJSON{
+				Number: si.Number,
+				Title:  si.Title,
+				State:  state,
+			})
+		}
+		if issueList == nil {
+			issueList = []branchCurrentIssueJSON{}
+		}
+		output["issues"] = issueList
+	}
+
+	data, err := json.Marshal(output)
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), string(data))
 	return nil
 }
 

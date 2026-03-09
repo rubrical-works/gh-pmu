@@ -49,17 +49,18 @@ type FieldOption struct {
 
 // Issue represents a GitHub issue
 type Issue struct {
-	ID         string
-	Number     int
-	Title      string
-	Body       string
-	State      string
-	URL        string
-	Repository Repository
-	Author     Actor
-	Assignees  []Actor
-	Labels     []Label
-	Milestone  *Milestone
+	ID            string
+	Number        int
+	Title         string
+	Body          string
+	State         string
+	URL           string
+	Repository    Repository
+	Author        Actor
+	Assignees     []Actor
+	Labels        []Label
+	Milestone     *Milestone
+	SubIssueCount int
 }
 
 // Repository represents a GitHub repository

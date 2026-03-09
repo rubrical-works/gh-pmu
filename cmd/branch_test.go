@@ -50,6 +50,7 @@ type mockBranchClient struct {
 	// Return values
 	createdIssue           *api.Issue
 	openIssues             []api.Issue
+	openIssuesByLabels     []api.Issue // For GetOpenIssuesByLabels
 	closedIssues           []api.Issue
 	project                *api.Project
 	addedItemID            string
@@ -61,6 +62,7 @@ type mockBranchClient struct {
 	projectItems           []api.ProjectItem
 	minimalProjectItems    []api.MinimalProjectItem // For GetProjectItemsMinimal
 	projectItemsByIssues   []api.ProjectItem        // For GetProjectItemsByIssues
+	subIssues              []api.SubIssue            // For GetSubIssues
 
 	// Captured calls for verification
 	createIssueCalls             []createIssueCall
@@ -74,12 +76,15 @@ type mockBranchClient struct {
 	getProjectItemsCalls         []getProjectItemsCall
 	getProjectItemsMinimalCalls  []getProjectItemsCall
 	getProjectItemsByIssuesCalls []getProjectItemsByIssuesCall
+	getOpenIssuesByLabelsCalls   []getOpenIssuesByLabelsCall
+	getSubIssuesCalls            []getSubIssuesCall
 	addLabelCalls                []branchLabelCall
 	removeLabelCalls             []branchLabelCall
 
 	// Error injection
 	createIssueErr             error
 	getOpenIssuesErr           error
+	getOpenIssuesByLabelsErr   error
 	getClosedIssuesErr         error
 	addToProjectErr            error
 	setFieldErr                error
@@ -91,6 +96,7 @@ type mockBranchClient struct {
 	getProjectItemsErr         error
 	getProjectItemsMinimalErr  error
 	getProjectItemsByIssuesErr error
+	getSubIssuesErr            error
 	addLabelErr                error
 	removeLabelErr             error
 }
@@ -156,6 +162,18 @@ type getProjectItemsByIssuesCall struct {
 	refs      []api.IssueRef
 }
 
+type getOpenIssuesByLabelsCall struct {
+	owner  string
+	repo   string
+	labels []string
+}
+
+type getSubIssuesCall struct {
+	owner  string
+	repo   string
+	number int
+}
+
 func (m *mockBranchClient) CreateIssue(owner, repo, title, body string, labels []string) (*api.Issue, error) {
 	m.createIssueCalls = append(m.createIssueCalls, createIssueCall{
 		owner:  owner,
@@ -175,6 +193,30 @@ func (m *mockBranchClient) GetOpenIssuesByLabel(owner, repo, label string) ([]ap
 		return nil, m.getOpenIssuesErr
 	}
 	return m.openIssues, nil
+}
+
+func (m *mockBranchClient) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]api.Issue, error) {
+	m.getOpenIssuesByLabelsCalls = append(m.getOpenIssuesByLabelsCalls, getOpenIssuesByLabelsCall{
+		owner:  owner,
+		repo:   repo,
+		labels: labels,
+	})
+	if m.getOpenIssuesByLabelsErr != nil {
+		return nil, m.getOpenIssuesByLabelsErr
+	}
+	return m.openIssuesByLabels, nil
+}
+
+func (m *mockBranchClient) GetSubIssues(owner, repo string, number int) ([]api.SubIssue, error) {
+	m.getSubIssuesCalls = append(m.getSubIssuesCalls, getSubIssuesCall{
+		owner:  owner,
+		repo:   repo,
+		number: number,
+	})
+	if m.getSubIssuesErr != nil {
+		return nil, m.getSubIssuesErr
+	}
+	return m.subIssues, nil
 }
 
 func (m *mockBranchClient) GetClosedIssuesByLabel(owner, repo, label string) ([]api.Issue, error) {
@@ -984,40 +1026,17 @@ func TestRunBranchRemoveWithDeps_WarnsIfNotAssigned(t *testing.T) {
 // REQ-036: View Current Release
 // =============================================================================
 
-// AC-036-1: Given active release, When running `release current`, Then displays details
+// AC-036-1: Given active release via active label, Then displays details (1 API call)
 func TestRunBranchCurrentWithDeps_DisplaysActiveDetails(t *testing.T) {
 	// ARRANGE
 	mock := setupMockForBranch()
-	mock.openIssues = []api.Issue{
+	mock.openIssuesByLabels = []api.Issue{
 		{
-			ID:     "TRACKER_123",
-			Number: 100,
-			Title:  "Branch: v1.2.0 (Phoenix)",
-			State:  "OPEN",
-		},
-	}
-	// Using projectItems with Release field - must include Repository for filter matching
-	mock.projectItems = []api.ProjectItem{
-		{
-			ID:    "ITEM_1",
-			Issue: &api.Issue{ID: "ISSUE_1", Number: 41, Title: "Fix bug A", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
-			FieldValues: []api.FieldValue{
-				{Field: "Release", Value: "v1.2.0"},
-			},
-		},
-		{
-			ID:    "ITEM_2",
-			Issue: &api.Issue{ID: "ISSUE_2", Number: 42, Title: "Fix bug B", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
-			FieldValues: []api.FieldValue{
-				{Field: "Release", Value: "v1.2.0"},
-			},
-		},
-		{
-			ID:    "ITEM_3",
-			Issue: &api.Issue{ID: "ISSUE_3", Number: 43, Title: "Add feature C", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
-			FieldValues: []api.FieldValue{
-				{Field: "Release", Value: "v1.2.0"},
-			},
+			ID:            "TRACKER_123",
+			Number:        100,
+			Title:         "Branch: v1.2.0 (Phoenix)",
+			State:         "OPEN",
+			SubIssueCount: 3,
 		},
 	}
 
@@ -1040,8 +1059,16 @@ func TestRunBranchCurrentWithDeps_DisplaysActiveDetails(t *testing.T) {
 	if !strings.Contains(output, "#100") {
 		t.Errorf("Expected output to contain tracker issue '#100', got '%s'", output)
 	}
-	if !strings.Contains(output, "3") {
-		t.Errorf("Expected output to contain issue count '3', got '%s'", output)
+	if !strings.Contains(output, "Issues: 3") {
+		t.Errorf("Expected output to contain 'Issues: 3', got '%s'", output)
+	}
+
+	// Verify only 1 API call was made (GetOpenIssuesByLabels, no GetProject/GetProjectItemsMinimal)
+	if len(mock.getOpenIssuesByLabelsCalls) != 1 {
+		t.Errorf("Expected 1 GetOpenIssuesByLabels call, got %d", len(mock.getOpenIssuesByLabelsCalls))
+	}
+	if len(mock.getProjectItemsMinimalCalls) != 0 {
+		t.Errorf("Expected 0 GetProjectItemsMinimal calls, got %d", len(mock.getProjectItemsMinimalCalls))
 	}
 }
 
@@ -1049,7 +1076,8 @@ func TestRunBranchCurrentWithDeps_DisplaysActiveDetails(t *testing.T) {
 func TestRunBranchCurrentWithDeps_NoActiveRelease(t *testing.T) {
 	// ARRANGE
 	mock := setupMockForBranch()
-	mock.openIssues = []api.Issue{} // No active release
+	mock.openIssuesByLabels = nil // No active+branch match
+	mock.openIssues = []api.Issue{}  // No branch-only match either
 
 	cfg := testBranchConfig()
 	cmd, buf := newTestBranchCmd()
@@ -1070,140 +1098,17 @@ func TestRunBranchCurrentWithDeps_NoActiveRelease(t *testing.T) {
 	}
 }
 
-// AC-036-3: Given `--refresh` flag, Then tracker issue body updated
-func TestRunBranchCurrentWithDeps_RefreshUpdatesTrackerBody(t *testing.T) {
+// AC: findActiveBranch prefers active+branch label query, falls back to title scan
+func TestRunBranchCurrentWithDeps_ActiveLabelLookup(t *testing.T) {
 	// ARRANGE
 	mock := setupMockForBranch()
-	mock.openIssues = []api.Issue{
+	mock.openIssuesByLabels = []api.Issue{
 		{
-			ID:     "TRACKER_123",
-			Number: 100,
-			Title:  "Branch: v1.2.0",
-			State:  "OPEN",
-		},
-	}
-	// Using projectItems with Release field - must include Repository for filter matching
-	mock.projectItems = []api.ProjectItem{
-		{
-			ID:    "ITEM_1",
-			Issue: &api.Issue{ID: "ISSUE_1", Number: 41, Title: "Fix bug A", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
-			FieldValues: []api.FieldValue{
-				{Field: "Release", Value: "v1.2.0"},
-			},
-		},
-		{
-			ID:    "ITEM_2",
-			Issue: &api.Issue{ID: "ISSUE_2", Number: 42, Title: "Fix bug B", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
-			FieldValues: []api.FieldValue{
-				{Field: "Release", Value: "v1.2.0"},
-			},
-		},
-	}
-
-	cfg := testBranchConfig()
-	cmd, _ := newTestBranchCmd()
-	opts := &branchCurrentOptions{
-		refresh: true,
-	}
-
-	// ACT
-	err := runBranchCurrentWithDeps(cmd, opts, cfg, mock)
-
-	// ASSERT
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	if len(mock.updateIssueBodyCalls) != 1 {
-		t.Fatalf("Expected 1 UpdateIssueBody call for refresh, got %d", len(mock.updateIssueBodyCalls))
-	}
-
-	call := mock.updateIssueBodyCalls[0]
-	if call.issueID != "TRACKER_123" {
-		t.Errorf("Expected UpdateIssueBody on TRACKER_123, got %s", call.issueID)
-	}
-	if !strings.Contains(call.body, "#41") || !strings.Contains(call.body, "#42") {
-		t.Errorf("Expected body to contain issue references, got '%s'", call.body)
-	}
-}
-
-func TestRunBranchCurrentWithDeps_GetProjectError(t *testing.T) {
-	// ARRANGE
-	mock := setupMockForBranch()
-	mock.openIssues = []api.Issue{
-		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
-	}
-	mock.getProjectErr = errors.New("failed to get project")
-
-	cfg := testBranchConfig()
-	cmd, _ := newTestBranchCmd()
-	opts := &branchCurrentOptions{}
-
-	// ACT
-	err := runBranchCurrentWithDeps(cmd, opts, cfg, mock)
-
-	// ASSERT
-	if err == nil {
-		t.Fatal("Expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to get project") {
-		t.Errorf("Expected error to contain 'failed to get project', got: %v", err)
-	}
-}
-
-func TestRunBranchCurrentWithDeps_GetProjectItemsError(t *testing.T) {
-	// ARRANGE
-	mock := setupMockForBranch()
-	mock.openIssues = []api.Issue{
-		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
-	}
-	// Use the minimal API error since the implementation now uses GetProjectItemsMinimal
-	mock.getProjectItemsMinimalErr = errors.New("failed to get project items")
-
-	cfg := testBranchConfig()
-	cmd, _ := newTestBranchCmd()
-	opts := &branchCurrentOptions{}
-
-	// ACT
-	err := runBranchCurrentWithDeps(cmd, opts, cfg, mock)
-
-	// ASSERT
-	if err == nil {
-		t.Fatal("Expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to get project items") {
-		t.Errorf("Expected error to contain 'failed to get project items', got: %v", err)
-	}
-}
-
-func TestRunBranchCurrentWithDeps_SkipsNilIssues(t *testing.T) {
-	// ARRANGE
-	mock := setupMockForBranch()
-	mock.openIssues = []api.Issue{
-		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
-	}
-	// Items with nil Issue should be skipped - must include Repository for filter matching
-	mock.projectItems = []api.ProjectItem{
-		{
-			ID:    "ITEM_1",
-			Issue: &api.Issue{ID: "ISSUE_1", Number: 41, Title: "Fix bug A", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
-			FieldValues: []api.FieldValue{
-				{Field: "Release", Value: "v1.2.0"},
-			},
-		},
-		{
-			ID:    "ITEM_2",
-			Issue: nil, // nil Issue should be skipped
-			FieldValues: []api.FieldValue{
-				{Field: "Release", Value: "v1.2.0"},
-			},
-		},
-		{
-			ID:    "ITEM_3",
-			Issue: &api.Issue{ID: "ISSUE_3", Number: 43, Title: "Fix bug C", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
-			FieldValues: []api.FieldValue{
-				{Field: "Release", Value: "v1.2.0"},
-			},
+			ID:            "TRACKER_ACTIVE",
+			Number:        200,
+			Title:         "Branch: v2.0.0",
+			State:         "OPEN",
+			SubIssueCount: 5,
 		},
 	}
 
@@ -1218,31 +1123,45 @@ func TestRunBranchCurrentWithDeps_SkipsNilIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
+
 	output := buf.String()
-	if !strings.Contains(output, "Issues: 2") {
-		t.Errorf("Expected output to contain 'Issues: 2', got: %s", output)
+	if !strings.Contains(output, "v2.0.0") {
+		t.Errorf("Expected output to contain 'v2.0.0', got '%s'", output)
+	}
+
+	// Should use active+branch labels
+	if len(mock.getOpenIssuesByLabelsCalls) != 1 {
+		t.Fatalf("Expected 1 GetOpenIssuesByLabels call, got %d", len(mock.getOpenIssuesByLabelsCalls))
+	}
+	call := mock.getOpenIssuesByLabelsCalls[0]
+	if len(call.labels) != 2 || call.labels[0] != "active" || call.labels[1] != "branch" {
+		t.Errorf("Expected labels [active, branch], got %v", call.labels)
 	}
 }
 
-// Test that branch current uses repository-scoped queries (optimization)
-func TestRunBranchCurrentWithDeps_UsesRepositoryFilter(t *testing.T) {
+// AC: Falls back to title scan when no active label found
+func TestRunBranchCurrentWithDeps_FallbackToTitleScan(t *testing.T) {
 	// ARRANGE
 	mock := setupMockForBranch()
+	mock.openIssuesByLabels = nil // No active+branch match
 	mock.openIssues = []api.Issue{
-		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
-	}
-	mock.projectItems = []api.ProjectItem{
 		{
-			ID:    "ITEM_1",
-			Issue: &api.Issue{ID: "ISSUE_1", Number: 41, Title: "Fix bug A", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
-			FieldValues: []api.FieldValue{
-				{Field: "Release", Value: "v1.2.0"},
-			},
+			ID:            "TRACKER_123",
+			Number:        100,
+			Title:         "Branch: v1.2.0",
+			State:         "OPEN",
+			SubIssueCount: 2,
+		},
+		{
+			ID:     "OTHER_ISSUE",
+			Number: 101,
+			Title:  "Some other issue",
+			State:  "OPEN",
 		},
 	}
 
 	cfg := testBranchConfig()
-	cmd, _ := newTestBranchCmd()
+	cmd, buf := newTestBranchCmd()
 	opts := &branchCurrentOptions{}
 
 	// ACT
@@ -1253,18 +1172,253 @@ func TestRunBranchCurrentWithDeps_UsesRepositoryFilter(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	// Verify GetProjectItemsMinimal was called with repository filter (optimized API path)
-	if len(mock.getProjectItemsMinimalCalls) != 1 {
-		t.Fatalf("Expected 1 GetProjectItemsMinimal call, got %d", len(mock.getProjectItemsMinimalCalls))
+	output := buf.String()
+	if !strings.Contains(output, "v1.2.0") {
+		t.Errorf("Expected output to contain 'v1.2.0', got '%s'", output)
+	}
+	if !strings.Contains(output, "#100") {
+		t.Errorf("Expected output to contain '#100', got '%s'", output)
+	}
+}
+
+// AC: --json outputs full JSON object
+func TestRunBranchCurrentWithDeps_JSONFullOutput(t *testing.T) {
+	// ARRANGE
+	mock := setupMockForBranch()
+	mock.openIssuesByLabels = []api.Issue{
+		{
+			ID:            "TRACKER_123",
+			Number:        100,
+			Title:         "Branch: v1.2.0",
+			State:         "OPEN",
+			SubIssueCount: 2,
+		},
+	}
+	mock.subIssues = []api.SubIssue{
+		{Number: 41, Title: "Fix bug A", State: "CLOSED"},
+		{Number: 42, Title: "Fix bug B", State: "OPEN"},
 	}
 
-	call := mock.getProjectItemsMinimalCalls[0]
-	if call.filter == nil {
-		t.Fatal("Expected GetProjectItemsMinimal to be called with a filter, got nil")
+	cfg := testBranchConfig()
+	cmd, buf := newTestBranchCmd()
+	opts := &branchCurrentOptions{jsonFlag: "*", jsonSet: true}
+
+	// ACT
+	err := runBranchCurrentWithDeps(cmd, opts, cfg, mock)
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
 	}
-	expectedRepo := "testowner/testrepo"
-	if call.filter.Repository != expectedRepo {
-		t.Errorf("Expected filter.Repository to be %q, got %q", expectedRepo, call.filter.Repository)
+
+	output := buf.String()
+	// Should contain JSON with all fields
+	if !strings.Contains(output, `"name":"v1.2.0"`) {
+		t.Errorf("Expected JSON to contain name, got '%s'", output)
+	}
+	if !strings.Contains(output, `"tracker":100`) {
+		t.Errorf("Expected JSON to contain tracker, got '%s'", output)
+	}
+	if !strings.Contains(output, `"number":41`) {
+		t.Errorf("Expected JSON to contain issue 41, got '%s'", output)
+	}
+	if !strings.Contains(output, `"state":"done"`) {
+		t.Errorf("Expected JSON to contain state 'done' for closed issue, got '%s'", output)
+	}
+	if !strings.Contains(output, `"state":"open"`) {
+		t.Errorf("Expected JSON to contain state 'open' for open issue, got '%s'", output)
+	}
+}
+
+// AC: --json=<fields> selects specific fields
+func TestRunBranchCurrentWithDeps_JSONFieldSelection(t *testing.T) {
+	// ARRANGE
+	mock := setupMockForBranch()
+	mock.openIssuesByLabels = []api.Issue{
+		{
+			ID:            "TRACKER_123",
+			Number:        730,
+			Title:         "Branch: pmu/next-version",
+			State:         "OPEN",
+			SubIssueCount: 4,
+		},
+	}
+
+	cfg := testBranchConfig()
+	cmd, buf := newTestBranchCmd()
+	opts := &branchCurrentOptions{jsonFlag: "tracker", jsonSet: true}
+
+	// ACT
+	err := runBranchCurrentWithDeps(cmd, opts, cfg, mock)
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := strings.TrimSpace(buf.String())
+	if output != `{"tracker":730}` {
+		t.Errorf("Expected JSON '{\"tracker\":730}', got '%s'", output)
+	}
+}
+
+// AC: --json=tracker,issues returns both tracker and issues
+func TestRunBranchCurrentWithDeps_JSONMultipleFields(t *testing.T) {
+	// ARRANGE
+	mock := setupMockForBranch()
+	mock.openIssuesByLabels = []api.Issue{
+		{
+			ID:            "TRACKER_123",
+			Number:        730,
+			Title:         "Branch: pmu/next-version",
+			State:         "OPEN",
+			SubIssueCount: 1,
+		},
+	}
+	mock.subIssues = []api.SubIssue{
+		{Number: 698, Title: "Praxis rebrand", State: "CLOSED"},
+	}
+
+	cfg := testBranchConfig()
+	cmd, buf := newTestBranchCmd()
+	opts := &branchCurrentOptions{jsonFlag: "tracker,issues", jsonSet: true}
+
+	// ACT
+	err := runBranchCurrentWithDeps(cmd, opts, cfg, mock)
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := strings.TrimSpace(buf.String())
+	if !strings.Contains(output, `"tracker":730`) {
+		t.Errorf("Expected JSON to contain tracker, got '%s'", output)
+	}
+	if !strings.Contains(output, `"number":698`) {
+		t.Errorf("Expected JSON to contain issue 698, got '%s'", output)
+	}
+	if !strings.Contains(output, `"state":"done"`) {
+		t.Errorf("Expected closed issue state to be 'done', got '%s'", output)
+	}
+	// Should NOT contain name field (not requested)
+	if strings.Contains(output, `"name"`) {
+		t.Errorf("Expected JSON to NOT contain 'name' field, got '%s'", output)
+	}
+}
+
+// AC: issues array contains sub-issues with number, title, state (open/done)
+func TestRunBranchCurrentWithDeps_JSONIssuesStateMapping(t *testing.T) {
+	// ARRANGE
+	mock := setupMockForBranch()
+	mock.openIssuesByLabels = []api.Issue{
+		{
+			ID:            "TRACKER_123",
+			Number:        100,
+			Title:         "Branch: v1.0.0",
+			State:         "OPEN",
+			SubIssueCount: 2,
+		},
+	}
+	mock.subIssues = []api.SubIssue{
+		{Number: 10, Title: "Open issue", State: "OPEN"},
+		{Number: 11, Title: "Closed issue", State: "CLOSED"},
+	}
+
+	cfg := testBranchConfig()
+	cmd, buf := newTestBranchCmd()
+	opts := &branchCurrentOptions{jsonFlag: "issues", jsonSet: true}
+
+	// ACT
+	err := runBranchCurrentWithDeps(cmd, opts, cfg, mock)
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := strings.TrimSpace(buf.String())
+	// OPEN maps to "open", CLOSED maps to "done"
+	if !strings.Contains(output, `"state":"open"`) {
+		t.Errorf("Expected 'open' state, got '%s'", output)
+	}
+	if !strings.Contains(output, `"state":"done"`) {
+		t.Errorf("Expected 'done' state, got '%s'", output)
+	}
+}
+
+// AC: --refresh removal doesn't break existing callers (no --refresh flag exists)
+func TestRunBranchCurrentWithDeps_NoRefreshFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	currentCmd, _, err := cmd.Find([]string{"branch", "current"})
+	if err != nil {
+		t.Fatalf("branch current command not found: %v", err)
+	}
+
+	flag := currentCmd.Flags().Lookup("refresh")
+	if flag != nil {
+		t.Fatal("Expected --refresh flag to NOT exist (removed)")
+	}
+}
+
+// AC: No behavioral change for default text output (same format without --json)
+func TestRunBranchCurrentWithDeps_DefaultTextOutput(t *testing.T) {
+	// ARRANGE
+	mock := setupMockForBranch()
+	mock.openIssuesByLabels = []api.Issue{
+		{
+			ID:            "TRACKER_123",
+			Number:        100,
+			Title:         "Branch: v1.2.0",
+			State:         "OPEN",
+			SubIssueCount: 3,
+		},
+	}
+
+	cfg := testBranchConfig()
+	cmd, buf := newTestBranchCmd()
+	opts := &branchCurrentOptions{}
+
+	// ACT
+	err := runBranchCurrentWithDeps(cmd, opts, cfg, mock)
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := buf.String()
+	// Verify exact format matches original
+	if !strings.Contains(output, "Current Branch: v1.2.0") {
+		t.Errorf("Expected 'Current Branch: v1.2.0', got '%s'", output)
+	}
+	if !strings.Contains(output, "Tracker: #100") {
+		t.Errorf("Expected 'Tracker: #100', got '%s'", output)
+	}
+	if !strings.Contains(output, "Issues: 3") {
+		t.Errorf("Expected 'Issues: 3', got '%s'", output)
+	}
+}
+
+// AC: GetOpenIssuesByLabels error propagates
+func TestRunBranchCurrentWithDeps_GetIssuesByLabelsError(t *testing.T) {
+	// ARRANGE
+	mock := setupMockForBranch()
+	mock.getOpenIssuesByLabelsErr = errors.New("API error")
+
+	cfg := testBranchConfig()
+	cmd, _ := newTestBranchCmd()
+	opts := &branchCurrentOptions{}
+
+	// ACT
+	err := runBranchCurrentWithDeps(cmd, opts, cfg, mock)
+
+	// ASSERT
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to get branch issues") {
+		t.Errorf("Expected error to contain 'failed to get branch issues', got: %v", err)
 	}
 }
 
@@ -2027,16 +2181,16 @@ func TestBranchCloseCommand_Flags(t *testing.T) {
 	}
 }
 
-func TestBranchCurrentCommand_HasRefreshFlag(t *testing.T) {
+func TestBranchCurrentCommand_HasJsonFlag(t *testing.T) {
 	cmd := NewRootCommand()
 	currentCmd, _, err := cmd.Find([]string{"branch", "current"})
 	if err != nil {
 		t.Fatalf("branch current command not found: %v", err)
 	}
 
-	flag := currentCmd.Flags().Lookup("refresh")
+	flag := currentCmd.Flags().Lookup("json")
 	if flag == nil {
-		t.Fatal("Expected --refresh flag to exist")
+		t.Fatal("Expected --json flag to exist")
 	}
 }
 
@@ -2985,22 +3139,17 @@ func generateBenchmarkProjectItems(n int, targetRelease string) []api.ProjectIte
 	return items
 }
 
-// BenchmarkBranchCurrent_Optimized benchmarks the branch current command
-// with repository-scoped filtering (current optimized implementation).
-// This simulates fetching only items from the configured repository.
-func BenchmarkBranchCurrent_Optimized(b *testing.B) {
-	// Simulate optimized case: only 100 items from target repo (filtered server-side)
-	itemCount := 100
+// BenchmarkBranchCurrent_ActiveLabel benchmarks the fast path (active+branch label lookup)
+func BenchmarkBranchCurrent_ActiveLabel(b *testing.B) {
 	mock := &mockBranchClient{
-		openIssues: []api.Issue{
-			{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
+		openIssuesByLabels: []api.Issue{
+			{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN", SubIssueCount: 50},
 		},
 		project: &api.Project{
 			ID:     "PROJECT_1",
 			Number: 1,
 			Title:  "Test Project",
 		},
-		projectItems: generateBenchmarkProjectItems(itemCount, "v1.2.0"),
 	}
 
 	cfg := testBranchConfig()
@@ -3009,30 +3158,23 @@ func BenchmarkBranchCurrent_Optimized(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		// Clear call tracking between runs
-		mock.getProjectItemsCalls = nil
+		mock.getOpenIssuesByLabelsCalls = nil
 		_ = runBranchCurrentWithDeps(cmd, opts, cfg, mock)
 	}
-
-	b.ReportMetric(float64(itemCount), "items_processed")
 }
 
-// BenchmarkBranchCurrent_FullFetch benchmarks the branch current command
-// simulating the old unoptimized behavior where ALL project items are fetched
-// regardless of repository, then filtered client-side.
-func BenchmarkBranchCurrent_FullFetch(b *testing.B) {
-	// Simulate unoptimized case: 500 items from all repos (no server-side filtering)
-	itemCount := 500
+// BenchmarkBranchCurrent_Fallback benchmarks the fallback path (title scan)
+func BenchmarkBranchCurrent_Fallback(b *testing.B) {
 	mock := &mockBranchClient{
+		openIssuesByLabels: nil, // No active label match
 		openIssues: []api.Issue{
-			{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
+			{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN", SubIssueCount: 50},
 		},
 		project: &api.Project{
 			ID:     "PROJECT_1",
 			Number: 1,
 			Title:  "Test Project",
 		},
-		projectItems: generateBenchmarkProjectItems(itemCount, "v1.2.0"),
 	}
 
 	cfg := testBranchConfig()
@@ -3041,41 +3183,9 @@ func BenchmarkBranchCurrent_FullFetch(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		mock.getProjectItemsCalls = nil
+		mock.getOpenIssuesByLabelsCalls = nil
 		_ = runBranchCurrentWithDeps(cmd, opts, cfg, mock)
 	}
-
-	b.ReportMetric(float64(itemCount), "items_processed")
-}
-
-// BenchmarkBranchCurrent_LargeProject benchmarks with a large project (2000 items)
-// to demonstrate scaling behavior with repository filtering.
-func BenchmarkBranchCurrent_LargeProject(b *testing.B) {
-	// Large project: 2000 items total, but only ~400 from target repo after filtering
-	itemCount := 400 // Simulates filtered result
-	mock := &mockBranchClient{
-		openIssues: []api.Issue{
-			{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
-		},
-		project: &api.Project{
-			ID:     "PROJECT_1",
-			Number: 1,
-			Title:  "Test Project",
-		},
-		projectItems: generateBenchmarkProjectItems(itemCount, "v1.2.0"),
-	}
-
-	cfg := testBranchConfig()
-	cmd, _ := newTestBranchCmd()
-	opts := &branchCurrentOptions{}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		mock.getProjectItemsCalls = nil
-		_ = runBranchCurrentWithDeps(cmd, opts, cfg, mock)
-	}
-
-	b.ReportMetric(float64(itemCount), "items_processed")
 }
 
 // BenchmarkBranchClose_Optimized benchmarks the branch close command
