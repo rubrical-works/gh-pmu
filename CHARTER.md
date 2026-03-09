@@ -1,4 +1,4 @@
-# Project Charter: GitHub Project Management Unified
+# Project Charter: GitHub Praxis Management Utility
 
 **Status:** Active
 **Last Updated:** 2026-01-21
