@@ -62,7 +62,7 @@ type mockBranchClient struct {
 	projectItems           []api.ProjectItem
 	minimalProjectItems    []api.MinimalProjectItem // For GetProjectItemsMinimal
 	projectItemsByIssues   []api.ProjectItem        // For GetProjectItemsByIssues
-	subIssues              []api.SubIssue            // For GetSubIssues
+	subIssues              []api.SubIssue           // For GetSubIssues
 
 	// Captured calls for verification
 	createIssueCalls             []createIssueCall
@@ -1076,8 +1076,8 @@ func TestRunBranchCurrentWithDeps_DisplaysActiveDetails(t *testing.T) {
 func TestRunBranchCurrentWithDeps_NoActiveRelease(t *testing.T) {
 	// ARRANGE
 	mock := setupMockForBranch()
-	mock.openIssuesByLabels = nil // No active+branch match
-	mock.openIssues = []api.Issue{}  // No branch-only match either
+	mock.openIssuesByLabels = nil   // No active+branch match
+	mock.openIssues = []api.Issue{} // No branch-only match either
 
 	cfg := testBranchConfig()
 	cmd, buf := newTestBranchCmd()

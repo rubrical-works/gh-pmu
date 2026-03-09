@@ -23,7 +23,7 @@ type mockListClient struct {
 	projectFieldsForIssue map[string][]api.FieldValue
 
 	// Call tracking
-	searchCalls      []api.SearchFilters
+	searchCalls           []api.SearchFilters
 	getProjectItemsCalled bool
 
 	// Error injection

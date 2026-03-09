@@ -12,14 +12,14 @@ import (
 
 // mockBoardClient implements boardClient for testing
 type mockBoardClient struct {
-	project             *api.Project
-	boardItems          []api.BoardItem
-	issues              []api.Issue
-	issuesByState       map[string][]api.Issue // state -> results (for dual-call tests)
-	fieldsByID          map[string][]api.FieldValue
+	project       *api.Project
+	boardItems    []api.BoardItem
+	issues        []api.Issue
+	issuesByState map[string][]api.Issue // state -> results (for dual-call tests)
+	fieldsByID    map[string][]api.FieldValue
 
 	// Call tracking
-	searchCalls              []api.SearchFilters
+	searchCalls                 []api.SearchFilters
 	getBoardItemsForBoardCalled bool
 
 	// Error injection
