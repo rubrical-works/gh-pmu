@@ -146,43 +146,81 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 		repoFilter = cfg.Repositories[0]
 	}
 
-	// Determine query strategy based on state filter
-	// "all" state uses GetProjectItems (full fetch with optional limit)
-	// "open", "closed", or default uses SearchRepositoryIssues (optimized)
+	// Determine query strategy based on state filter and repo availability
+	// When repo is available: always use SearchRepositoryIssues (optimized)
+	//   - "all" state: dual calls (open + closed) merged
+	//   - "open"/"closed"/default: single call
+	// When no repo: fall back to GetProjectItems (full project scan)
 	stateLower := strings.ToLower(opts.state)
-	useSearchAPI := repoFilter != "" && stateLower != "all"
+	useSearchAPI := repoFilter != ""
 
 	var items []api.ProjectItem
 
 	if useSearchAPI {
-		// Open-first strategy: Use GitHub Search API for filtered queries
 		repoParts := strings.Split(repoFilter, "/")
-		searchFilters := api.SearchFilters{
-			State:    stateLower, // defaults to "open" if empty
-			Assignee: opts.assignee,
-			Search:   opts.search,
-		}
-		if opts.label != "" {
-			searchFilters.Labels = []string{opts.label}
-		}
 
-		issues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], searchFilters, opts.limit)
-		if err != nil {
-			return fmt.Errorf("failed to search issues: %w", err)
-		}
+		if stateLower == "all" {
+			// Dual-call strategy: fetch open and closed separately, then merge
+			openFilters := api.SearchFilters{
+				State:    "open",
+				Assignee: opts.assignee,
+				Search:   opts.search,
+			}
+			if opts.label != "" {
+				openFilters.Labels = []string{opts.label}
+			}
+			closedFilters := api.SearchFilters{
+				State:    "closed",
+				Assignee: opts.assignee,
+				Search:   opts.search,
+			}
+			if opts.label != "" {
+				closedFilters.Labels = []string{opts.label}
+			}
 
-		// Convert issues to project items and enrich with project field values
-		items, err = enrichIssuesWithProjectFields(client, project.ID, issues)
-		if err != nil {
-			return fmt.Errorf("failed to enrich issues with project fields: %w", err)
+			openIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], openFilters, opts.limit)
+			if err != nil {
+				return fmt.Errorf("failed to search open issues: %w", err)
+			}
+			closedIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], closedFilters, opts.limit)
+			if err != nil {
+				return fmt.Errorf("failed to search closed issues: %w", err)
+			}
+
+			// Merge results
+			allIssues := append(openIssues, closedIssues...)
+
+			items, err = enrichIssuesWithProjectFields(client, project.ID, allIssues)
+			if err != nil {
+				return fmt.Errorf("failed to enrich issues with project fields: %w", err)
+			}
+		} else {
+			// Single-call strategy: Use GitHub Search API for filtered queries
+			searchFilters := api.SearchFilters{
+				State:    stateLower, // defaults to "open" if empty
+				Assignee: opts.assignee,
+				Search:   opts.search,
+			}
+			if opts.label != "" {
+				searchFilters.Labels = []string{opts.label}
+			}
+
+			issues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], searchFilters, opts.limit)
+			if err != nil {
+				return fmt.Errorf("failed to search issues: %w", err)
+			}
+
+			items, err = enrichIssuesWithProjectFields(client, project.ID, issues)
+			if err != nil {
+				return fmt.Errorf("failed to enrich issues with project fields: %w", err)
+			}
 		}
 	} else {
-		// Full fetch strategy: Use GetProjectItems for --state all or no repo filter
+		// Full fetch strategy: Use GetProjectItems when no repo filter is available
 		var filter *api.ProjectItemsFilter
-		if repoFilter != "" || opts.limit > 0 {
+		if opts.limit > 0 {
 			filter = &api.ProjectItemsFilter{
-				Repository: repoFilter,
-				Limit:      opts.limit,
+				Limit: opts.limit,
 			}
 		}
 

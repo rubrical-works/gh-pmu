@@ -19,7 +19,12 @@ type mockListClient struct {
 	openIssuesByLabel     []api.Issue
 	subIssueCounts        map[int]int
 	searchResults         []api.Issue
+	searchResultsByState  map[string][]api.Issue // state -> results (for dual-call tests)
 	projectFieldsForIssue map[string][]api.FieldValue
+
+	// Call tracking
+	searchCalls      []api.SearchFilters
+	getProjectItemsCalled bool
 
 	// Error injection
 	getProjectErr               error
@@ -52,6 +57,7 @@ func (m *mockListClient) GetProject(owner string, number int) (*api.Project, err
 }
 
 func (m *mockListClient) GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error) {
+	m.getProjectItemsCalled = true
 	if m.getProjectItemsErr != nil {
 		return nil, m.getProjectItemsErr
 	}
@@ -73,8 +79,15 @@ func (m *mockListClient) GetSubIssueCounts(owner, repo string, numbers []int) (m
 }
 
 func (m *mockListClient) SearchRepositoryIssues(owner, repo string, filters api.SearchFilters, limit int) ([]api.Issue, error) {
+	m.searchCalls = append(m.searchCalls, filters)
 	if m.searchRepositoryIssuesErr != nil {
 		return nil, m.searchRepositoryIssuesErr
+	}
+	// Support state-based results for dual-call tests
+	if m.searchResultsByState != nil {
+		if results, ok := m.searchResultsByState[filters.State]; ok {
+			return results, nil
+		}
 	}
 	return m.searchResults, nil
 }
@@ -2012,17 +2025,31 @@ func TestFilterByState(t *testing.T) {
 // Open-First Query Strategy Tests
 // ============================================================================
 
-func TestRunListWithDeps_WithStateAll_UsesGetProjectItems(t *testing.T) {
+func TestRunListWithDeps_WithStateAll_UsesDualSearchCalls(t *testing.T) {
 	mock := newMockListClient()
-	mock.projectItems = []api.ProjectItem{
-		{
-			ID:    "item-1",
-			Issue: &api.Issue{Number: 1, Title: "Open Issue", State: "OPEN"},
+	mock.searchResultsByState = map[string][]api.Issue{
+		"open": {
+			{
+				ID:         "issue-1",
+				Number:     1,
+				Title:      "Open Issue",
+				State:      "OPEN",
+				Repository: api.Repository{Owner: "test-org", Name: "repo"},
+			},
 		},
-		{
-			ID:    "item-2",
-			Issue: &api.Issue{Number: 2, Title: "Closed Issue", State: "CLOSED"},
+		"closed": {
+			{
+				ID:         "issue-2",
+				Number:     2,
+				Title:      "Closed Issue",
+				State:      "CLOSED",
+				Repository: api.Repository{Owner: "test-org", Name: "repo"},
+			},
 		},
+	}
+	mock.projectFieldsForIssue = map[string][]api.FieldValue{
+		"issue-1": {{Field: "Status", Value: "In Progress"}, {Field: "Priority", Value: "P1"}},
+		"issue-2": {{Field: "Status", Value: "Done"}, {Field: "Priority", Value: "P2"}},
 	}
 
 	cfg := &config.Config{
@@ -2030,16 +2057,126 @@ func TestRunListWithDeps_WithStateAll_UsesGetProjectItems(t *testing.T) {
 		Repositories: []string{"test-org/repo"},
 	}
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
 
 	opts := &listOptions{state: "all"}
 
-	// Should use GetProjectItems path for --state all
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	// The fact that it succeeded means it used GetProjectItems (not search API)
-	// because searchResults is empty but projectItems has data
+
+	// Should have made two search calls (open + closed), not GetProjectItems
+	if mock.getProjectItemsCalled {
+		t.Error("Expected dual SearchRepositoryIssues calls, but GetProjectItems was called")
+	}
+	if len(mock.searchCalls) != 2 {
+		t.Fatalf("Expected 2 SearchRepositoryIssues calls, got %d", len(mock.searchCalls))
+	}
+
+	// Verify the two calls were for open and closed states
+	states := map[string]bool{}
+	for _, call := range mock.searchCalls {
+		states[call.State] = true
+	}
+	if !states["open"] || !states["closed"] {
+		t.Errorf("Expected calls for 'open' and 'closed' states, got: %v", mock.searchCalls)
+	}
+}
+
+func TestRunListWithDeps_WithStateAll_NoRepoFilter_FallsBackToGetProjectItems(t *testing.T) {
+	mock := newMockListClient()
+	mock.projectItems = []api.ProjectItem{
+		{
+			ID:    "item-1",
+			Issue: &api.Issue{Number: 1, Title: "Open Issue", State: "OPEN"},
+		},
+	}
+
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+		// No repositories configured
+	}
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{state: "all"}
+
+	err := runListWithDeps(cmd, opts, cfg, mock)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Without repo filter, should fall back to GetProjectItems
+	if !mock.getProjectItemsCalled {
+		t.Error("Expected GetProjectItems to be called when no repo filter is set")
+	}
+	if len(mock.searchCalls) != 0 {
+		t.Errorf("Expected no SearchRepositoryIssues calls, got %d", len(mock.searchCalls))
+	}
+}
+
+func TestRunListWithDeps_WithStateAll_DualSearch_MergesResults(t *testing.T) {
+	mock := newMockListClient()
+	mock.searchResultsByState = map[string][]api.Issue{
+		"open": {
+			{ID: "issue-1", Number: 1, Title: "Open Issue", State: "OPEN", Repository: api.Repository{Owner: "test-org", Name: "repo"}},
+			{ID: "issue-3", Number: 3, Title: "Another Open", State: "OPEN", Repository: api.Repository{Owner: "test-org", Name: "repo"}},
+		},
+		"closed": {
+			{ID: "issue-2", Number: 2, Title: "Closed Issue", State: "CLOSED", Repository: api.Repository{Owner: "test-org", Name: "repo"}},
+		},
+	}
+	mock.projectFieldsForIssue = map[string][]api.FieldValue{
+		"issue-1": {{Field: "Status", Value: "In Progress"}},
+		"issue-2": {{Field: "Status", Value: "Done"}},
+		"issue-3": {{Field: "Status", Value: "Backlog"}},
+	}
+
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"test-org/repo"},
+		Fields: map[string]config.Field{
+			"status": {
+				Field:  "Status",
+				Values: map[string]string{"in_progress": "In Progress"},
+			},
+		},
+	}
+	cmd := newListCommand()
+
+	// Use JSON output to capture results via cmd.OutOrStdout()
+	opts := &listOptions{state: "all", status: "in_progress", jsonFields: "number,title,state"}
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	err := runListWithDeps(cmd, opts, cfg, mock)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify dual search was used
+	if mock.getProjectItemsCalled {
+		t.Error("Expected dual SearchRepositoryIssues calls, but GetProjectItems was called")
+	}
+	if len(mock.searchCalls) != 2 {
+		t.Fatalf("Expected 2 search calls, got %d", len(mock.searchCalls))
+	}
+
+	// Verify merged results are filtered correctly (only in_progress issue)
+	output := buf.String()
+	if !strings.Contains(output, "Open Issue") {
+		t.Errorf("Expected 'Open Issue' (in_progress) in output, got: %s", output)
+	}
+	if strings.Contains(output, "Closed Issue") {
+		t.Errorf("Should not contain 'Closed Issue' (status=Done), got: %s", output)
+	}
+	if strings.Contains(output, "Another Open") {
+		t.Errorf("Should not contain 'Another Open' (status=Backlog), got: %s", output)
+	}
 }
 
 func TestRunListWithDeps_SearchApiPath_UsesSearchRepositoryIssues(t *testing.T) {
