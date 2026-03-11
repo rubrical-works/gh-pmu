@@ -268,8 +268,8 @@ func TestTerms_ContainsPraxisName(t *testing.T) {
 func TestTerms_ContainsCopyright(t *testing.T) {
 	text := Terms()
 
-	if !strings.Contains(text, "Rubrical Systems") {
-		t.Error("Terms() should contain Rubrical Systems copyright")
+	if !strings.Contains(text, "Rubrical Works") {
+		t.Error("Terms() should contain Rubrical Works copyright")
 	}
 }
 

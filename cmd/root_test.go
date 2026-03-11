@@ -62,8 +62,8 @@ func TestRootCommandVersionContainsCopyright(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "Rubrical Systems") {
-		t.Errorf("Expected version output to contain 'Rubrical Systems', got: %s", output)
+	if !strings.Contains(output, "Rubrical Works") {
+		t.Errorf("Expected version output to contain 'Rubrical Works', got: %s", output)
 	}
 	if !strings.Contains(output, "(c)") {
 		t.Errorf("Expected version output to contain '(c)' copyright marker, got: %s", output)
@@ -90,7 +90,7 @@ func TestRootCommandVersionFormat(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "gh pmu version ") {
 		t.Errorf("Expected first line to start with 'gh pmu version ', got: %q", lines[0])
 	}
-	if lines[1] != "Rubrical Systems (c) 2026" {
-		t.Errorf("Expected second line to be 'Rubrical Systems (c) 2026', got: %q", lines[1])
+	if lines[1] != "Rubrical Works (c) 2026" {
+		t.Errorf("Expected second line to be 'Rubrical Works (c) 2026', got: %q", lines[1])
 	}
 }
