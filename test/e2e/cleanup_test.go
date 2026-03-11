@@ -14,7 +14,7 @@ import (
 
 const testRepo = "rubrical-works/gh-pmu-e2e-test"
 
-// TestCleanupE2EIssues cleans up any leftover E2E test issues.
+// TestCleanupE2EIssues cleans up any leftover E2E test issues and orphaned projects.
 // This test only runs when E2E_CLEANUP=true is set.
 func TestCleanupE2EIssues(t *testing.T) {
 	if os.Getenv("E2E_CLEANUP") != "true" {
@@ -22,6 +22,7 @@ func TestCleanupE2EIssues(t *testing.T) {
 	}
 
 	cleanupE2EIssues(t)
+	cleanupOrphanedProjects(t)
 }
 
 // cleanupE2EIssues finds and deletes all issues with [E2E] prefix.
@@ -115,6 +116,64 @@ func closeAndDeleteIssue(t *testing.T, number int, title string) {
 		_ = output // suppress unused warning
 	} else {
 		t.Logf("  Deleted issue #%d", number)
+	}
+}
+
+// e2eProject represents a test project to clean up
+type e2eProject struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+}
+
+// cleanupOrphanedProjects finds and deletes projects created by init E2E tests.
+// The real test project is #41; anything named "gh-pmu-e2e-test" with a higher
+// number is an orphan from a previous test run.
+func cleanupOrphanedProjects(t *testing.T) {
+	t.Helper()
+
+	cmd := exec.Command("gh", "project", "list",
+		"--owner", "rubrical-works",
+		"--format", "json",
+		"--limit", "100",
+	)
+	output, err := cmd.Output()
+	if err != nil {
+		t.Logf("Warning: failed to list projects: %v", err)
+		return
+	}
+
+	var resp struct {
+		Projects []e2eProject `json:"projects"`
+	}
+	if err := json.Unmarshal(output, &resp); err != nil {
+		t.Logf("Warning: failed to parse project list: %v", err)
+		return
+	}
+
+	var orphans []e2eProject
+	for _, p := range resp.Projects {
+		if p.Title == "gh-pmu-e2e-test" && p.Number != 41 {
+			orphans = append(orphans, p)
+		}
+	}
+
+	if len(orphans) == 0 {
+		t.Log("No orphaned test projects found")
+		return
+	}
+
+	t.Logf("Found %d orphaned test projects to clean up", len(orphans))
+	for _, p := range orphans {
+		t.Logf("Deleting orphaned project #%d: %s", p.Number, p.Title)
+		delCmd := exec.Command("gh", "project", "delete",
+			strconv.Itoa(p.Number),
+			"--owner", "rubrical-works",
+		)
+		if delOutput, err := delCmd.CombinedOutput(); err != nil {
+			t.Logf("  Warning: failed to delete project #%d: %v\n  Output: %s", p.Number, err, delOutput)
+		} else {
+			t.Logf("  Deleted project #%d", p.Number)
+		}
 	}
 }
 

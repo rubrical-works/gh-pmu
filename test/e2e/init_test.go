@@ -30,6 +30,11 @@ func TestInitNonInteractiveMode(t *testing.T) {
 
 		assertExitCode(t, result, 0)
 
+		// Clean up the created project
+		if projNum := extractProjectNumber(t, result.Stdout); projNum > 0 {
+			t.Cleanup(func() { deleteTestProject(t, projNum) })
+		}
+
 		// Verify config file was created
 		configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -101,6 +106,11 @@ func TestInitNonInteractiveFrameworkNone(t *testing.T) {
 
 	assertExitCode(t, result, 0)
 
+	// Clean up the created project
+	if projNum := extractProjectNumber(t, result.Stdout); projNum > 0 {
+		t.Cleanup(func() { deleteTestProject(t, projNum) })
+	}
+
 	// Read and validate config
 	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
 	configData, err := os.ReadFile(configPath)
@@ -138,6 +148,11 @@ func TestInitNonInteractiveWithOwner(t *testing.T) {
 
 	assertExitCode(t, result, 0)
 
+	// Clean up the created project
+	if projNum := extractProjectNumber(t, result.Stdout); projNum > 0 {
+		t.Cleanup(func() { deleteTestProject(t, projNum) })
+	}
+
 	// Verify config was created
 	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -166,6 +181,11 @@ func TestInitNonInteractiveOverwrite(t *testing.T) {
 	)
 
 	assertExitCode(t, result, 0)
+
+	// Clean up the created project
+	if projNum := extractProjectNumber(t, result.Stdout); projNum > 0 {
+		t.Cleanup(func() { deleteTestProject(t, projNum) })
+	}
 
 	// Verify config was overwritten
 	configData, err := os.ReadFile(configPath)
@@ -232,10 +252,14 @@ func TestInitNonInteractiveInvalidRepoFormat(t *testing.T) {
 func TestInitNonInteractiveExistingConfigNoYes(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create existing config
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
-	if err := os.WriteFile(configPath, []byte("project:\n  owner: test\n"), 0644); err != nil {
-		t.Fatalf("Failed to write existing config: %v", err)
+	// Create existing config in both formats (init checks JSON first, YAML as fallback)
+	jsonPath := filepath.Join(tmpDir, ".gh-pmu.json")
+	if err := os.WriteFile(jsonPath, []byte(`{"project":{"owner":"test"}}`), 0644); err != nil {
+		t.Fatalf("Failed to write existing JSON config: %v", err)
+	}
+	yamlPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	if err := os.WriteFile(yamlPath, []byte("project:\n  owner: test\n"), 0644); err != nil {
+		t.Fatalf("Failed to write existing YAML config: %v", err)
 	}
 
 	result := runPMU(t, tmpDir, "init",

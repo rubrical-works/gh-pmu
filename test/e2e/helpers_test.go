@@ -231,6 +231,40 @@ func assertHasLabel(t *testing.T, issueNum int, expectedLabel string) {
 	t.Errorf("Issue #%d missing expected label %q, has: %v", issueNum, expectedLabel, labels)
 }
 
+// extractProjectNumber parses a project number from init command output.
+// Handles format: "Created project: name (#NN)"
+func extractProjectNumber(t *testing.T, output string) int {
+	t.Helper()
+
+	pattern := regexp.MustCompile(`#(\d+)\)`)
+	if matches := pattern.FindStringSubmatch(output); len(matches) > 1 {
+		num, err := strconv.Atoi(matches[1])
+		if err == nil {
+			return num
+		}
+	}
+	return 0
+}
+
+// deleteTestProject deletes a GitHub project created during testing.
+func deleteTestProject(t *testing.T, projectNumber int) {
+	t.Helper()
+
+	if projectNumber <= 0 {
+		return
+	}
+
+	cmd := exec.Command("gh", "project", "delete",
+		strconv.Itoa(projectNumber),
+		"--owner", "rubrical-works",
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Logf("Warning: failed to delete test project #%d: %v\nOutput: %s", projectNumber, err, output)
+	} else {
+		t.Logf("Deleted test project #%d", projectNumber)
+	}
+}
+
 // TestBranchInfo holds information about a test branch
 type TestBranchInfo struct {
 	Name         string
