@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-03-11
+
+### Changed
+- Rebranded "Rubrical Systems" to "Rubrical Works" across source, tests, terms, and changelog (#745)
+- Updated README IDPF-Praxis links from `idpf-praxis-dist` to `idpf-praxis` (#745)
+
 ## [1.2.0] - 2026-03-09
 
 ### Changed
@@ -39,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `GetParentIssueBatch` — fetch parent issues for N issues in one query
 
 ### Changed
-- Renamed "Rubrical Studios" to "Rubrical Systems" in `--version` output and embedded terms (#726)
+- Renamed "Rubrical Studios" to "Rubrical Works" in `--version` output and embedded terms (#726)
 
 ## [1.0.5] - 2026-03-02
 
@@ -74,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `WithRetry()`/`WithRetryDelays()` with configurable exponential backoff (1s, 2s, 4s, 8s)
   - Non-rate-limit 403 errors (permission denied) are not retried
 - Copyright line in `--version` output (#712)
-  - `gh pmu --version` now shows `Rubrical Systems (c) 2026` below version string
+  - `gh pmu --version` now shows `Rubrical Works (c) 2026` below version string
 - Design decision documentation for interface-based HTTP error detection (#710)
 
 ### Fixed
@@ -99,7 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Acceptance gate now displays full terms text and `--yes` hint on stderr (#705)
 - Accept command Long description references "Praxis Management Utility" (#704)
 - Terms text updated: title includes "GitHub Praxis Management Utility" (#704)
-- Added Rubrical Systems copyright to terms text (#704)
+- Added Rubrical Works copyright to terms text (#704)
 - Updated IDPF framework to v0.49.1
 
 ## [1.0.0] - 2026-02-23
