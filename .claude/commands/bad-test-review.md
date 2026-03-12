@@ -1,48 +1,57 @@
 ---
-version: "v0.58.0"
+version: "v0.61.0"
 description: Evaluate tests for charter alignment and functional authenticity (project)
 argument-hint: "[--full] [--status]"
 ---
 <!-- MANAGED -->
+
 # /bad-test-review
-Evaluate every unit and e2e test to determine whether code causing each test to pass meets charter expectations, or merely returns what is required to pass without genuine functional correctness.
----
+Evaluate every unit and e2e test in the codebase to determine whether the code that causes each test to pass meets the expectations from the `/charter` and project requirements, or whether it merely returns what is required to have that test pass without genuine functional correctness.
+
 ## Prerequisites
 - `CHARTER.md` exists in project root (run `/charter` first if missing)
 - Test files exist in the codebase
----
+
 ## Arguments
 | Argument | Required | Description |
 |----------|----------|-------------|
 | *(none)* | | Normal incremental run — skip approved+unchanged tests |
-| `--full` | No | Bypass manifest and review all tests |
+| `--full` | No | Ignore manifest, bypass manifest and review all tests |
 | `--status` | No | Report manifest statistics without running review |
----
+
 ## Execution Instructions
 **REQUIRED:** Before executing this command:
 1. **Generate Todo List:** Parse the workflow steps in this spec, then use `TodoWrite` to create todos from the workflow steps so progress is visible and resumable after compaction
 2. **Track Progress:** Mark todos `in_progress` → `completed` as you work
 3. **Post-Compaction:** If resuming after context compaction, re-read this spec and regenerate todos
----
+
 ## Workflow
+
 ### Step 1: Parse Arguments
 Check for `--full` or `--status` flags.
-- **If `--status`:** Jump to Step 2b then **STOP**.
-- **If `--full`:** Set `fullMode = true` (skip manifest filtering in Step 4).
-- **Otherwise:** Normal incremental mode.
+**If `--status`:** Jump to Step 2b (manifest statistics) then **STOP**.
+**If `--full`:** Set `fullMode = true` (skip manifest filtering in Step 4).
+**Otherwise:** Normal incremental mode.
+
 ### Step 2: Load Manifest
 Read `.bad-test-manifest.json` if it exists.
+```bash
+# Check if manifest exists
+ls .bad-test-manifest.json 2>/dev/null
+```
 **If manifest exists:**
 1. Parse the JSON manifest
-2. Extract `charter.contentHash` field
-3. Compute current charter hash: read `CHARTER.md` and compute SHA-256
-4. **If charter hash differs** — set `charterChanged = true` (alignment criteria shifted, full re-evaluation needed)
+2. Extract the `charter.contentHash` field
+3. Compute current charter hash: read `CHARTER.md` and compute SHA-256 content hash
+4. **If charter hash differs** from manifest — set `charterChanged = true`. This triggers full re-evaluation of all tests because the alignment criteria have shifted, even if test files haven't changed.
 5. Report: `Charter changed since last review — all tests will be re-evaluated.`
 **If manifest does not exist:**
 1. Report: `No manifest found. First run — all tests will be reviewed.`
 2. Create empty manifest structure in memory
+
 ### Step 2b: Manifest Statistics (`--status` only)
-Read `.bad-test-manifest.json` and report:
+**If `--status` flag specified:**
+Read `.bad-test-manifest.json` and report manifest statistics:
 ```
 Bad Test Review Manifest:
   Last run: YYYY-MM-DD
@@ -54,16 +63,25 @@ Bad Test Review Manifest:
 ```
 Count new tests by scanning test files and comparing against manifest entries.
 → **STOP** after reporting.
+
 ### Step 3: Discover Test Files
-Scan codebase for all test files:
+Scan the codebase for all test files matching project conventions:
 ```
 Patterns: tests/, *.test.js, *.test.ts, *.spec.js, *.spec.ts, __tests__/
 ```
-Use Glob to discover all test files. Exclude: `node_modules/`, build output directories, third-party library tests, generated test helpers.
-Report: `Discovered N test files across M directories.`
+Use Glob to discover all test files. Exclude:
+- `node_modules/`
+- Build output directories
+- Third-party library tests
+- Generated test helpers
+Report discovery count:
+```
+Discovered N test files across M directories.
+```
+
 ### Step 4: Filter by Manifest
 **If `--full` mode or `charterChanged`:** Skip filtering — evaluate all discovered tests.
-**Otherwise:** For each discovered test file, compute SHA-256 content hash and check manifest:
+**Otherwise:** For each discovered test file, compute its SHA-256 content hash and check the manifest:
 | Condition | Action |
 |-----------|--------|
 | Test NOT in manifest | New test — queue for evaluation |
@@ -71,7 +89,7 @@ Report: `Discovered N test files across M directories.`
 | Hash matches, status `flagged` | Skip — already has open bug issues |
 | Hash **differs** from manifest | Re-examine — content changed since last review |
 | In manifest but file deleted | Remove from manifest (cleanup) |
-Report:
+Report filter results:
 ```
 Manifest filter:
   New tests: N (queued for review)
@@ -79,19 +97,28 @@ Manifest filter:
   Approved (skipped): A
   Flagged (skipped): F
 ```
+
 ### Step 5: Load Charter
-Read `CHARTER.md` to extract project goals, conventions, and quality standards.
-Key sections: project purpose/goals, technology stack/conventions, quality standards/NFRs, testing expectations.
+Read `CHARTER.md` to extract project goals, conventions, and quality standards for alignment checking.
+Key sections to extract:
+- Project purpose and goals
+- Technology stack and conventions
+- Quality standards and non-functional requirements
+- Testing expectations
+
 ### Step 6: Evaluate Each Test
-For each queued test file, perform two analyses:
+For each test file queued for evaluation, perform two analyses:
+
 #### 6a: Charter Alignment
-Does the test validate behavior mapping to a charter goal, convention, or quality standard?
-- Read the test file and identify what behavior each test case validates
+Does the test validate behavior that maps to a charter goal, convention, or quality standard?
+- Read the test file
+- Identify what behavior each test case validates
 - Cross-reference against charter goals and conventions
-- **Aligned:** Validates a documented requirement or convention
-- **Unaligned:** Doesn't map to any charter goal (may still be valid — informational only)
+- **Aligned:** Test validates a documented requirement or convention
+- **Unaligned:** Test exists but doesn't map to any charter goal (may still be valid — informational only)
+
 #### 6b: Functional Authenticity
-Does the implementation genuinely implement the feature, or just return hardcoded/minimal values to satisfy assertions?
+Does the implementation behind the passing test genuinely implement the feature, or does it just return hardcoded/minimal values to satisfy the assertion?
 **Detection heuristics — flag suspicious patterns:**
 | Heuristic | Description | Severity |
 |-----------|-------------|----------|
@@ -104,8 +131,10 @@ Does the implementation genuinely implement the feature, or just return hardcode
 **For each suspicious pattern found:**
 1. Read the implementation file referenced by the test
 2. Analyze whether the implementation genuinely handles the tested behavior
-3. Record test file, test name, concern type, severity, and evidence
+3. Record the test file, test name, concern type, severity, and evidence
+
 ### Step 7: Generate Structured Report
+Present findings organized by severity:
 ```
 ## Bad Test Review Report
 
@@ -130,8 +159,13 @@ Does the implementation genuinely implement the feature, or just return hardcode
 - Low: K findings
 - Clean: C tests (no concerns)
 ```
+
 ### Step 8: Create Bug Issues
-For each finding or logical group of related findings, create a bug issue. Each must reference the parent test file, concern type, and evidence:
+For each finding or logical group of related findings, create a bug issue to track the fix:
+```bash
+# Write bug body to temp file, then create via /bug workflow
+```
+Each bug issue must reference the parent test file, concern type, and evidence:
 ```markdown
 ## Bug: Hollow Test — [test name]
 
@@ -155,14 +189,29 @@ For each finding or logical group of related findings, create a bug issue. Each 
 **Recommendation:**
 [What should change to make this test meaningful]
 ```
-Group related findings (same file, same root cause) into a single bug issue.
-Report: `Created N bug issues: #NNN: Hollow test — [description]`
+Group related findings (e.g., multiple hollow tests in the same file) into a single bug issue when they share the same root cause.
+Report created issues:
+```
+Created N bug issues:
+  #NNN: Hollow test — [description]
+  #MMM: Narrow assertions — [description]
+```
+
 ### Step 9: Update Manifest
-Write or update `.bad-test-manifest.json`:
-1. **Charter hash:** Update to current `CHARTER.md` SHA-256
-2. **Reviewed tests:** For each evaluated test: `contentHash`, `status` (`approved`|`flagged`), `reviewedAt`, `findingCount`, `issueRefs`
+Write or update `.bad-test-manifest.json` with results:
+1. **Charter hash:** Update to current `CHARTER.md` SHA-256 content hash
+2. **Reviewed tests:** For each evaluated test:
+   - `contentHash`: Current SHA-256 of test file
+   - `status`: `approved` (no findings) or `flagged` (has findings)
+   - `reviewedAt`: Today's date
+   - `findingCount`: Number of findings
+   - `issueRefs`: Bug issue numbers (if flagged)
 3. **Deleted tests:** Remove entries for files that no longer exist
-4. **Unevaluated tests:** Preserve existing manifest entries for skipped tests
+4. **Unevaluated tests:** Preserve existing manifest entries for tests that were skipped (approved+unchanged)
+```bash
+# Write updated manifest
+```
+
 ### Step 10: Final Summary
 ```
 Bad Test Review Complete.
@@ -176,7 +225,7 @@ Manifest updated: .bad-test-manifest.json
 Next run will skip N approved+unchanged tests.
 ```
 → **STOP.**
----
+
 ## Error Handling
 | Situation | Response |
 |-----------|----------|
@@ -185,5 +234,4 @@ Next run will skip N approved+unchanged tests.
 | Manifest malformed | "Manifest corrupted. Running full review." → continue with --full behavior |
 | Test file unreadable | Warn and skip that file, continue with remaining |
 | Bug issue creation fails | Warn, include finding in report, continue |
----
 **End of /bad-test-review Command**
