@@ -80,6 +80,13 @@ type Label struct {
 	Color string
 }
 
+// RepoLabel represents a GitHub label with full metadata
+type RepoLabel struct {
+	Name        string
+	Color       string
+	Description string
+}
+
 // Milestone represents a GitHub milestone
 type Milestone struct {
 	Title string

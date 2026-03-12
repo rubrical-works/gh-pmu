@@ -2716,3 +2716,99 @@ func parseParentIssueBatchResponse(data []byte, numbers []int) (map[int]*Issue, 
 
 	return result, nil
 }
+
+// ListLabels fetches all labels from a repository with their name, color, and description.
+func (c *Client) ListLabels(owner, repo string) ([]RepoLabel, error) {
+	if c.gql == nil {
+		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
+	}
+
+	var allLabels []RepoLabel
+	var cursor *string
+
+	for {
+		var query struct {
+			Repository struct {
+				Labels struct {
+					Nodes []struct {
+						Name        string
+						Color       string
+						Description string
+					}
+					PageInfo struct {
+						HasNextPage bool
+						EndCursor   string
+					}
+				} `graphql:"labels(first: 100, after: $cursor)"`
+			} `graphql:"repository(owner: $owner, name: $repo)"`
+		}
+
+		variables := map[string]interface{}{
+			"owner":  graphql.String(owner),
+			"repo":   graphql.String(repo),
+			"cursor": (*graphql.String)(nil),
+		}
+		if cursor != nil {
+			variables["cursor"] = graphql.String(*cursor)
+		}
+
+		err := c.gql.Query("ListLabels", &query, variables)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list labels for %s/%s: %w", owner, repo, err)
+		}
+
+		for _, node := range query.Repository.Labels.Nodes {
+			allLabels = append(allLabels, RepoLabel{
+				Name:        node.Name,
+				Color:       node.Color,
+				Description: node.Description,
+			})
+		}
+
+		if !query.Repository.Labels.PageInfo.HasNextPage {
+			break
+		}
+		endCursor := query.Repository.Labels.PageInfo.EndCursor
+		cursor = &endCursor
+	}
+
+	return allLabels, nil
+}
+
+// GetLabel fetches a single label from a repository with full metadata.
+func (c *Client) GetLabel(owner, repo, labelName string) (*RepoLabel, error) {
+	if c.gql == nil {
+		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
+	}
+
+	var query struct {
+		Repository struct {
+			Label struct {
+				Name        string
+				Color       string
+				Description string
+			} `graphql:"label(name: $labelName)"`
+		} `graphql:"repository(owner: $owner, name: $repo)"`
+	}
+
+	variables := map[string]interface{}{
+		"owner":     graphql.String(owner),
+		"repo":      graphql.String(repo),
+		"labelName": graphql.String(labelName),
+	}
+
+	err := c.gql.Query("GetLabel", &query, variables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get label %q: %w", labelName, err)
+	}
+
+	if query.Repository.Label.Name == "" {
+		return nil, nil
+	}
+
+	return &RepoLabel{
+		Name:        query.Repository.Label.Name,
+		Color:       query.Repository.Label.Color,
+		Description: query.Repository.Label.Description,
+	}, nil
+}

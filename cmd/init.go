@@ -500,26 +500,8 @@ projectSelected:
 
 		// Check and create required labels from defaults
 		fmt.Fprintln(cmd.OutOrStdout())
-		u.Info("Checking repository labels...")
-		for _, labelDef := range defs.Labels {
-			exists, err := client.LabelExists(repoOwner, repoName, labelDef.Name)
-			if err != nil {
-				u.Warning(fmt.Sprintf("Could not check %s label: %v", labelDef.Name, err))
-				continue
-			}
-			if exists {
-				u.Success(fmt.Sprintf("%s label exists", labelDef.Name))
-			} else {
-				spinner = ui.NewSpinner(cmd.OutOrStdout(), fmt.Sprintf("Creating %s label...", labelDef.Name))
-				spinner.Start()
-				err := client.CreateLabel(repoOwner, repoName, labelDef.Name, labelDef.Color, labelDef.Description)
-				spinner.Stop()
-				if err != nil {
-					u.Warning(fmt.Sprintf("Could not create %s label: %v", labelDef.Name, err))
-				} else {
-					u.Success(fmt.Sprintf("Created %s label", labelDef.Name))
-				}
-			}
+		if err := SyncLabels(cmd.OutOrStdout(), u, client, repoOwner, repoName, defs.Labels, false, false); err != nil {
+			u.Warning(fmt.Sprintf("Label sync encountered errors: %v", err))
 		}
 	} else {
 		u.Info("Skipping field and label setup (framework: none)")
