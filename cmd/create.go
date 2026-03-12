@@ -135,7 +135,10 @@ func runCreate(cmd *cobra.Command, opts *createOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runCreateWithDeps(cmd, opts, cfg, client, owner, repo)
 }

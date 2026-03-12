@@ -94,177 +94,6 @@ func TestSplitRepoName(t *testing.T) {
 	}
 }
 
-func TestGetProject_NilClient(t *testing.T) {
-	// ARRANGE: Create client with nil gql
-	client := &Client{gql: nil}
-
-	// ACT: Call GetProject
-	project, err := client.GetProject("owner", 1)
-
-	// ASSERT: Should return error about uninitialized client
-	if err == nil {
-		t.Fatal("Expected error when gql is nil, got nil")
-	}
-	if project != nil {
-		t.Error("Expected nil project when error occurs")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected error about uninitialized client, got: %v", err)
-	}
-}
-
-func TestGetProjectFields_NilClient(t *testing.T) {
-	// ARRANGE: Create client with nil gql
-	client := &Client{gql: nil}
-
-	// ACT: Call GetProjectFields
-	fields, err := client.GetProjectFields("project-id")
-
-	// ASSERT: Should return error about uninitialized client
-	if err == nil {
-		t.Fatal("Expected error when gql is nil, got nil")
-	}
-	if fields != nil {
-		t.Error("Expected nil fields when error occurs")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected error about uninitialized client, got: %v", err)
-	}
-}
-
-func TestGetIssue_NilClient(t *testing.T) {
-	// ARRANGE: Create client with nil gql
-	client := &Client{gql: nil}
-
-	// ACT: Call GetIssue
-	issue, err := client.GetIssue("owner", "repo", 1)
-
-	// ASSERT: Should return error about uninitialized client
-	if err == nil {
-		t.Fatal("Expected error when gql is nil, got nil")
-	}
-	if issue != nil {
-		t.Error("Expected nil issue when error occurs")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected error about uninitialized client, got: %v", err)
-	}
-}
-
-func TestGetProjectItems_NilClient(t *testing.T) {
-	// ARRANGE: Create client with nil gql
-	client := &Client{gql: nil}
-
-	// ACT: Call GetProjectItems
-	items, err := client.GetProjectItems("project-id", nil)
-
-	// ASSERT: Should return error about uninitialized client
-	if err == nil {
-		t.Fatal("Expected error when gql is nil, got nil")
-	}
-	if items != nil {
-		t.Error("Expected nil items when error occurs")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected error about uninitialized client, got: %v", err)
-	}
-}
-
-func TestGetProjectItemsMinimal_NilClient(t *testing.T) {
-	// ARRANGE: Create client with nil gql
-	client := &Client{gql: nil}
-
-	// ACT: Call GetProjectItemsMinimal
-	items, err := client.GetProjectItemsMinimal("project-id", nil)
-
-	// ASSERT: Should return error about uninitialized client
-	if err == nil {
-		t.Fatal("Expected error when gql is nil, got nil")
-	}
-	if items != nil {
-		t.Error("Expected nil items when error occurs")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected error about uninitialized client, got: %v", err)
-	}
-}
-
-func TestGetSubIssues_NilClient(t *testing.T) {
-	// ARRANGE: Create client with nil gql
-	client := &Client{gql: nil}
-
-	// ACT: Call GetSubIssues
-	subIssues, err := client.GetSubIssues("owner", "repo", 1)
-
-	// ASSERT: Should return error about uninitialized client
-	if err == nil {
-		t.Fatal("Expected error when gql is nil, got nil")
-	}
-	if subIssues != nil {
-		t.Error("Expected nil subIssues when error occurs")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected error about uninitialized client, got: %v", err)
-	}
-}
-
-func TestGetRepositoryIssues_NilClient(t *testing.T) {
-	// ARRANGE: Create client with nil gql
-	client := &Client{gql: nil}
-
-	// ACT: Call GetRepositoryIssues
-	issues, err := client.GetRepositoryIssues("owner", "repo", "open")
-
-	// ASSERT: Should return error about uninitialized client
-	if err == nil {
-		t.Fatal("Expected error when gql is nil, got nil")
-	}
-	if issues != nil {
-		t.Error("Expected nil issues when error occurs")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected error about uninitialized client, got: %v", err)
-	}
-}
-
-func TestGetParentIssue_NilClient(t *testing.T) {
-	// ARRANGE: Create client with nil gql
-	client := &Client{gql: nil}
-
-	// ACT: Call GetParentIssue
-	parent, err := client.GetParentIssue("owner", "repo", 1)
-
-	// ASSERT: Should return error about uninitialized client
-	if err == nil {
-		t.Fatal("Expected error when gql is nil, got nil")
-	}
-	if parent != nil {
-		t.Error("Expected nil parent when error occurs")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected error about uninitialized client, got: %v", err)
-	}
-}
-
-func TestListProjects_NilClient(t *testing.T) {
-	// ARRANGE: Create client with nil gql
-	client := &Client{gql: nil}
-
-	// ACT: Call ListProjects
-	projects, err := client.ListProjects("owner")
-
-	// ASSERT: Should return error about uninitialized client
-	if err == nil {
-		t.Fatal("Expected error when gql is nil, got nil")
-	}
-	if projects != nil {
-		t.Error("Expected nil projects when error occurs")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected error about uninitialized client, got: %v", err)
-	}
-}
-
 // ============================================================================
 // GetProject Tests with Mocking - User vs Org fallback
 // ============================================================================
@@ -627,7 +456,10 @@ func TestGetSubIssues_EmptyResult(t *testing.T) {
 // ============================================================================
 
 func TestGetSubIssueCounts_EmptyInput(t *testing.T) {
-	client := NewClient()
+	client, cErr := NewClient()
+	if cErr != nil {
+		t.Skipf("Skipping - requires auth: %v", cErr)
+	}
 	counts, err := client.GetSubIssueCounts("owner", "repo", []int{})
 
 	if err != nil {
@@ -646,7 +478,10 @@ func TestGetSubIssueCounts_EmptyInput(t *testing.T) {
 // while pagination fallback behavior is verified through E2E tests with large epics.
 
 func TestGetSubIssuesBatch_EmptyInput(t *testing.T) {
-	client := NewClient()
+	client, cErr := NewClient()
+	if cErr != nil {
+		t.Skipf("Skipping - requires auth: %v", cErr)
+	}
 	result, err := client.GetSubIssuesBatch("owner", "repo", []int{})
 
 	if err != nil {
@@ -862,18 +697,6 @@ func TestParseSubIssuesBatchResponse_InvalidJSON(t *testing.T) {
 // ============================================================================
 // GetProjectItemIDForIssue Tests
 // ============================================================================
-
-func TestGetProjectItemIDForIssue_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-	_, err := client.GetProjectItemIDForIssue("project-id", "owner", "repo", 1)
-
-	if err == nil {
-		t.Fatal("Expected error for nil client")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
 
 func TestGetProjectItemIDForIssue_QueryError(t *testing.T) {
 	mock := &queryMockClient{
@@ -2550,18 +2373,6 @@ func TestGetProjectItems_Pagination_WithFilter(t *testing.T) {
 // SearchRepositoryIssues Tests
 // ============================================================================
 
-func TestSearchRepositoryIssues_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-	_, err := client.SearchRepositoryIssues("owner", "repo", SearchFilters{}, 0)
-
-	if err == nil {
-		t.Fatal("Expected error for nil client")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
 func TestSearchRepositoryIssues_QueryBuilding(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -2730,7 +2541,10 @@ func TestSearchRepositoryIssues_WithLimit(t *testing.T) {
 // ============================================================================
 
 func TestGetProjectFieldsForIssues_EmptyInput(t *testing.T) {
-	client := NewClient()
+	client, cErr := NewClient()
+	if cErr != nil {
+		t.Skipf("Skipping - requires auth: %v", cErr)
+	}
 	result, err := client.GetProjectFieldsForIssues("proj-id", []string{})
 
 	if err != nil {

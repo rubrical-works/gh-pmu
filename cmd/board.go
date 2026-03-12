@@ -121,7 +121,10 @@ func runBoard(cmd *cobra.Command, opts *boardOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runBoardWithDeps(cmd, opts, cfg, client)
 }

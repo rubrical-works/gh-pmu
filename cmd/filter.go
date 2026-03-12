@@ -101,7 +101,10 @@ func runFilter(cmd *cobra.Command, opts *filterOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runFilterWithDeps(cmd, opts, cfg, client, os.Stdin)
 }

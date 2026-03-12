@@ -154,7 +154,10 @@ func runMove(cmd *cobra.Command, args []string, opts *moveOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runMoveWithDeps(cmd, args, opts, cfg, client)
 }

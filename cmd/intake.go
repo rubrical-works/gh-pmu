@@ -97,7 +97,10 @@ func runIntake(cmd *cobra.Command, opts *intakeOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runIntakeWithDeps(cmd, opts, cfg, client)
 }

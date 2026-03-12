@@ -733,10 +733,11 @@ func TestSetTestTransport_WorksWithNewClient(t *testing.T) {
 	}()
 
 	// Create client - should use the test transport
-	client := api.NewClient()
-	if client == nil {
-		t.Fatal("expected client to be created")
+	client, err := api.NewClient()
+	if err != nil {
+		t.Fatalf("expected client to be created, got error: %v", err)
 	}
+	_ = client
 
 	// The client should be functional (even if calls fail due to mock)
 	// This verifies the transport injection works

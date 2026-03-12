@@ -98,7 +98,10 @@ func runTriage(cmd *cobra.Command, args []string, opts *triageOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runTriageWithDeps(cmd, args, opts, cfg, client, os.Stdin)
 }

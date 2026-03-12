@@ -112,7 +112,10 @@ func runEdit(cmd *cobra.Command, opts *editOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runEditWithDeps(cmd, opts, cfg, client, owner, repo)
 }

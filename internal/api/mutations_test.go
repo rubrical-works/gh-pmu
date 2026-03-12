@@ -90,83 +90,6 @@ func createMockWithField(fieldName, fieldType string, options []FieldOption) *mo
 	}
 }
 
-// ============================================================================
-// Nil Client Tests - All mutations should check for nil gql
-// ============================================================================
-
-func TestCreateIssue_NilClient(t *testing.T) {
-	// Create client with nil gql
-	client := &Client{gql: nil}
-
-	_, err := client.CreateIssue("owner", "repo", "title", "body", nil)
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
-func TestAddIssueToProject_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	_, err := client.AddIssueToProject("proj-id", "issue-id")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
-func TestSetProjectItemField_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.SetProjectItemField("proj-id", "item-id", "Status", "Done")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
-func TestAddSubIssue_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.AddSubIssue("parent-id", "child-id")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
-func TestRemoveSubIssue_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.RemoveSubIssue("parent-id", "child-id")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
-func TestAddLabelToIssue_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.AddLabelToIssue("owner", "repo", "issue-id", "bug")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
 func TestAddLabelToIssue_Success(t *testing.T) {
 	mock := &mockGraphQLClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
@@ -263,18 +186,6 @@ func TestAddLabelToIssue_MutationError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to add label") {
 		t.Errorf("Expected 'failed to add label' error, got: %v", err)
-	}
-}
-
-func TestRemoveLabelFromIssue_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.RemoveLabelFromIssue("owner", "repo", "issue-id", "bug")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
 	}
 }
 
@@ -1031,18 +942,6 @@ func TestCreateIssueInput_LabelsIncludedInMutation(t *testing.T) {
 // CreateProjectField Tests
 // ============================================================================
 
-func TestCreateProjectField_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	_, err := client.CreateProjectField("proj-id", "TestField", "TEXT", nil)
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
 func TestCreateProjectField_TextFieldSuccess(t *testing.T) {
 	mock := &mockGraphQLClient{
 		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
@@ -1175,7 +1074,10 @@ func TestCreateProjectField_MutationError(t *testing.T) {
 // ============================================================================
 
 func TestGitAdd_ErrorMessageIncludesGitOutput(t *testing.T) {
-	client := NewClient()
+	client, cErr := NewClient()
+	if cErr != nil {
+		t.Skipf("Skipping - requires auth: %v", cErr)
+	}
 
 	// Try to add a non-existent file - this will fail
 	err := client.GitAdd("/nonexistent/path/that/does/not/exist.txt")
@@ -1202,7 +1104,10 @@ func TestGitAdd_ErrorMessageIncludesGitOutput(t *testing.T) {
 }
 
 func TestGitTag_ErrorMessageIncludesGitOutput(t *testing.T) {
-	client := NewClient()
+	client, cErr := NewClient()
+	if cErr != nil {
+		t.Skipf("Skipping - requires auth: %v", cErr)
+	}
 
 	// Try to create a tag with invalid characters - this will fail
 	// Using a tag name with spaces which is invalid
@@ -1219,7 +1124,10 @@ func TestGitTag_ErrorMessageIncludesGitOutput(t *testing.T) {
 }
 
 func TestGitCommit_ErrorMessageIncludesGitOutput(t *testing.T) {
-	client := NewClient()
+	client, cErr := NewClient()
+	if cErr != nil {
+		t.Skipf("Skipping - requires auth: %v", cErr)
+	}
 
 	// Try to commit with nothing staged - this will fail in most cases
 	// Note: This test assumes we're not in a state where a commit would succeed
@@ -1237,18 +1145,6 @@ func TestGitCommit_ErrorMessageIncludesGitOutput(t *testing.T) {
 // ============================================================================
 // CloseIssue, ReopenIssue, UpdateIssueBody Tests
 // ============================================================================
-
-func TestCloseIssue_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.CloseIssue("issue-id")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
 
 func TestCloseIssue_Success(t *testing.T) {
 	mock := &mockGraphQLClient{
@@ -1295,18 +1191,6 @@ func TestCloseIssue_MutationError(t *testing.T) {
 	}
 }
 
-func TestReopenIssue_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.ReopenIssue("issue-id")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
 func TestReopenIssue_Success(t *testing.T) {
 	mock := &mockGraphQLClient{
 		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
@@ -1349,18 +1233,6 @@ func TestReopenIssue_MutationError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to reopen issue") {
 		t.Errorf("Expected 'failed to reopen issue' error, got: %v", err)
-	}
-}
-
-func TestUpdateIssueBody_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.UpdateIssueBody("issue-id", "new body")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
 	}
 }
 
@@ -1416,18 +1288,6 @@ func TestUpdateIssueBody_MutationError(t *testing.T) {
 // UpdateIssueTitle Tests
 // ============================================================================
 
-func TestUpdateIssueTitle_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.UpdateIssueTitle("issue-id", "new title")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
 func TestUpdateIssueTitle_Success(t *testing.T) {
 	mock := &mockGraphQLClient{
 		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
@@ -1479,22 +1339,6 @@ func TestUpdateIssueTitle_MutationError(t *testing.T) {
 // ============================================================================
 // SetProjectItemFieldWithFields Tests
 // ============================================================================
-
-func TestSetProjectItemFieldWithFields_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	fields := []ProjectField{
-		{ID: "field-123", Name: "Status", DataType: "SINGLE_SELECT"},
-	}
-
-	err := client.SetProjectItemFieldWithFields("proj-id", "item-id", "Status", "Done", fields)
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
 
 func TestSetProjectItemFieldWithFields_FieldNotFound(t *testing.T) {
 	mock := &mockGraphQLClient{}
@@ -2078,18 +1922,6 @@ func TestBuildBatchMutationRequest_UnsupportedFieldType(t *testing.T) {
 // CreateLabel Tests
 // ============================================================================
 
-func TestCreateLabel_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.CreateLabel("owner", "repo", "bug", "d73a4a", "Something isn't working")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
 func TestCreateLabel_Success(t *testing.T) {
 	mock := &mockGraphQLClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
@@ -2190,20 +2022,6 @@ func TestCreateLabel_MutationError(t *testing.T) {
 // LabelExists Tests
 // ============================================================================
 
-func TestLabelExists_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	// LabelExists calls getLabelID which will panic with nil gql
-	// This test verifies the panic behavior
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("Expected panic when gql is nil")
-		}
-	}()
-
-	_, _ = client.LabelExists("owner", "repo", "bug")
-}
-
 func TestLabelExists_LabelFound(t *testing.T) {
 	mock := &mockGraphQLClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
@@ -2265,19 +2083,6 @@ func TestLabelExists_QueryError(t *testing.T) {
 // ============================================================================
 // EnsureLabelExists Tests
 // ============================================================================
-
-func TestEnsureLabelExists_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	// EnsureLabelExists calls getLabelID which will panic with nil gql
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("Expected panic when gql is nil")
-		}
-	}()
-
-	_, _ = client.EnsureLabelExists("owner", "repo", "bug")
-}
 
 func TestEnsureLabelExists_LabelAlreadyExists(t *testing.T) {
 	mock := &mockGraphQLClient{
@@ -2400,18 +2205,6 @@ func TestEnsureLabelExists_CreateLabelFails(t *testing.T) {
 // DeleteLabel Tests
 // ============================================================================
 
-func TestDeleteLabel_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.DeleteLabel("owner", "repo", "bug")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
 func TestDeleteLabel_Success(t *testing.T) {
 	mock := &mockGraphQLClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
@@ -2496,18 +2289,6 @@ func TestDeleteLabel_MutationError(t *testing.T) {
 // ============================================================================
 // UpdateLabel Tests
 // ============================================================================
-
-func TestUpdateLabel_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	err := client.UpdateLabel("owner", "repo", "bug", "bug-renamed", "ff0000", "New description")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
 
 func TestUpdateLabel_Success(t *testing.T) {
 	mock := &mockGraphQLClient{
@@ -2773,18 +2554,6 @@ func TestGetMilestoneID_QueryError(t *testing.T) {
 // CreateIssueWithOptions Tests
 // ============================================================================
 
-func TestCreateIssueWithOptions_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-
-	_, err := client.CreateIssueWithOptions("owner", "repo", "title", "body", nil, nil, "")
-	if err == nil {
-		t.Fatal("Expected error when gql is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
-	}
-}
-
 func TestCreateIssueWithOptions_GetRepositoryIDError(t *testing.T) {
 	mock := &mockGraphQLClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
@@ -2985,18 +2754,6 @@ func TestDeleteProjectField_MutationError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to delete project field") {
 		t.Errorf("Expected 'failed to delete project field' error, got: %v", err)
-	}
-}
-
-func TestDeleteProjectField_NilClient(t *testing.T) {
-	client := &Client{gql: nil}
-	err := client.DeleteProjectField("FIELD_123")
-
-	if err == nil {
-		t.Fatal("Expected error when GraphQL client is nil")
-	}
-	if !strings.Contains(err.Error(), "GraphQL client not initialized") {
-		t.Errorf("Expected 'GraphQL client not initialized' error, got: %v", err)
 	}
 }
 

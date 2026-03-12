@@ -124,7 +124,10 @@ func runFieldCreate(cmd *cobra.Command, args []string, opts *fieldCreateOptions)
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runFieldCreateWithDeps(cmd, fieldName, opts, cfg, client)
 }
@@ -224,7 +227,10 @@ func runFieldList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runFieldListWithDeps(cmd, cfg, client)
 }

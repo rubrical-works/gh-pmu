@@ -16,9 +16,6 @@ import (
 
 // CreateIssue creates a new issue in a repository
 func (c *Client) CreateIssue(owner, repo, title, body string, labels []string) (*Issue, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// First, get the repository ID
 	repoID, err := c.GetRepositoryID(owner, repo)
@@ -144,9 +141,6 @@ type UpdateIssueInput struct {
 
 // AddIssueToProject adds an issue to a GitHub Project V2
 func (c *Client) AddIssueToProject(projectID, issueID string) (string, error) {
-	if c.gql == nil {
-		return "", fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		AddProjectV2ItemById struct {
@@ -183,9 +177,6 @@ type AddProjectV2ItemByIdInput struct {
 // This method fetches project fields on each call. For bulk operations,
 // use SetProjectItemFieldWithFields with pre-fetched fields for better performance.
 func (c *Client) SetProjectItemField(projectID, itemID, fieldName, value string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// Get the field ID and option ID for single select fields
 	fields, err := c.GetProjectFields(projectID)
@@ -199,9 +190,6 @@ func (c *Client) SetProjectItemField(projectID, itemID, fieldName, value string)
 // SetProjectItemFieldWithFields sets a field value using pre-fetched project fields.
 // Use this method for bulk operations to avoid redundant GetProjectFields API calls.
 func (c *Client) SetProjectItemFieldWithFields(projectID, itemID, fieldName, value string, fields []ProjectField) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var field *ProjectField
 	for i := range fields {
@@ -435,9 +423,6 @@ func (c *Client) GetRepositoryID(owner, repo string) (string, error) {
 
 // AddSubIssue links a child issue as a sub-issue of a parent issue
 func (c *Client) AddSubIssue(parentIssueID, childIssueID string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		AddSubIssue struct {
@@ -475,9 +460,6 @@ type AddSubIssueInput struct {
 
 // RemoveSubIssue removes a child issue from its parent issue
 func (c *Client) RemoveSubIssue(parentIssueID, childIssueID string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		RemoveSubIssue struct {
@@ -516,9 +498,6 @@ type RemoveSubIssueInput struct {
 // CreateProjectField creates a new field in a GitHub project.
 // Supported field types: TEXT, NUMBER, DATE, SINGLE_SELECT, ITERATION
 func (c *Client) CreateProjectField(projectID, name, dataType string, singleSelectOptions []string) (*ProjectField, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		CreateProjectV2Field struct {
@@ -613,9 +592,6 @@ type DeleteProjectV2FieldInput struct {
 // DeleteProjectField deletes a field from a GitHub project.
 // Note: Built-in fields (Title, Assignees, etc.) cannot be deleted.
 func (c *Client) DeleteProjectField(fieldID string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 	if fieldID == "" {
 		return fmt.Errorf("field ID is required")
 	}
@@ -655,9 +631,6 @@ type CopyProjectV2Input struct {
 // sourceProjectID is the node ID of the template project to copy from
 // title is the title for the new project
 func (c *Client) CopyProjectFromTemplate(ownerID, sourceProjectID, title string) (*Project, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		CopyProjectV2 struct {
@@ -696,9 +669,6 @@ func (c *Client) CopyProjectFromTemplate(ownerID, sourceProjectID, title string)
 
 // GetOwnerID returns the node ID for a user or organization.
 func (c *Client) GetOwnerID(owner string) (string, error) {
-	if c.gql == nil {
-		return "", fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// Try as organization first
 	var orgQuery struct {
@@ -737,9 +707,6 @@ func (c *Client) GetOwnerID(owner string) (string, error) {
 
 // LinkProjectToRepository adds a repository to a project's linked repositories.
 func (c *Client) LinkProjectToRepository(projectID, repositoryID string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		LinkProjectV2ToRepository struct {
@@ -772,9 +739,6 @@ func (c *Client) LinkProjectToRepository(projectID, repositoryID string) error {
 // AddLabelToIssue adds a label to an issue.
 // If the label doesn't exist in the repository, it will be created automatically.
 func (c *Client) AddLabelToIssue(owner, repo, issueID, labelName string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// Get the label ID, creating the label if it doesn't exist
 	labelID, err := c.EnsureLabelExists(owner, repo, labelName)
@@ -815,9 +779,6 @@ func (c *Client) AddLabelToIssue(owner, repo, issueID, labelName string) error {
 
 // RemoveLabelFromIssue removes a label from an issue
 func (c *Client) RemoveLabelFromIssue(owner, repo, issueID, labelName string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// Get the label ID first
 	labelID, err := c.getLabelID(owner, repo, labelName)
@@ -1037,9 +998,6 @@ func (c *Client) getMilestoneID(owner, repo, milestone string) (string, error) {
 
 // CreateIssueWithOptions creates an issue with extended options
 func (c *Client) CreateIssueWithOptions(owner, repo, title, body string, labels, assignees []string, milestone string) (*Issue, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// First, get the repository ID
 	repoID, err := c.GetRepositoryID(owner, repo)
@@ -1170,9 +1128,6 @@ func (c *Client) CreateIssueWithOptions(owner, repo, title, body string, labels,
 
 // CloseIssue closes an issue by its ID
 func (c *Client) CloseIssue(issueID string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		CloseIssue struct {
@@ -1200,9 +1155,6 @@ func (c *Client) CloseIssue(issueID string) error {
 
 // ReopenIssue reopens a closed issue
 func (c *Client) ReopenIssue(issueID string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		ReopenIssue struct {
@@ -1230,9 +1182,6 @@ func (c *Client) ReopenIssue(issueID string) error {
 
 // UpdateIssueBody updates the body of an issue
 func (c *Client) UpdateIssueBody(issueID, body string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		UpdateIssue struct {
@@ -1261,9 +1210,6 @@ func (c *Client) UpdateIssueBody(issueID, body string) error {
 
 // UpdateIssueTitle updates the title of an issue
 func (c *Client) UpdateIssueTitle(issueID, title string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		UpdateIssue struct {
@@ -1297,9 +1243,6 @@ func (c *Client) GetIssueByNumber(owner, repo string, number int) (*Issue, error
 
 // GetProjectItemID returns the project item ID for an issue in a project
 func (c *Client) GetProjectItemID(projectID, issueID string) (string, error) {
-	if c.gql == nil {
-		return "", fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var query struct {
 		Node struct {
@@ -1342,9 +1285,6 @@ func (c *Client) GetProjectItemID(projectID, issueID string) (string, error) {
 
 // GetProjectItemFieldValue returns the value of a field on a project item
 func (c *Client) GetProjectItemFieldValue(projectID, itemID, fieldName string) (string, error) {
-	if c.gql == nil {
-		return "", fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var query struct {
 		Node struct {
@@ -1443,9 +1383,6 @@ func (c *Client) GitCheckoutNewBranch(branch string) error {
 
 // GetAuthenticatedUser returns the login of the currently authenticated user
 func (c *Client) GetAuthenticatedUser() (string, error) {
-	if c.gql == nil {
-		return "", fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var query struct {
 		Viewer struct {
@@ -1476,9 +1413,6 @@ func (c *Client) LabelExists(owner, repo, labelName string) (bool, error) {
 
 // CreateLabel creates a new label in a repository
 func (c *Client) CreateLabel(owner, repo, name, color, description string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// Get repository ID first
 	repoID, err := c.GetRepositoryID(owner, repo)
@@ -1538,9 +1472,6 @@ func (c *Client) FieldExists(projectID, fieldName string) (bool, error) {
 
 // AddIssueComment adds a comment to an issue
 func (c *Client) AddIssueComment(issueID, body string) (*Comment, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var mutation struct {
 		AddComment struct {
@@ -1589,9 +1520,6 @@ type AddCommentInput struct {
 
 // DeleteLabel deletes a label from a repository
 func (c *Client) DeleteLabel(owner, repo, labelName string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// Get the label ID first
 	labelID, err := c.getLabelID(owner, repo, labelName)
@@ -1628,9 +1556,6 @@ type DeleteLabelInput struct {
 
 // UpdateLabel updates a label's properties in a repository
 func (c *Client) UpdateLabel(owner, repo, labelName, newName, newColor, newDescription string) error {
-	if c.gql == nil {
-		return fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// Get the label ID first
 	labelID, err := c.getLabelID(owner, repo, labelName)

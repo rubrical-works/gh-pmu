@@ -229,7 +229,10 @@ Examples:
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			client := api.NewClient()
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
 			return runBranchStartWithDeps(cmd, opts, cfg, client)
 		},
 	}
@@ -264,7 +267,10 @@ func newBranchAddCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
-			client := api.NewClient()
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
 			return runBranchAddWithDeps(cmd, opts, cfg, client)
 		},
 	}
@@ -296,7 +302,10 @@ func newBranchRemoveCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
-			client := api.NewClient()
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
 			return runBranchRemoveWithDeps(cmd, opts, cfg, client)
 		},
 	}
@@ -321,7 +330,10 @@ func newBranchCurrentCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
-			client := api.NewClient()
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
 			// Detect if --json was explicitly provided (even without a value)
 			if cmd.Flags().Changed("json") {
 				opts.jsonSet = true
@@ -374,7 +386,10 @@ Examples:
 				opts.branchName = args[0]
 			} else {
 				// No argument provided - resolve from active releases
-				client := api.NewClient()
+				client, err := api.NewClient()
+				if err != nil {
+					return err
+				}
 				releaseName, err := resolveCurrentBranch(cfg, client)
 				if err != nil {
 					return err
@@ -382,7 +397,10 @@ Examples:
 				opts.branchName = releaseName
 			}
 
-			client := api.NewClient()
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
 			return runBranchCloseWithDeps(cmd, opts, cfg, client)
 		},
 	}
@@ -411,7 +429,10 @@ func newBranchListCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
-			client := api.NewClient()
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
 			return runBranchListWithDeps(cmd, opts, cfg, client)
 		},
 	}
@@ -1113,7 +1134,10 @@ Examples:
 				return fmt.Errorf("invalid configuration: %w", err)
 			}
 
-			client := api.NewClient()
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
 			return runBranchReopenWithDeps(cmd, branchName, cfg, client)
 		},
 	}

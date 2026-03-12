@@ -76,7 +76,10 @@ Examples:
 }
 
 func runLabelSync(cmd *cobra.Command, opts *labelSyncOptions) error {
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 	return runLabelSyncWithDeps(cmd, opts, client)
 }
 
@@ -235,7 +238,10 @@ Examples:
 }
 
 func runLabelList(cmd *cobra.Command, opts *labelListOptions) error {
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 	return runLabelListWithDeps(cmd, opts, client)
 }
 
@@ -327,7 +333,10 @@ Examples:
 }
 
 func runLabelAdd(cmd *cobra.Command, args []string, opts *labelAddOptions) error {
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 	return runLabelAddWithDeps(cmd, args, opts, client)
 }
 
@@ -384,7 +393,10 @@ Examples:
 }
 
 func runLabelUpdate(cmd *cobra.Command, args []string, opts *labelUpdateOptions) error {
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 	return runLabelUpdateWithDeps(cmd, args, opts, client)
 }
 
@@ -453,7 +465,10 @@ Examples:
 }
 
 func runLabelDelete(cmd *cobra.Command, args []string, opts *labelDeleteOptions) error {
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 	return runLabelDeleteWithDeps(cmd, args, opts, client)
 }
 

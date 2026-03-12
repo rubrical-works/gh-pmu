@@ -1533,8 +1533,8 @@ func TestFilterByHasSubIssues_FunctionSignatureCheck(t *testing.T) {
 func TestFilterByHasSubIssues_EmptyItems(t *testing.T) {
 	// Create a minimal client just for structure testing
 	// Note: This won't make real API calls since items is empty
-	client := api.NewClient()
-	if client == nil {
+	client, err := api.NewClient()
+	if err != nil {
 		t.Skip("Could not create API client - likely not authenticated")
 	}
 
@@ -1553,8 +1553,8 @@ func TestFilterByHasSubIssues_EmptyItems(t *testing.T) {
 
 func TestFilterByHasSubIssues_NilIssueItems(t *testing.T) {
 	// Create a minimal client
-	client := api.NewClient()
-	if client == nil {
+	client, err := api.NewClient()
+	if err != nil {
 		t.Skip("Could not create API client - likely not authenticated")
 	}
 

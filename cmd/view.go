@@ -182,7 +182,10 @@ func runView(cmd *cobra.Command, args []string, opts *viewOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	// Single-issue path (backward compatible, unchanged behavior)
 	if len(refs) == 1 && len(parseErrors) == 0 {

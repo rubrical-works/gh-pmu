@@ -111,7 +111,10 @@ func runComment(cmd *cobra.Command, opts *commentOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runCommentWithDeps(cmd, opts, client, owner, repo)
 }

@@ -158,10 +158,12 @@ func runInit(cmd *cobra.Command, args []string, opts *initOptions) error {
 	}
 
 	// Initialize API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	var selectedProject *api.Project
-	var err error
 	var spinner *ui.Spinner
 	var projectAutoCreated bool
 
@@ -626,7 +628,10 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 	}
 
 	// Initialize API client
-	client := api.NewClient()
+	client, clientErr := api.NewClient()
+	if clientErr != nil {
+		return clientErr
+	}
 
 	// Get owner ID for the new project
 	ownerID, err := client.GetOwnerID(owner)

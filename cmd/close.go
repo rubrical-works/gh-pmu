@@ -153,7 +153,10 @@ func updateStatusToDone(issueNum int, repoOverride string) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return updateStatusToDoneWithDeps(issueNum, repoOverride, cfg, client, os.Stdout)
 }

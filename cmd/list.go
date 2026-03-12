@@ -107,7 +107,10 @@ func runList(cmd *cobra.Command, opts *listOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	return runListWithDeps(cmd, opts, cfg, client)
 }

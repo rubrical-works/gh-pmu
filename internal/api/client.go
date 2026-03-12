@@ -74,7 +74,7 @@ type ClientOptions struct {
 }
 
 // NewClient creates a new API client with default options
-func NewClient() *Client {
+func NewClient() (*Client, error) {
 	opts := ClientOptions{
 		EnableSubIssues:  true,
 		EnableIssueTypes: true,
@@ -92,7 +92,7 @@ func NewClient() *Client {
 }
 
 // NewClientWithOptions creates a new API client with custom options
-func NewClientWithOptions(opts ClientOptions) *Client {
+func NewClientWithOptions(opts ClientOptions) (*Client, error) {
 	// Build headers with feature previews
 	headers := make(map[string]string)
 
@@ -129,15 +129,13 @@ func NewClientWithOptions(opts ClientOptions) *Client {
 	// Create the GraphQL client
 	gql, err := api.NewGraphQLClient(apiOpts)
 	if err != nil {
-		// If we can't create a client (e.g., not authenticated),
-		// return a client with nil gql - methods will return errors
-		return &Client{opts: opts}
+		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
 
 	return &Client{
 		gql:  gql,
 		opts: opts,
-	}
+	}, nil
 }
 
 // NewClientWithGraphQL creates a Client with a custom GraphQL client (for testing)

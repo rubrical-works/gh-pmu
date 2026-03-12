@@ -125,7 +125,10 @@ func runSubAdd(cmd *cobra.Command, args []string, opts *subAddOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	// Validate parent issue exists
 	parentIssue, err := client.GetIssue(parentOwner, parentRepo, parentNumber)
@@ -295,7 +298,10 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	// Get parent issue to validate and optionally inherit from
 	parentIssue, err := client.GetIssue(parentOwner, parentRepo, parentNumber)
@@ -507,7 +513,10 @@ func runSubList(cmd *cobra.Command, args []string, opts *subListOptions) error {
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	// Get the issue to validate it exists
 	issue, err := client.GetIssue(issueOwner, issueRepo, issueNumber)
@@ -979,7 +988,10 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 	}
 
 	// Create API client
-	client := api.NewClient()
+	client, err := api.NewClient()
+	if err != nil {
+		return err
+	}
 
 	// Validate parent issue exists
 	parentIssue, err := client.GetIssue(parentOwner, parentRepo, parentNumber)

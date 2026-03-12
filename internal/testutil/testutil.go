@@ -118,9 +118,9 @@ func RequireTestEnv(t *testing.T) *TestEnv {
 func SetupTestClient(t *testing.T) *api.Client {
 	t.Helper()
 
-	client := api.NewClient()
-	if client == nil {
-		t.Fatal("failed to create API client")
+	client, err := api.NewClient()
+	if err != nil {
+		t.Fatalf("failed to create API client: %v", err)
 	}
 
 	return client

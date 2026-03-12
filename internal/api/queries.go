@@ -22,9 +22,6 @@ func safeGraphQLInt(n int) (graphql.Int, error) {
 
 // GetProject fetches a project by owner and number
 func (c *Client) GetProject(owner string, number int) (*Project, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// First try as user project
 	project, err := c.getUserProject(owner, number)
@@ -126,9 +123,6 @@ func (c *Client) getOrgProject(owner string, number int) (*Project, error) {
 // GetProjectFields fetches all fields for a project.
 // Uses cursor-based pagination to retrieve all fields regardless of project size.
 func (c *Client) GetProjectFields(projectID string) ([]ProjectField, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var allFields []ProjectField
 	var cursor *string
@@ -232,9 +226,6 @@ func (c *Client) getProjectFieldsPage(projectID string, cursor *string) ([]Proje
 
 // GetIssue fetches an issue by repository and number
 func (c *Client) GetIssue(owner, repo string, number int) (*Issue, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var query struct {
 		Repository struct {
@@ -314,9 +305,6 @@ func (c *Client) GetIssue(owner, repo string, number int) (*Issue, error) {
 // GetIssueWithProjectFields fetches an issue and its project field values in a single query.
 // This is more efficient than calling GetIssue + GetProjectItems when you only need one issue.
 func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Issue, []FieldValue, error) {
-	if c.gql == nil {
-		return nil, nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var query struct {
 		Repository struct {
@@ -446,9 +434,6 @@ func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Iss
 // GetProjectItemIDForIssue looks up the project item ID for a specific issue in a project.
 // This is more efficient than fetching all project items when you only need one.
 func (c *Client) GetProjectItemIDForIssue(projectID, owner, repo string, number int) (string, error) {
-	if c.gql == nil {
-		return "", fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var query struct {
 		Repository struct {
@@ -502,9 +487,6 @@ type ProjectItemsFilter struct {
 // Uses cursor-based pagination to retrieve all items regardless of project size.
 // If filter.Limit > 0, pagination terminates early once the limit is reached.
 func (c *Client) GetProjectItems(projectID string, filter *ProjectItemsFilter) ([]ProjectItem, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var allItems []ProjectItem
 	var cursor *string
@@ -725,9 +707,6 @@ func splitRepoName(nameWithOwner string) []string {
 // Use this for two-phase queries: first filter with minimal data, then fetch full details
 // for matching items only.
 func (c *Client) GetProjectItemsMinimal(projectID string, filter *ProjectItemsFilter) ([]MinimalProjectItem, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var allItems []MinimalProjectItem
 	var cursor *string
@@ -1134,9 +1113,6 @@ type BoardItemsFilter struct {
 // Only retrieves: Number, Title, Status, Priority, and Repository.
 // Uses cursor-based pagination to retrieve all items regardless of project size.
 func (c *Client) GetProjectItemsForBoard(projectID string, filter *BoardItemsFilter) ([]BoardItem, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var allItems []BoardItem
 	var cursor *string
@@ -1267,9 +1243,6 @@ func (c *Client) getBoardItemsPage(projectID string, cursor *string) ([]BoardIte
 
 // GetSubIssues fetches all sub-issues for a given issue with pagination support
 func (c *Client) GetSubIssues(owner, repo string, number int) ([]SubIssue, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var subIssues []SubIssue
 	var cursor *graphql.String
@@ -1577,9 +1550,6 @@ func parseSubIssuesBatchResponse(data []byte, numbers []int) (map[int][]SubIssue
 
 // GetRepositoryIssues fetches issues from a repository with the given state filter
 func (c *Client) GetRepositoryIssues(owner, repo, state string) ([]Issue, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// Map state to GraphQL enum values (IssueState enum, not String)
 	var states []IssueState
@@ -1674,9 +1644,6 @@ func (c *Client) getRepositoryIssuesPage(owner, repo string, states []IssueState
 // This is more efficient than fetching all issues when filtering by state, labels, or text.
 // The limit parameter controls maximum results (0 = no limit, uses pagination).
 func (c *Client) SearchRepositoryIssues(owner, repo string, filters SearchFilters, limit int) ([]Issue, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// Build the search query string
 	queryParts := []string{
@@ -2014,9 +1981,6 @@ func (c *Client) GetOpenIssuesByLabel(owner, repo, label string) ([]Issue, error
 // GetOpenIssuesByLabels fetches open issues matching ALL specified labels.
 // Includes SubIssueCount for each issue (from subIssues.totalCount).
 func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]Issue, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var gqlLabels []graphql.String
 	for _, l := range labels {
@@ -2087,9 +2051,6 @@ func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]I
 
 // getIssuesByLabelPaginated fetches all issues with a specific label using cursor-based pagination
 func (c *Client) getIssuesByLabelPaginated(owner, repo, label string, states []IssueState) ([]Issue, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var allIssues []Issue
 	var cursor *string
@@ -2184,9 +2145,6 @@ func (c *Client) GetClosedIssuesByLabel(owner, repo, label string) ([]Issue, err
 
 // GetParentIssue fetches the parent issue for a given sub-issue
 func (c *Client) GetParentIssue(owner, repo string, number int) (*Issue, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var query struct {
 		Repository struct {
@@ -2234,9 +2192,6 @@ func (c *Client) GetParentIssue(owner, repo string, number int) (*Issue, error) 
 
 // ListProjects fetches all projects for an owner (user or organization)
 func (c *Client) ListProjects(owner string) ([]Project, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	// First try as user projects
 	projects, err := c.listUserProjects(owner)
@@ -2313,9 +2268,6 @@ type Comment struct {
 
 // GetIssueComments fetches comments for an issue
 func (c *Client) GetIssueComments(owner, repo string, number int) ([]Comment, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var query struct {
 		Repository struct {
@@ -2719,9 +2671,6 @@ func parseParentIssueBatchResponse(data []byte, numbers []int) (map[int]*Issue, 
 
 // ListLabels fetches all labels from a repository with their name, color, and description.
 func (c *Client) ListLabels(owner, repo string) ([]RepoLabel, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var allLabels []RepoLabel
 	var cursor *string
@@ -2777,9 +2726,6 @@ func (c *Client) ListLabels(owner, repo string) ([]RepoLabel, error) {
 
 // GetLabel fetches a single label from a repository with full metadata.
 func (c *Client) GetLabel(owner, repo, labelName string) (*RepoLabel, error) {
-	if c.gql == nil {
-		return nil, fmt.Errorf("GraphQL client not initialized - are you authenticated with gh?")
-	}
 
 	var query struct {
 		Repository struct {
