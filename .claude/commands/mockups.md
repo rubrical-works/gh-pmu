@@ -1,5 +1,5 @@
 ---
-version: "v0.61.0"
+version: "v0.62.0"
 description: Create text-based or diagrammatic screen mockups (project)
 argument-hint: "<screen-name> [screen-name...] [--from-spec]"
 ---

@@ -1,5 +1,5 @@
 ---
-version: "v0.61.0"
+version: "v0.62.0"
 description: Audit command spec formatting for LLM processing reliability (project)
 argument-hint: "[all|<command-name>|<group description>]"
 ---

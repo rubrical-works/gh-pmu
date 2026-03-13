@@ -1,5 +1,5 @@
 ---
-version: "v0.61.0"
+version: "v0.62.0"
 description: Create a bug issue with standard template (project)
 argument-hint: "<title>"
 ---
@@ -47,6 +47,19 @@ Describe the bug (steps to reproduce, expected vs actual behavior):
 ```
 **If the user provides a description:** Use it as the issue body.
 **If the user declines or says "skip":** Create with a minimal body.
+
+### Step 2b: Detect Version
+Auto-detect the software version using this priority:
+1. `framework-config.json` → `frameworkVersion` (IDPF projects)
+2. `package.json` → `version` (Node.js projects)
+3. Latest git tag (`git describe --tags --abbrev=0`)
+4. If none found, prompt: `"Which version was this bug found in?"`
+**If a version is detected**, present for confirmation:
+```
+Version found in: {detected-version} — correct? (Enter to confirm, or type a different version)
+```
+**If the user provides an override**, use that instead.
+
 <!-- USER-EXTENSION-START: pre-create -->
 <!-- USER-EXTENSION-END: pre-create -->
 
@@ -57,6 +70,9 @@ Build the issue body with a standard bug template:
 
 **Description:**
 {user description or "To be documented"}
+
+**Version:**
+{detected or user-provided version}
 
 **Steps to Reproduce:**
 1. ...

@@ -1,5 +1,5 @@
 ---
-version: "v0.61.0"
+version: "v0.62.0"
 description: Comprehensive code review with manifest-driven incremental tracking (project)
 argument-hint: "[--full] [--status] [--scope <globs>] [--batch <N>] [--with <domains>]"
 ---
@@ -129,6 +129,12 @@ Save to `Construction/Code-Reviews/YYYY-MM-DD-report.md`. Format: summary, findi
 3. Group related findings sharing root cause
 4. Record issue refs in manifest
 **Info-level findings** reported but not offered as issues.
+### Step 9b: Security Finding Label
+If `--with security` or `--with all` was specified and any security domain finding has ⚠️ or ❌ severity, apply the `security-finding` label to each issue created from security findings:
+```bash
+gh issue edit $ISSUE --add-label=security-finding
+```
+If all security findings are ✅ (no issues detected), do not apply the label.
 ### Step 10: Manifest Update
 1. Write updated `.code-review-manifest.json`
 2. Update `charter.contentHash`
