@@ -1,5 +1,5 @@
 ---
-version: "v0.62.0"
+version: "v0.62.1"
 allowed-tools: Bash, AskUserQuestion
 description: "Manage project skills: list, install, remove, info (project)"
 argument-hint: "[list|install|remove|info] [name] [--verbose]"

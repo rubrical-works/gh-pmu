@@ -1,5 +1,5 @@
 ---
-version: "v0.62.0"
+version: "v0.62.1"
 description: Create a bug issue with standard template (project)
 argument-hint: "<title>"
 ---

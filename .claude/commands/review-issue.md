@@ -1,5 +1,5 @@
 ---
-version: "v0.62.0"
+version: "v0.62.1"
 description: Review issues with type-specific criteria (project)
 argument-hint: "#issue [#issue...] [--with ...] [--mode ...] [--force]"
 ---
@@ -81,7 +81,35 @@ If all security findings are ✅ (no issues detected), do not apply the label.
 - **Needs major rework** — Fundamental issues
 
 ### Step 3: Finalize (Script)
-Write findings JSON to `.tmp-$ISSUE-findings.json` and call:
+Write findings JSON to `.tmp-$ISSUE-findings.json` using this schema:
+```json
+{
+  "issue": 42,
+  "title": "Issue title text",
+  "reviewNumber": 1,
+  "type": "bug|enhancement|story|epic|generic",
+  "findings": {
+    "autoEvaluated": [
+      { "id": "criterion-id", "criterion": "Criterion name", "status": "pass|warn|fail|skip", "evidence": "Why this status" }
+    ],
+    "userEvaluated": [
+      { "id": "criterion-id", "criterion": "Criterion name", "status": "pass|warn|fail|skip", "evidence": "User response" }
+    ]
+  },
+  "recommendation": "Ready for work|Needs minor revision|Needs revision|Needs major rework",
+  "recommendationReason": "Optional summary of why",
+  "suggestions": ["Optional array of improvement suggestions"],
+  "extensions": ["Optional array of extension domain names that produced findings"]
+}
+```
+**Field notes:**
+- `issue`, `title`, `reviewNumber`, `type`, `findings`, `recommendation` are **required**
+- `findings.autoEvaluated[].status` values map to emoji: `pass` → ✅, `warn` → ⚠️, `fail` → ❌, `skip` → ⏭️
+- `findings.userEvaluated` is empty `[]` in solo review mode
+- `type` must match the issue type from preamble context
+- Alternate field names accepted: `issueNumber` → `issue`, `name` → `criterion`
+
+Then call:
 ```bash
 node ./.claude/scripts/shared/review-finalize.js $ISSUE -F .tmp-$ISSUE-findings.json
 ```

@@ -1,5 +1,5 @@
 ---
-version: "v0.62.0"
+version: "v0.62.1"
 description: Reset enhancement/prd/proposal issue to clean slate (project)
 argument-hint: "#issue [--dry-run]"
 ---
