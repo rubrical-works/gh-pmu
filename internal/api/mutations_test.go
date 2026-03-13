@@ -2875,3 +2875,113 @@ func TestResolveLabelIDs_ErrorsForNonStandardLabel(t *testing.T) {
 		t.Errorf("Expected 'is not a standard label' error, got: %v", err)
 	}
 }
+
+// ============================================================================
+// GetProjectItemID Pagination Tests
+// ============================================================================
+
+func TestGetProjectItemID_Pagination_FindsItemOnPage2(t *testing.T) {
+	callCount := 0
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name == "GetProjectItems" {
+				callCount++
+				v := reflect.ValueOf(query).Elem()
+				node := v.FieldByName("Node")
+				projectV2 := node.FieldByName("ProjectV2")
+				items := projectV2.FieldByName("Items")
+				nodes := items.FieldByName("Nodes")
+				pageInfoField := items.FieldByName("PageInfo")
+
+				nodeType := nodes.Type().Elem()
+
+				if callCount == 1 {
+					// Page 1: item with different issue ID, hasNextPage=true
+					newNodes := reflect.MakeSlice(nodes.Type(), 1, 1)
+					n1 := reflect.New(nodeType).Elem()
+					n1.FieldByName("ID").SetString("item-1")
+					content1 := n1.FieldByName("Content")
+					issue1 := content1.FieldByName("Issue")
+					issue1.FieldByName("ID").SetString("issue-AAA")
+					newNodes.Index(0).Set(n1)
+					nodes.Set(newNodes)
+
+					pageInfoField.FieldByName("HasNextPage").SetBool(true)
+					pageInfoField.FieldByName("EndCursor").SetString("cursor-1")
+				} else if callCount == 2 {
+					// Page 2: target item, hasNextPage=false
+					newNodes := reflect.MakeSlice(nodes.Type(), 1, 1)
+					n2 := reflect.New(nodeType).Elem()
+					n2.FieldByName("ID").SetString("item-2")
+					content2 := n2.FieldByName("Content")
+					issue2 := content2.FieldByName("Issue")
+					issue2.FieldByName("ID").SetString("issue-BBB")
+					newNodes.Index(0).Set(n2)
+					nodes.Set(newNodes)
+
+					pageInfoField.FieldByName("HasNextPage").SetBool(false)
+					pageInfoField.FieldByName("EndCursor").SetString("")
+				}
+			}
+			return nil
+		},
+	}
+
+	client := NewClientWithGraphQL(mock)
+	itemID, err := client.GetProjectItemID("proj-123", "issue-BBB")
+
+	if err != nil {
+		t.Fatalf("Expected to find item on page 2, got error: %v", err)
+	}
+	if itemID != "item-2" {
+		t.Errorf("Expected item ID 'item-2', got '%s'", itemID)
+	}
+	if callCount != 2 {
+		t.Errorf("Expected 2 API calls (pagination), got %d", callCount)
+	}
+}
+
+func TestGetProjectItemID_FindsItemOnPage1(t *testing.T) {
+	callCount := 0
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name == "GetProjectItems" {
+				callCount++
+				v := reflect.ValueOf(query).Elem()
+				node := v.FieldByName("Node")
+				projectV2 := node.FieldByName("ProjectV2")
+				items := projectV2.FieldByName("Items")
+				nodes := items.FieldByName("Nodes")
+				pageInfoField := items.FieldByName("PageInfo")
+
+				nodeType := nodes.Type().Elem()
+
+				newNodes := reflect.MakeSlice(nodes.Type(), 1, 1)
+				n1 := reflect.New(nodeType).Elem()
+				n1.FieldByName("ID").SetString("item-1")
+				content1 := n1.FieldByName("Content")
+				issue1 := content1.FieldByName("Issue")
+				issue1.FieldByName("ID").SetString("issue-AAA")
+				newNodes.Index(0).Set(n1)
+				nodes.Set(newNodes)
+
+				pageInfoField.FieldByName("HasNextPage").SetBool(false)
+				pageInfoField.FieldByName("EndCursor").SetString("")
+			}
+			return nil
+		},
+	}
+
+	client := NewClientWithGraphQL(mock)
+	itemID, err := client.GetProjectItemID("proj-123", "issue-AAA")
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if itemID != "item-1" {
+		t.Errorf("Expected item ID 'item-1', got '%s'", itemID)
+	}
+	if callCount != 1 {
+		t.Errorf("Expected 1 API call, got %d", callCount)
+	}
+}

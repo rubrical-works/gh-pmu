@@ -1218,43 +1218,58 @@ func (c *Client) GetIssueByNumber(owner, repo string, number int) (*Issue, error
 	return c.GetIssue(owner, repo, number)
 }
 
-// GetProjectItemID returns the project item ID for an issue in a project
+// GetProjectItemID returns the project item ID for an issue in a project.
+// Paginates through all project items to find the matching issue.
 func (c *Client) GetProjectItemID(projectID, issueID string) (string, error) {
 
-	var query struct {
-		Node struct {
-			ProjectV2 struct {
-				Items struct {
-					Nodes []struct {
-						ID      string
-						Content struct {
-							Issue struct {
-								ID string
-							} `graphql:"... on Issue"`
+	var cursor *graphql.String
+
+	for {
+		var query struct {
+			Node struct {
+				ProjectV2 struct {
+					Items struct {
+						Nodes []struct {
+							ID      string
+							Content struct {
+								Issue struct {
+									ID string
+								} `graphql:"... on Issue"`
+							}
 						}
-					}
-					PageInfo struct {
-						HasNextPage bool
-						EndCursor   string
-					}
-				} `graphql:"items(first: 100)"`
-			} `graphql:"... on ProjectV2"`
-		} `graphql:"node(id: $projectId)"`
-	}
-
-	variables := map[string]interface{}{
-		"projectId": graphql.ID(projectID),
-	}
-
-	err := c.gql.Query("GetProjectItems", &query, variables)
-	if err != nil {
-		return "", fmt.Errorf("failed to get project items: %w", err)
-	}
-
-	for _, item := range query.Node.ProjectV2.Items.Nodes {
-		if item.Content.Issue.ID == issueID {
-			return item.ID, nil
+						PageInfo struct {
+							HasNextPage bool
+							EndCursor   string
+						}
+					} `graphql:"items(first: 100, after: $cursor)"`
+				} `graphql:"... on ProjectV2"`
+			} `graphql:"node(id: $projectId)"`
 		}
+
+		variables := map[string]interface{}{
+			"projectId": graphql.ID(projectID),
+			"cursor":    (*graphql.String)(nil),
+		}
+		if cursor != nil {
+			variables["cursor"] = *cursor
+		}
+
+		err := c.gql.Query("GetProjectItems", &query, variables)
+		if err != nil {
+			return "", fmt.Errorf("failed to get project items: %w", err)
+		}
+
+		for _, item := range query.Node.ProjectV2.Items.Nodes {
+			if item.Content.Issue.ID == issueID {
+				return item.ID, nil
+			}
+		}
+
+		if !query.Node.ProjectV2.Items.PageInfo.HasNextPage {
+			break
+		}
+		next := graphql.String(query.Node.ProjectV2.Items.PageInfo.EndCursor)
+		cursor = &next
 	}
 
 	return "", fmt.Errorf("issue not found in project")
