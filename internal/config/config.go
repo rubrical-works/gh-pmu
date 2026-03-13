@@ -564,10 +564,15 @@ func CreateTempFile(pattern string) (*os.File, error) {
 func ensureGitignore(projectRoot string) error {
 	gitignorePath := filepath.Join(projectRoot, ".gitignore")
 
-	// Check if tmp/ is already in .gitignore
-	if file, err := os.Open(gitignorePath); err == nil {
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
+	// Read existing content (single read, then close)
+	existing, err := os.ReadFile(gitignorePath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read .gitignore: %w", err)
+	}
+
+	// Check if entry already present
+	if len(existing) > 0 {
+		scanner := bufio.NewScanner(strings.NewReader(string(existing)))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line == TempDirName || line == TempDirName+"/" {
@@ -576,29 +581,19 @@ func ensureGitignore(projectRoot string) error {
 		}
 	}
 
-	// Append tmp/ to .gitignore
+	// Build content to append
+	var content string
+	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+		content = "\n"
+	}
+	content += TempDirName + "/\n"
+
+	// Write (single handle, then close)
 	file, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open .gitignore: %w", err)
 	}
 	defer file.Close()
-
-	// Check if file is empty or ends with newline
-	info, _ := file.Stat()
-	needsNewline := info.Size() > 0
-
-	var content string
-	if needsNewline {
-		// Read last byte to check if it's a newline
-		if f, err := os.Open(gitignorePath); err == nil {
-			defer f.Close()
-			buf := make([]byte, 1)
-			if _, err := f.ReadAt(buf, info.Size()-1); err == nil && buf[0] != '\n' {
-				content = "\n"
-			}
-		}
-	}
-	content += TempDirName + "/\n"
 
 	if _, err := file.WriteString(content); err != nil {
 		return fmt.Errorf("failed to write to .gitignore: %w", err)

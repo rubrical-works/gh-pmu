@@ -1908,3 +1908,79 @@ func TestFindConfigFile_JSONTakesPrecedence(t *testing.T) {
 		t.Errorf("Expected JSON to take precedence, got: %s", found)
 	}
 }
+
+// ============================================================================
+// ensureGitignore Tests
+// ============================================================================
+
+func TestEnsureGitignore_CreatesNewFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	err := ensureGitignore(tmpDir)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("Failed to read .gitignore: %v", err)
+	}
+
+	if !strings.Contains(string(content), TempDirName+"/") {
+		t.Errorf("Expected .gitignore to contain '%s/', got: %s", TempDirName, string(content))
+	}
+}
+
+func TestEnsureGitignore_EntryAlreadyPresent_NoOp(t *testing.T) {
+	tmpDir := t.TempDir()
+	gitignorePath := filepath.Join(tmpDir, ".gitignore")
+
+	// Pre-create .gitignore with the entry
+	original := "node_modules/\n" + TempDirName + "/\n"
+	if err := os.WriteFile(gitignorePath, []byte(original), 0644); err != nil {
+		t.Fatalf("Failed to create .gitignore: %v", err)
+	}
+
+	err := ensureGitignore(tmpDir)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	content, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("Failed to read .gitignore: %v", err)
+	}
+
+	// Should be unchanged
+	if string(content) != original {
+		t.Errorf("Expected .gitignore unchanged, got: %s", string(content))
+	}
+}
+
+func TestEnsureGitignore_AppendsToExistingFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	gitignorePath := filepath.Join(tmpDir, ".gitignore")
+
+	// Pre-create .gitignore without the entry
+	if err := os.WriteFile(gitignorePath, []byte("node_modules/\n"), 0644); err != nil {
+		t.Fatalf("Failed to create .gitignore: %v", err)
+	}
+
+	err := ensureGitignore(tmpDir)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	content, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("Failed to read .gitignore: %v", err)
+	}
+
+	if !strings.Contains(string(content), TempDirName+"/") {
+		t.Errorf("Expected .gitignore to contain '%s/', got: %s", TempDirName, string(content))
+	}
+	// Should still have the original content
+	if !strings.Contains(string(content), "node_modules/") {
+		t.Errorf("Expected .gitignore to still contain 'node_modules/', got: %s", string(content))
+	}
+}
