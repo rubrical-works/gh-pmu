@@ -439,31 +439,20 @@ func searchIssuesForTriage(client triageClient, cfg *config.Config, query string
 
 func matchesTriageQuery(issue api.Issue, query string) bool {
 	// Basic query matching - supports common GitHub search qualifiers
-	// This is a simplified version; full implementation would parse the query properly
 
-	// Check for label requirements
-	if strings.Contains(query, "-label:") {
-		// Extract label name after -label:
-		parts := strings.Split(query, "-label:")
-		for _, part := range parts[1:] {
-			labelName := strings.Fields(part)[0]
-			// Check if issue has this label
+	// Parse label requirements from query words
+	for _, word := range strings.Fields(query) {
+		if strings.HasPrefix(word, "-label:") {
+			// Negative label: issue must NOT have this label
+			labelName := strings.TrimPrefix(word, "-label:")
 			for _, label := range issue.Labels {
 				if label.Name == labelName {
-					return false // Has excluded label
+					return false
 				}
 			}
-		}
-	}
-
-	if strings.Contains(query, "label:") && !strings.Contains(query, "-label:") {
-		// Must have specified label
-		parts := strings.Split(query, "label:")
-		for _, part := range parts[1:] {
-			if strings.HasPrefix(part, "-") {
-				continue // Skip negations
-			}
-			labelName := strings.Fields(part)[0]
+		} else if strings.HasPrefix(word, "label:") {
+			// Positive label: issue MUST have this label
+			labelName := strings.TrimPrefix(word, "label:")
 			found := false
 			for _, label := range issue.Labels {
 				if label.Name == labelName {

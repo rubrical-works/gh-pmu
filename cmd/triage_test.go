@@ -1644,3 +1644,50 @@ func TestSearchIssuesForTriage_SearchAPIWithClosedState(t *testing.T) {
 		t.Errorf("expected 1 issue, got %d", len(issues))
 	}
 }
+
+// ============================================================================
+// matchesTriageQuery Tests
+// ============================================================================
+
+func TestMatchesTriageQuery_PositiveLabel(t *testing.T) {
+	issue := api.Issue{Labels: []api.Label{{Name: "bug"}}}
+	if !matchesTriageQuery(issue, "label:bug") {
+		t.Error("Expected match for issue with label:bug")
+	}
+}
+
+func TestMatchesTriageQuery_PositiveLabelMissing(t *testing.T) {
+	issue := api.Issue{Labels: []api.Label{{Name: "enhancement"}}}
+	if matchesTriageQuery(issue, "label:bug") {
+		t.Error("Expected no match for issue without label:bug")
+	}
+}
+
+func TestMatchesTriageQuery_NegativeLabel(t *testing.T) {
+	issue := api.Issue{Labels: []api.Label{{Name: "triaged"}}}
+	if matchesTriageQuery(issue, "-label:triaged") {
+		t.Error("Expected no match for issue with excluded label")
+	}
+}
+
+func TestMatchesTriageQuery_MixedLabels(t *testing.T) {
+	// Regression: both positive and negative labels must be checked independently
+	issue := api.Issue{Labels: []api.Label{{Name: "bug"}}}
+	if !matchesTriageQuery(issue, "label:bug -label:triaged") {
+		t.Error("Expected match: has 'bug', doesn't have 'triaged'")
+	}
+}
+
+func TestMatchesTriageQuery_MixedLabels_PositiveMissing(t *testing.T) {
+	issue := api.Issue{Labels: []api.Label{}}
+	if matchesTriageQuery(issue, "label:bug -label:triaged") {
+		t.Error("Expected no match: missing required 'bug' label")
+	}
+}
+
+func TestMatchesTriageQuery_MixedLabels_NegativePresent(t *testing.T) {
+	issue := api.Issue{Labels: []api.Label{{Name: "bug"}, {Name: "triaged"}}}
+	if matchesTriageQuery(issue, "label:bug -label:triaged") {
+		t.Error("Expected no match: has excluded 'triaged' label")
+	}
+}
