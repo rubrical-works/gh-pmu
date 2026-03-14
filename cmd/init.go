@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
@@ -23,13 +24,14 @@ import (
 // ErrRepoRootProtected is returned when attempting to write config to repo root during tests
 var ErrRepoRootProtected = errors.New("cannot write config to repository root during tests")
 
-// protectRepoRoot enables protection against writing to repo root (set by tests)
-var protectRepoRoot bool
+// protectRepoRoot enables protection against writing to repo root (set by tests).
+// Uses atomic.Bool for thread safety under parallel test execution.
+var protectRepoRoot atomic.Bool
 
 // SetRepoRootProtection enables or disables repo root write protection.
 // This should be called by test setup to prevent accidental config writes.
 func SetRepoRootProtection(enabled bool) {
-	protectRepoRoot = enabled
+	protectRepoRoot.Store(enabled)
 }
 
 // isRepoRoot checks if the given directory is the repository root by looking for go.mod
@@ -974,7 +976,7 @@ func validateProject(client ProjectValidator, owner string, number int) error {
 // writeConfig writes the configuration to a .gh-pmu.yml file.
 func writeConfig(dir string, cfg *InitConfig) error {
 	// Safety check: prevent accidental writes to repo root during tests
-	if protectRepoRoot && isRepoRoot(dir) {
+	if protectRepoRoot.Load() && isRepoRoot(dir) {
 		return ErrRepoRootProtected
 	}
 
@@ -1048,7 +1050,7 @@ func writeConfig(dir string, cfg *InitConfig) error {
 // writeConfigWithMetadata writes the configuration with project metadata.
 func writeConfigWithMetadata(dir string, cfg *InitConfig, metadata *ProjectMetadata) error {
 	// Safety check: prevent accidental writes to repo root during tests
-	if protectRepoRoot && isRepoRoot(dir) {
+	if protectRepoRoot.Load() && isRepoRoot(dir) {
 		return ErrRepoRootProtected
 	}
 
