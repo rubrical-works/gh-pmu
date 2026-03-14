@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,7 +146,7 @@ func TestParseCommitReferences(t *testing.T) {
 				Number: 456,
 				Owner:  "owner",
 				Repo:   "repo",
-				Type:   "fix",
+				Type:   "fixes",
 				URL:    "https://github.com/owner/repo/issues/456",
 			},
 		},
@@ -159,7 +160,7 @@ func TestParseCommitReferences(t *testing.T) {
 				Number: 789,
 				Owner:  "owner",
 				Repo:   "repo",
-				Type:   "close",
+				Type:   "closes",
 				URL:    "https://github.com/owner/repo/issues/789",
 			},
 		},
@@ -220,9 +221,51 @@ func TestParseCommitReferences(t *testing.T) {
 				if got.Repo != tt.checkFirst.Repo {
 					t.Errorf("Repo: expected %s, got %s", tt.checkFirst.Repo, got.Repo)
 				}
+				if got.Type != tt.checkFirst.Type {
+					t.Errorf("Type: expected %s, got %s", tt.checkFirst.Type, got.Type)
+				}
 				if got.URL != tt.checkFirst.URL {
 					t.Errorf("URL: expected %s, got %s", tt.checkFirst.URL, got.URL)
 				}
+			}
+		})
+	}
+}
+
+func TestParseCommitReferences_KeywordTypeLabels(t *testing.T) {
+	tests := []struct {
+		keyword      string
+		expectedType string
+	}{
+		{"fix", "fixes"},
+		{"fixes", "fixes"},
+		{"fixed", "fixes"},
+		{"Fix", "fixes"},
+		{"Fixes", "fixes"},
+		{"Fixed", "fixes"},
+		{"close", "closes"},
+		{"closes", "closes"},
+		{"closed", "closes"},
+		{"Close", "closes"},
+		{"Closes", "closes"},
+		{"Closed", "closes"},
+		{"resolve", "resolves"},
+		{"resolves", "resolves"},
+		{"resolved", "resolves"},
+		{"Resolve", "resolves"},
+		{"Resolves", "resolves"},
+		{"Resolved", "resolves"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.keyword, func(t *testing.T) {
+			subject := fmt.Sprintf("%s #42", tt.keyword)
+			refs := parseCommitReferences(subject, "owner", "repo")
+			if len(refs) == 0 {
+				t.Fatalf("No references found for keyword %q", tt.keyword)
+			}
+			if refs[0].Type != tt.expectedType {
+				t.Errorf("Keyword %q: expected type %q, got %q", tt.keyword, tt.expectedType, refs[0].Type)
 			}
 		})
 	}

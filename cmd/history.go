@@ -390,17 +390,27 @@ func parseCommitReferences(subject, defaultOwner, defaultRepo string) []IssueRef
 	seen := make(map[int]bool)
 
 	// Pattern: fixes #123, closes #456, resolves #789
-	actionPattern := regexp.MustCompile(`(?i)(?:fix(?:es)?|close[sd]?|resolve[sd]?)\s+#(\d+)`)
+	actionPattern := regexp.MustCompile(`(?i)(fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s+#(\d+)`)
+	actionTypeMap := map[string]string{
+		"fix": "fixes", "fixes": "fixes", "fixed": "fixes",
+		"close": "closes", "closes": "closes", "closed": "closes",
+		"resolve": "resolves", "resolves": "resolves", "resolved": "resolves",
+	}
 	actionMatches := actionPattern.FindAllStringSubmatch(subject, -1)
 	for _, match := range actionMatches {
-		num, _ := strconv.Atoi(match[1])
+		num, _ := strconv.Atoi(match[2])
 		if !seen[num] {
 			seen[num] = true
+			keyword := strings.ToLower(match[1])
+			refType := actionTypeMap[keyword]
+			if refType == "" {
+				refType = keyword
+			}
 			refs = append(refs, IssueReference{
 				Number: num,
 				Owner:  defaultOwner,
 				Repo:   defaultRepo,
-				Type:   strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(match[0][:strings.Index(match[0], "#")-1], "s"), "d")),
+				Type:   refType,
 				URL:    fmt.Sprintf("https://github.com/%s/%s/issues/%d", defaultOwner, defaultRepo, num),
 			})
 		}
