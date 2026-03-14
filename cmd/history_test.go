@@ -820,3 +820,55 @@ func TestGetRepoRoot_InGitRepo(t *testing.T) {
 		t.Errorf("Expected absolute path, got %q", root)
 	}
 }
+
+// ============================================================================
+// parseCommitLog Tests
+// ============================================================================
+
+func TestParseCommitLog_StandardInput(t *testing.T) {
+	input := "abc1234\x00John Doe\x002026-03-14T10:00:00Z\x00feat: add feature"
+	commits := parseCommitLog(input)
+	if len(commits) != 1 {
+		t.Fatalf("Expected 1 commit, got %d", len(commits))
+	}
+	if commits[0].Hash != "abc1234" {
+		t.Errorf("Expected hash 'abc1234', got '%s'", commits[0].Hash)
+	}
+	if commits[0].Author != "John Doe" {
+		t.Errorf("Expected author 'John Doe', got '%s'", commits[0].Author)
+	}
+	if commits[0].Subject != "feat: add feature" {
+		t.Errorf("Expected subject 'feat: add feature', got '%s'", commits[0].Subject)
+	}
+}
+
+func TestParseCommitLog_AuthorWithPipe(t *testing.T) {
+	// Regression: author name containing | must not corrupt parsing
+	input := "def5678\x00First | Last\x002026-03-14T10:00:00Z\x00fix: something"
+	commits := parseCommitLog(input)
+	if len(commits) != 1 {
+		t.Fatalf("Expected 1 commit, got %d", len(commits))
+	}
+	if commits[0].Author != "First | Last" {
+		t.Errorf("Expected author 'First | Last', got '%s'", commits[0].Author)
+	}
+	if commits[0].Subject != "fix: something" {
+		t.Errorf("Expected subject 'fix: something', got '%s'", commits[0].Subject)
+	}
+}
+
+func TestParseCommitLog_MultipleLines(t *testing.T) {
+	input := "aaa\x00Author1\x002026-03-14T10:00:00Z\x00first commit\n" +
+		"bbb\x00Author2\x002026-03-14T11:00:00Z\x00second commit"
+	commits := parseCommitLog(input)
+	if len(commits) != 2 {
+		t.Fatalf("Expected 2 commits, got %d", len(commits))
+	}
+}
+
+func TestParseCommitLog_EmptyInput(t *testing.T) {
+	commits := parseCommitLog("")
+	if len(commits) != 0 {
+		t.Errorf("Expected 0 commits, got %d", len(commits))
+	}
+}

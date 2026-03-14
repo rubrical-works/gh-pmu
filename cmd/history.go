@@ -305,7 +305,7 @@ func countFilesInPath(path string) (int, error) {
 func getCommitHistory(paths []string, since string, limit int) ([]CommitInfo, error) {
 	args := []string{
 		"log",
-		"--format=%h|%an|%aI|%s",
+		"--format=%h%x00%an%x00%aI%x00%s",
 		fmt.Sprintf("--max-count=%d", limit),
 	}
 
@@ -322,14 +322,20 @@ func getCommitHistory(paths []string, since string, limit int) ([]CommitInfo, er
 		return nil, err
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 1 && lines[0] == "" {
-		return nil, nil
+	return parseCommitLog(strings.TrimSpace(string(output))), nil
+}
+
+// parseCommitLog parses git log output using null byte delimiters.
+// Format: %h%x00%an%x00%aI%x00%s (one commit per line).
+func parseCommitLog(output string) []CommitInfo {
+	if output == "" {
+		return nil
 	}
 
+	lines := strings.Split(output, "\n")
 	var commits []CommitInfo
 	for _, line := range lines {
-		parts := strings.SplitN(line, "|", 4)
+		parts := strings.SplitN(line, "\x00", 4)
 		if len(parts) != 4 {
 			continue
 		}
@@ -343,7 +349,7 @@ func getCommitHistory(paths []string, since string, limit int) ([]CommitInfo, er
 		})
 	}
 
-	return commits, nil
+	return commits
 }
 
 // inferChangeType determines the change type from commit subject prefix
