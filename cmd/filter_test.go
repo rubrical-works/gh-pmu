@@ -1043,3 +1043,33 @@ func TestBuildIssueRefsFromInput(t *testing.T) {
 		})
 	}
 }
+
+// ============================================================================
+// hasPipedInput Tests
+// ============================================================================
+
+func TestHasPipedInput_NilFile(t *testing.T) {
+	// Simulates os.Stdin.Stat() returning error (nil stat)
+	result := hasPipedInput(nil)
+	if result != false {
+		t.Error("Expected false for nil file (graceful fallback)")
+	}
+}
+
+func TestHasPipedInput_RegularFile(t *testing.T) {
+	// A temp file is not a character device, so it simulates piped input
+	tmpfile, err := os.CreateTemp("", "test-stdin-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+	defer tmpfile.Close()
+
+	tmpfile.WriteString("test data")
+	tmpfile.Seek(0, 0)
+
+	result := hasPipedInput(tmpfile)
+	if result != true {
+		t.Error("Expected true for regular file (piped input)")
+	}
+}

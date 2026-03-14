@@ -78,10 +78,23 @@ Example:
 	return cmd
 }
 
+// hasPipedInput checks whether the given file has piped (non-terminal) input.
+// Returns false if file is nil or Stat fails, to gracefully handle environments
+// where os.Stdin.Stat() returns an error (e.g., certain Windows terminals).
+func hasPipedInput(f *os.File) bool {
+	if f == nil {
+		return false
+	}
+	stat, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) == 0
+}
+
 func runFilter(cmd *cobra.Command, opts *filterOptions) error {
 	// Check if stdin has data
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) != 0 {
+	if !hasPipedInput(os.Stdin) {
 		return fmt.Errorf("no input provided - pipe issue JSON from 'gh issue list --json ...'")
 	}
 
