@@ -450,60 +450,61 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 	}
 
 	multiIssueMode := len(args) > 1 || opts.recursive
+	w := cmd.OutOrStdout()
 
 	if multiIssueMode || opts.dryRun {
 		if opts.dryRun {
-			fmt.Println("Dry run - no changes will be made")
-			fmt.Println()
+			fmt.Fprintln(w, "Dry run - no changes will be made")
+			fmt.Fprintln(w)
 		}
 
-		fmt.Printf("Issues to update (%d):\n", len(issuesToUpdate))
+		fmt.Fprintf(w, "Issues to update (%d):\n", len(issuesToUpdate))
 		for _, info := range issuesToUpdate {
 			indent := strings.Repeat("  ", info.Depth)
 			status := validationResults[info.Number]
 			if info.ItemID == "" {
-				fmt.Printf("%s* #%d - %s (not in project, will skip)\n", indent, info.Number, info.Title)
+				fmt.Fprintf(w, "%s* #%d - %s (not in project, will skip)\n", indent, info.Number, info.Title)
 			} else if opts.dryRun && status != "" && status != "pass" && status != "pass (--force)" && status != "skip" {
 				// Show validation failure in dry-run mode
-				fmt.Printf("%s* #%d - %s [FAIL: %s]\n", indent, info.Number, info.Title, status)
+				fmt.Fprintf(w, "%s* #%d - %s [FAIL: %s]\n", indent, info.Number, info.Title, status)
 			} else if opts.dryRun && status == "pass (--force)" {
-				fmt.Printf("%s* #%d - %s [PASS with --force]\n", indent, info.Number, info.Title)
+				fmt.Fprintf(w, "%s* #%d - %s [PASS with --force]\n", indent, info.Number, info.Title)
 			} else {
-				fmt.Printf("%s* #%d - %s\n", indent, info.Number, info.Title)
+				fmt.Fprintf(w, "%s* #%d - %s\n", indent, info.Number, info.Title)
 			}
 		}
 
-		fmt.Println("\nChanges to apply:")
+		fmt.Fprintln(w, "\nChanges to apply:")
 		for _, desc := range changeDescriptions {
-			fmt.Printf("  * %s\n", desc)
+			fmt.Fprintf(w, "  * %s\n", desc)
 		}
 
 		if opts.dryRun {
 			// Show validation summary in dry-run mode
 			if validationErrors.HasErrors() {
-				fmt.Println()
-				fmt.Println("Validation would FAIL:")
+				fmt.Fprintln(w)
+				fmt.Fprintln(w, "Validation would FAIL:")
 				for _, e := range validationErrors.Errors {
-					fmt.Printf("  - Issue #%d: %s\n", e.IssueNumber, e.Message)
+					fmt.Fprintf(w, "  - Issue #%d: %s\n", e.IssueNumber, e.Message)
 				}
-				fmt.Println("\nFix all issues or use --force to bypass.")
+				fmt.Fprintln(w, "\nFix all issues or use --force to bypass.")
 			} else {
-				fmt.Println("\nValidation: PASS")
+				fmt.Fprintln(w, "\nValidation: PASS")
 			}
 			return nil
 		}
 
 		if !opts.yes {
-			fmt.Printf("\nProceed with updating %d issues? [y/N]: ", len(issuesToUpdate))
+			fmt.Fprintf(w, "\nProceed with updating %d issues? [y/N]: ", len(issuesToUpdate))
 			var response string
 			_, _ = fmt.Scanln(&response)
 			response = strings.ToLower(strings.TrimSpace(response))
 			if response != "y" && response != "yes" {
-				fmt.Println("Aborted.")
+				fmt.Fprintln(w, "Aborted.")
 				return nil
 			}
 		}
-		fmt.Println()
+		fmt.Fprintln(w)
 	}
 
 	// Cache project fields once before the update loop to avoid N+1 API calls
@@ -585,13 +586,13 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 	for _, info := range issuesToUpdate {
 		indent := strings.Repeat("  ", info.Depth)
 		if multiIssueMode {
-			fmt.Printf("%sUpdating #%d... ", indent, info.Number)
+			fmt.Fprintf(w, "%sUpdating #%d... ", indent, info.Number)
 		}
 
 		if info.ItemID == "" {
 			skippedCount++
 			if multiIssueMode {
-				fmt.Println("skipped (not in project)")
+				fmt.Fprintln(w, "skipped (not in project)")
 			}
 			continue
 		}
@@ -613,7 +614,7 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 				errorCount++
 				hasErrors = true
 				if multiIssueMode {
-					fmt.Println("failed")
+					fmt.Fprintln(w, "failed")
 				}
 				continue
 			}
@@ -661,7 +662,7 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 				errorCount++
 				hasErrors = true
 				if multiIssueMode {
-					fmt.Println("failed")
+					fmt.Fprintln(w, "failed")
 				}
 				continue
 			}
@@ -684,18 +685,18 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 
 		updatedCount++
 		if multiIssueMode {
-			fmt.Println("done")
+			fmt.Fprintln(w, "done")
 		} else {
-			fmt.Printf("Updated issue #%d: %s\n", info.Number, info.Title)
+			fmt.Fprintf(w, "Updated issue #%d: %s\n", info.Number, info.Title)
 			for _, desc := range changeDescriptions {
-				fmt.Printf("  * %s\n", desc)
+				fmt.Fprintf(w, "  * %s\n", desc)
 			}
-			fmt.Printf("https://github.com/%s/%s/issues/%d\n", info.Owner, info.Repo, info.Number)
+			fmt.Fprintf(w, "https://github.com/%s/%s/issues/%d\n", info.Owner, info.Repo, info.Number)
 		}
 	}
 
 	if multiIssueMode {
-		fmt.Printf("\nSummary: %d updated, %d skipped, %d failed\n", updatedCount, skippedCount, errorCount)
+		fmt.Fprintf(w, "\nSummary: %d updated, %d skipped, %d failed\n", updatedCount, skippedCount, errorCount)
 	}
 
 	// IDPF: Warn about potential workflow rule violations after --force bypass

@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -154,17 +155,18 @@ func runSubAdd(cmd *cobra.Command, args []string, opts *subAddOptions) error {
 	}
 
 	// Output confirmation - show repo info if cross-repo
+	w := cmd.OutOrStdout()
 	isCrossRepo := (parentOwner != childOwner || parentRepo != childRepo)
 	if isCrossRepo {
-		fmt.Printf("✓ Linked %s/%s#%d as sub-issue of %s/%s#%d\n",
+		fmt.Fprintf(w, "✓ Linked %s/%s#%d as sub-issue of %s/%s#%d\n",
 			childOwner, childRepo, childNumber,
 			parentOwner, parentRepo, parentNumber)
-		fmt.Printf("  Parent: %s (%s/%s)\n", parentIssue.Title, parentOwner, parentRepo)
-		fmt.Printf("  Child:  %s (%s/%s)\n", childIssue.Title, childOwner, childRepo)
+		fmt.Fprintf(w, "  Parent: %s (%s/%s)\n", parentIssue.Title, parentOwner, parentRepo)
+		fmt.Fprintf(w, "  Child:  %s (%s/%s)\n", childIssue.Title, childOwner, childRepo)
 	} else {
-		fmt.Printf("✓ Linked issue #%d as sub-issue of #%d\n", childNumber, parentNumber)
-		fmt.Printf("  Parent: %s\n", parentIssue.Title)
-		fmt.Printf("  Child:  %s\n", childIssue.Title)
+		fmt.Fprintf(w, "✓ Linked issue #%d as sub-issue of #%d\n", childNumber, parentNumber)
+		fmt.Fprintf(w, "  Parent: %s\n", parentIssue.Title)
+		fmt.Fprintf(w, "  Child:  %s\n", childIssue.Title)
 	}
 
 	return nil
@@ -349,12 +351,13 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	}
 
 	// Link as sub-issue
+	w := cmd.OutOrStdout()
 	err = client.AddSubIssue(parentIssue.ID, newIssue.ID)
 	if err != nil {
 		// Issue was created but linking failed - inform user
 		fmt.Fprintf(os.Stderr, "Warning: Issue created but failed to link as sub-issue: %v\n", err)
-		fmt.Printf("Created issue #%d: %s\n", newIssue.Number, newIssue.Title)
-		fmt.Printf("%s\n", newIssue.URL)
+		fmt.Fprintf(w, "Created issue #%d: %s\n", newIssue.Number, newIssue.Title)
+		fmt.Fprintf(w, "%s\n", newIssue.URL)
 		return nil
 	}
 
@@ -373,30 +376,30 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 
 	// Output confirmation
 	if isCrossRepo {
-		fmt.Printf("✓ Created cross-repo sub-issue %s/%s#%d under parent %s/%s#%d\n",
+		fmt.Fprintf(w, "✓ Created cross-repo sub-issue %s/%s#%d under parent %s/%s#%d\n",
 			targetOwner, targetRepo, newIssue.Number,
 			parentOwner, parentRepo, parentNumber)
 	} else {
-		fmt.Printf("✓ Created sub-issue #%d under parent #%d\n", newIssue.Number, parentNumber)
+		fmt.Fprintf(w, "✓ Created sub-issue #%d under parent #%d\n", newIssue.Number, parentNumber)
 	}
-	fmt.Printf("  Title:  %s\n", newIssue.Title)
-	fmt.Printf("  Parent: %s\n", parentIssue.Title)
+	fmt.Fprintf(w, "  Title:  %s\n", newIssue.Title)
+	fmt.Fprintf(w, "  Parent: %s\n", parentIssue.Title)
 	if isCrossRepo {
-		fmt.Printf("  Repo:   %s/%s\n", targetOwner, targetRepo)
+		fmt.Fprintf(w, "  Repo:   %s/%s\n", targetOwner, targetRepo)
 	}
 	if len(labels) > 0 {
-		fmt.Printf("  Labels: %s\n", strings.Join(labels, ", "))
+		fmt.Fprintf(w, "  Labels: %s\n", strings.Join(labels, ", "))
 	}
 	if len(opts.assignees) > 0 {
-		fmt.Printf("  Assignees: @%s\n", strings.Join(opts.assignees, ", @"))
+		fmt.Fprintf(w, "  Assignees: @%s\n", strings.Join(opts.assignees, ", @"))
 	}
 	if opts.milestone != "" {
-		fmt.Printf("  Milestone: %s\n", opts.milestone)
+		fmt.Fprintf(w, "  Milestone: %s\n", opts.milestone)
 	}
 	if opts.project > 0 {
-		fmt.Printf("  Project: #%d\n", opts.project)
+		fmt.Fprintf(w, "  Project: #%d\n", opts.project)
 	}
-	fmt.Printf("🔗 %s\n", newIssue.URL)
+	fmt.Fprintf(w, "🔗 %s\n", newIssue.URL)
 
 	return nil
 }
@@ -588,11 +591,12 @@ func runSubList(cmd *cobra.Command, args []string, opts *subListOptions) error {
 	}
 
 	// Output
+	w := cmd.OutOrStdout()
 	if opts.json {
-		return outputSubListJSONExtended(result, opts.relation)
+		return outputSubListJSONExtended(w, result, opts.relation)
 	}
 
-	return outputSubListTableExtended(result, opts.relation)
+	return outputSubListTableExtended(w, result, opts.relation)
 }
 
 // SubListResult holds all the data for sub list output
@@ -647,7 +651,7 @@ type SubListSummary struct {
 	Closed int `json:"closed"`
 }
 
-func outputSubListJSON(subIssues []api.SubIssue, parent *api.Issue) error {
+func outputSubListJSON(w io.Writer, subIssues []api.SubIssue, parent *api.Issue) error {
 	output := SubListJSONOutput{
 		Parent: SubListParent{
 			Number: parent.Number,
@@ -679,16 +683,16 @@ func outputSubListJSON(subIssues []api.SubIssue, parent *api.Issue) error {
 		}
 	}
 
-	encoder := json.NewEncoder(os.Stdout)
+	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)
 }
 
-func outputSubListTable(subIssues []api.SubIssue, parent *api.Issue) error {
-	fmt.Printf("Sub-issues of #%d: %s\n\n", parent.Number, parent.Title)
+func outputSubListTable(w io.Writer, subIssues []api.SubIssue, parent *api.Issue) error {
+	fmt.Fprintf(w, "Sub-issues of #%d: %s\n\n", parent.Number, parent.Title)
 
 	if len(subIssues) == 0 {
-		fmt.Println("No sub-issues found.")
+		fmt.Fprintln(w, "No sub-issues found.")
 		return nil
 	}
 
@@ -714,13 +718,13 @@ func outputSubListTable(subIssues []api.SubIssue, parent *api.Issue) error {
 		// Show repo info if there are cross-repo sub-issues
 		if hasCrossRepo && sub.Repository.Owner != "" && sub.Repository.Name != "" {
 			subRepo := sub.Repository.Owner + "/" + sub.Repository.Name
-			fmt.Printf("  %s %s#%d - %s\n", state, subRepo, sub.Number, sub.Title)
+			fmt.Fprintf(w, "  %s %s#%d - %s\n", state, subRepo, sub.Number, sub.Title)
 		} else {
-			fmt.Printf("  %s #%d - %s\n", state, sub.Number, sub.Title)
+			fmt.Fprintf(w, "  %s #%d - %s\n", state, sub.Number, sub.Title)
 		}
 	}
 
-	fmt.Printf("\nProgress: %d/%d complete\n", closedCount, len(subIssues))
+	fmt.Fprintf(w, "\nProgress: %d/%d complete\n", closedCount, len(subIssues))
 
 	return nil
 }
@@ -748,7 +752,7 @@ type SubListParentJSON struct {
 	URL    string `json:"url"`
 }
 
-func outputSubListJSONExtended(result SubListResult, relation string) error {
+func outputSubListJSONExtended(w io.Writer, result SubListResult, relation string) error {
 	output := SubListJSONExtended{
 		Issue: SubListIssueJSON{
 			Number: result.Issue.Number,
@@ -814,49 +818,49 @@ func outputSubListJSONExtended(result SubListResult, relation string) error {
 		}
 	}
 
-	encoder := json.NewEncoder(os.Stdout)
+	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)
 }
 
-func outputSubListTableExtended(result SubListResult, relation string) error {
+func outputSubListTableExtended(w io.Writer, result SubListResult, relation string) error {
 	// Header
-	fmt.Printf("Issue #%d: %s\n", result.Issue.Number, result.Issue.Title)
-	fmt.Println()
+	fmt.Fprintf(w, "Issue #%d: %s\n", result.Issue.Number, result.Issue.Title)
+	fmt.Fprintln(w)
 
 	// Show parent if requested and present
 	if (relation == "parent" || relation == "all") && result.Parent != nil {
-		fmt.Println("Parent:")
+		fmt.Fprintln(w, "Parent:")
 		state := "OPEN"
 		if result.Parent.State == "CLOSED" {
 			state = "CLOSED"
 		}
-		fmt.Printf("  #%d - %s [%s]\n", result.Parent.Number, result.Parent.Title, state)
-		fmt.Println()
+		fmt.Fprintf(w, "  #%d - %s [%s]\n", result.Parent.Number, result.Parent.Title, state)
+		fmt.Fprintln(w)
 	}
 
 	// Show children if requested
 	if relation == "children" || relation == "all" {
-		fmt.Println("Children:")
+		fmt.Fprintln(w, "Children:")
 		if len(result.Children) == 0 {
-			fmt.Println("  No sub-issues found.")
+			fmt.Fprintln(w, "  No sub-issues found.")
 		} else {
-			printSubIssueList(result.Children, result.Issue)
+			printSubIssueList(w, result.Children, result.Issue)
 		}
-		fmt.Println()
+		fmt.Fprintln(w)
 	}
 
 	// Show siblings if requested
 	if relation == "siblings" || relation == "all" {
-		fmt.Println("Siblings:")
+		fmt.Fprintln(w, "Siblings:")
 		if result.Parent == nil {
-			fmt.Println("  No parent issue (not a sub-issue).")
+			fmt.Fprintln(w, "  No parent issue (not a sub-issue).")
 		} else if len(result.Siblings) == 0 {
-			fmt.Println("  No sibling issues found.")
+			fmt.Fprintln(w, "  No sibling issues found.")
 		} else {
-			printSubIssueList(result.Siblings, result.Issue)
+			printSubIssueList(w, result.Siblings, result.Issue)
 		}
-		fmt.Println()
+		fmt.Fprintln(w)
 	}
 
 	// Show progress summary for children
@@ -867,14 +871,14 @@ func outputSubListTableExtended(result SubListResult, relation string) error {
 				closedCount++
 			}
 		}
-		fmt.Printf("Progress: %d/%d complete\n", closedCount, len(result.Children))
+		fmt.Fprintf(w, "Progress: %d/%d complete\n", closedCount, len(result.Children))
 	}
 
 	return nil
 }
 
 // printSubIssueList prints a list of sub-issues with state checkboxes
-func printSubIssueList(subIssues []api.SubIssue, referenceIssue *api.Issue) {
+func printSubIssueList(w io.Writer, subIssues []api.SubIssue, referenceIssue *api.Issue) {
 	// Check if any sub-issues are in different repos
 	refRepo := ""
 	if referenceIssue.Repository.Owner != "" && referenceIssue.Repository.Name != "" {
@@ -899,9 +903,9 @@ func printSubIssueList(subIssues []api.SubIssue, referenceIssue *api.Issue) {
 		// Show repo info if there are cross-repo sub-issues
 		if hasCrossRepo && sub.Repository.Owner != "" && sub.Repository.Name != "" {
 			subRepo := sub.Repository.Owner + "/" + sub.Repository.Name
-			fmt.Printf("  %s %s#%d - %s\n", state, subRepo, sub.Number, sub.Title)
+			fmt.Fprintf(w, "  %s %s#%d - %s\n", state, subRepo, sub.Number, sub.Title)
 		} else {
-			fmt.Printf("  %s #%d - %s\n", state, sub.Number, sub.Title)
+			fmt.Fprintf(w, "  %s #%d - %s\n", state, sub.Number, sub.Title)
 		}
 	}
 }
@@ -1062,25 +1066,26 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 	}
 
 	// Output results
+	w := cmd.OutOrStdout()
 	if len(children) == 1 {
 		// Single child - use simple output format
 		if successCount == 1 {
-			fmt.Printf("✓ Removed sub-issue link: #%d is no longer a sub-issue of #%d\n", children[0].number, parentNumber)
-			fmt.Printf("  Former parent: %s\n", parentIssue.Title)
+			fmt.Fprintf(w, "✓ Removed sub-issue link: #%d is no longer a sub-issue of #%d\n", children[0].number, parentNumber)
+			fmt.Fprintf(w, "  Former parent: %s\n", parentIssue.Title)
 		} else {
 			// Print the failure message
 			for _, r := range results {
-				fmt.Println(r)
+				fmt.Fprintln(w, r)
 			}
 			return fmt.Errorf("failed to remove sub-issue")
 		}
 	} else {
 		// Multiple children - use batch output format
-		fmt.Printf("Removing sub-issues from parent #%d: %s\n\n", parentNumber, parentIssue.Title)
+		fmt.Fprintf(w, "Removing sub-issues from parent #%d: %s\n\n", parentNumber, parentIssue.Title)
 		for _, r := range results {
-			fmt.Println("  " + r)
+			fmt.Fprintln(w, "  "+r)
 		}
-		fmt.Printf("\nSummary: %d succeeded, %d failed\n", successCount, failCount)
+		fmt.Fprintf(w, "\nSummary: %d succeeded, %d failed\n", successCount, failCount)
 
 		if failCount > 0 && successCount == 0 {
 			return fmt.Errorf("all removals failed")

@@ -238,7 +238,7 @@ func outputSplitJSON(cmd *cobra.Command, parent *api.Issue, tasks []string, stat
 		"tasks":     tasks,
 	}
 
-	encoder := json.NewEncoder(os.Stdout)
+	encoder := json.NewEncoder(cmd.OutOrStdout())
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)
 }
@@ -266,7 +266,7 @@ func outputSplitJSONCreated(cmd *cobra.Command, parent *api.Issue, created []api
 		"failed":       failed,
 	}
 
-	encoder := json.NewEncoder(os.Stdout)
+	encoder := json.NewEncoder(cmd.OutOrStdout())
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)
 }

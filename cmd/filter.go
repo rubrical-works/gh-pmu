@@ -221,7 +221,7 @@ func runFilterWithDeps(cmd *cobra.Command, opts *filterOptions, cfg *config.Conf
 
 	// Output results
 	if opts.json {
-		return outputFilterJSON(filtered)
+		return outputFilterJSON(cmd, filtered)
 	}
 	return outputFilterTable(cmd, filtered)
 }
@@ -257,8 +257,8 @@ func hasLabel(issue FilterInput, label string) bool {
 }
 
 // outputFilterJSON outputs filtered issues as JSON
-func outputFilterJSON(issues []FilterInput) error {
-	encoder := json.NewEncoder(os.Stdout)
+func outputFilterJSON(cmd *cobra.Command, issues []FilterInput) error {
+	encoder := json.NewEncoder(cmd.OutOrStdout())
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(issues)
 }
@@ -271,13 +271,14 @@ func outputFilterTable(cmd *cobra.Command, issues []FilterInput) error {
 	}
 
 	// Simple table output
-	fmt.Println("NUMBER\tTITLE\tSTATE")
+	w := cmd.OutOrStdout()
+	fmt.Fprintln(w, "NUMBER\tTITLE\tSTATE")
 	for _, issue := range issues {
 		title := issue.Title
 		if len(title) > 50 {
 			title = title[:47] + "..."
 		}
-		fmt.Printf("#%d\t%s\t%s\n", issue.Number, title, issue.State)
+		fmt.Fprintf(w, "#%d\t%s\t%s\n", issue.Number, title, issue.State)
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
+	"github.com/spf13/cobra"
 )
 
 // mockFilterClient implements filterClient for testing
@@ -462,15 +463,21 @@ func TestOutputFilterTable_TitleTruncation(t *testing.T) {
 // ============================================================================
 
 func TestOutputFilterJSON_EmptyIssues(t *testing.T) {
-	// outputFilterJSON writes to os.Stdout
-	// We can verify it doesn't error
-	err := outputFilterJSON([]FilterInput{})
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	err := outputFilterJSON(cmd, []FilterInput{})
 	if err != nil {
 		t.Fatalf("outputFilterJSON() error = %v", err)
 	}
 }
 
 func TestOutputFilterJSON_WithIssues(t *testing.T) {
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	issues := []FilterInput{
 		{
 			Number: 42,
@@ -480,7 +487,7 @@ func TestOutputFilterJSON_WithIssues(t *testing.T) {
 		},
 	}
 
-	err := outputFilterJSON(issues)
+	err := outputFilterJSON(cmd, issues)
 	if err != nil {
 		t.Fatalf("outputFilterJSON() error = %v", err)
 	}

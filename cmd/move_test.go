@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -1283,20 +1282,11 @@ func TestRunMoveWithDeps_RecursiveProgressOutput(t *testing.T) {
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
 
-	// Capture stdout for progress output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
 	opts := &moveOptions{status: "in_progress", recursive: true, yes: true, depth: 10}
 
 	err := runMoveWithDeps(cmd, []string{"1"}, opts, cfg, mock)
 
-	w.Close()
-	os.Stdout = oldStdout
-	var stdoutBuf bytes.Buffer
-	_, _ = stdoutBuf.ReadFrom(r)
-	output := stdoutBuf.String()
+	output := buf.String()
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)

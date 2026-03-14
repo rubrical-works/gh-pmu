@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -356,17 +357,19 @@ func outputViewMultiJSON(cmd *cobra.Command, opts *viewOptions, results []viewRe
 		return applyJQFilter(jsonBytes, opts.jq)
 	}
 
-	fmt.Println(string(jsonBytes))
+	w := cmd.OutOrStdout()
+	fmt.Fprintln(w, string(jsonBytes))
 	return nil
 }
 
 // outputViewMultiTable outputs multiple issues sequentially with separators
 func outputViewMultiTable(cmd *cobra.Command, results []viewResult) error {
+	w := cmd.OutOrStdout()
 	for i, r := range results {
 		if i > 0 {
-			fmt.Println()
-			fmt.Println(strings.Repeat("\u2550", 60))
-			fmt.Println()
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, strings.Repeat("\u2550", 60))
+			fmt.Fprintln(w)
 		}
 		if err := outputViewTable(cmd, r.issue, r.fieldValues, r.subIssues, r.parentIssue, r.comments); err != nil {
 			return err
@@ -420,12 +423,12 @@ func runViewWithDeps(cmd *cobra.Command, opts *viewOptions, client viewClient, o
 
 	// Handle --body-file flag: write body to tmp/issue-{number}.md
 	if opts.bodyFile {
-		return writeBodyToFile(issue.Number, issue.Body)
+		return writeBodyToFile(cmd.OutOrStdout(), issue.Number, issue.Body)
 	}
 
 	// Handle --body-stdout flag: output body directly to stdout
 	if opts.bodyStdout {
-		fmt.Print(issue.Body)
+		fmt.Fprint(cmd.OutOrStdout(), issue.Body)
 		return nil
 	}
 
@@ -528,7 +531,7 @@ func outputViewJSON(cmd *cobra.Command, opts *viewOptions, issue *api.Issue, fie
 	}
 
 	// Output JSON
-	fmt.Println(string(jsonBytes))
+	fmt.Fprintln(cmd.OutOrStdout(), string(jsonBytes))
 	return nil
 }
 
@@ -684,14 +687,16 @@ func filterViewJSONFields(output ViewJSONOutput, fields []string) map[string]int
 }
 
 func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.FieldValue, subIssues []api.SubIssue, parentIssue *api.Issue, comments []api.Comment) error {
+	w := cmd.OutOrStdout()
+
 	// Title and state
-	fmt.Printf("%s #%d\n", issue.Title, issue.Number)
-	fmt.Printf("State: %s\n", issue.State)
-	fmt.Printf("URL: %s\n", issue.URL)
-	fmt.Println()
+	fmt.Fprintf(w, "%s #%d\n", issue.Title, issue.Number)
+	fmt.Fprintf(w, "State: %s\n", issue.State)
+	fmt.Fprintf(w, "URL: %s\n", issue.URL)
+	fmt.Fprintln(w)
 
 	// Author
-	fmt.Printf("Author: @%s\n", issue.Author.Login)
+	fmt.Fprintf(w, "Author: @%s\n", issue.Author.Login)
 
 	// Assignees
 	if len(issue.Assignees) > 0 {
@@ -699,7 +704,7 @@ func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.Fie
 		for _, a := range issue.Assignees {
 			assignees = append(assignees, "@"+a.Login)
 		}
-		fmt.Printf("Assignees: %s\n", strings.Join(assignees, ", "))
+		fmt.Fprintf(w, "Assignees: %s\n", strings.Join(assignees, ", "))
 	}
 
 	// Labels
@@ -708,33 +713,33 @@ func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.Fie
 		for _, l := range issue.Labels {
 			labels = append(labels, l.Name)
 		}
-		fmt.Printf("Labels: %s\n", strings.Join(labels, ", "))
+		fmt.Fprintf(w, "Labels: %s\n", strings.Join(labels, ", "))
 	}
 
 	// Milestone
 	if issue.Milestone != nil {
-		fmt.Printf("Milestone: %s\n", issue.Milestone.Title)
+		fmt.Fprintf(w, "Milestone: %s\n", issue.Milestone.Title)
 	}
 
 	// Project field values
 	if len(fieldValues) > 0 {
-		fmt.Println()
-		fmt.Println("Project Fields:")
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Project Fields:")
 		for _, fv := range fieldValues {
-			fmt.Printf("  %s: %s\n", fv.Field, fv.Value)
+			fmt.Fprintf(w, "  %s: %s\n", fv.Field, fv.Value)
 		}
 	}
 
 	// Parent issue
 	if parentIssue != nil {
-		fmt.Println()
-		fmt.Printf("Parent Issue: #%d - %s\n", parentIssue.Number, parentIssue.Title)
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "Parent Issue: #%d - %s\n", parentIssue.Number, parentIssue.Title)
 	}
 
 	// Sub-issues with progress bar
 	if len(subIssues) > 0 {
-		fmt.Println()
-		fmt.Println("Sub-Issues:")
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Sub-Issues:")
 		closedCount := 0
 		for _, sub := range subIssues {
 			state := "[ ]"
@@ -747,11 +752,11 @@ func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.Fie
 				parentRepo := issue.Repository.Owner + "/" + issue.Repository.Name
 				subRepo := sub.Repository.Owner + "/" + sub.Repository.Name
 				if subRepo != parentRepo {
-					fmt.Printf("  %s %s#%d - %s\n", state, subRepo, sub.Number, sub.Title)
+					fmt.Fprintf(w, "  %s %s#%d - %s\n", state, subRepo, sub.Number, sub.Title)
 					continue
 				}
 			}
-			fmt.Printf("  %s #%d - %s\n", state, sub.Number, sub.Title)
+			fmt.Fprintf(w, "  %s #%d - %s\n", state, sub.Number, sub.Title)
 		}
 
 		// Progress bar and percentage
@@ -761,24 +766,24 @@ func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.Fie
 			percentage = (closedCount * 100) / total
 		}
 		progressBar := renderProgressBar(closedCount, total, 20)
-		fmt.Printf("\n%s %d of %d sub-issues complete (%d%%)\n", progressBar, closedCount, total, percentage)
+		fmt.Fprintf(w, "\n%s %d of %d sub-issues complete (%d%%)\n", progressBar, closedCount, total, percentage)
 	}
 
 	// Body
 	if issue.Body != "" {
-		fmt.Println()
-		fmt.Println("---")
-		fmt.Println(issue.Body)
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "---")
+		fmt.Fprintln(w, issue.Body)
 	}
 
 	// Comments
 	if len(comments) > 0 {
-		fmt.Println()
-		fmt.Printf("Comments (%d):\n", len(comments))
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "Comments (%d):\n", len(comments))
 		for _, c := range comments {
-			fmt.Println()
-			fmt.Printf("@%s commented on %s:\n", c.Author, c.CreatedAt)
-			fmt.Println(c.Body)
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "@%s commented on %s:\n", c.Author, c.CreatedAt)
+			fmt.Fprintln(w, c.Body)
 		}
 	}
 
@@ -803,7 +808,7 @@ func renderProgressBar(completed, total, width int) string {
 
 // writeBodyToFile writes the issue body to tmp/issue-{number}.md
 // Creates the tmp directory if it doesn't exist
-func writeBodyToFile(number int, body string) error {
+func writeBodyToFile(w io.Writer, number int, body string) error {
 	// Create tmp directory if it doesn't exist
 	tmpDir := "tmp"
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
@@ -818,7 +823,7 @@ func writeBodyToFile(number int, body string) error {
 		return fmt.Errorf("failed to write body file: %w", err)
 	}
 
-	fmt.Println(filePath)
+	fmt.Fprintln(w, filePath)
 	return nil
 }
 

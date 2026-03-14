@@ -1152,7 +1152,8 @@ func TestWriteBodyToFile_Success(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origDir) }()
 
-	err := writeBodyToFile(42, "Test body content\n\nWith multiple lines.")
+	var buf bytes.Buffer
+	err := writeBodyToFile(&buf, 42, "Test body content\n\nWith multiple lines.")
 	if err != nil {
 		t.Fatalf("writeBodyToFile() error = %v", err)
 	}
@@ -1184,7 +1185,8 @@ func TestWriteBodyToFile_CreatesTmpDirectory(t *testing.T) {
 		t.Fatal("tmp directory should not exist before test")
 	}
 
-	err := writeBodyToFile(123, "Body content")
+	var buf bytes.Buffer
+	err := writeBodyToFile(&buf, 123, "Body content")
 	if err != nil {
 		t.Fatalf("writeBodyToFile() error = %v", err)
 	}
@@ -1208,7 +1210,8 @@ func TestWriteBodyToFile_EmptyBody(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origDir) }()
 
-	err := writeBodyToFile(99, "")
+	var buf bytes.Buffer
+	err := writeBodyToFile(&buf, 99, "")
 	if err != nil {
 		t.Fatalf("writeBodyToFile() error = %v", err)
 	}

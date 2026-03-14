@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -576,21 +575,14 @@ func TestOutputSubListJSON_EmptyList(t *testing.T) {
 	}
 	subIssues := []api.SubIssue{}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListJSON(subIssues, parent)
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListJSON(&buf, subIssues, parent)
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
+	output := buf.Bytes()
 
 	var result SubListJSONOutput
 	if err := json.Unmarshal(output, &result); err != nil {
@@ -628,21 +620,14 @@ func TestOutputSubListJSON_SummaryCounts(t *testing.T) {
 		{Number: 3, Title: "Closed 1", State: "CLOSED", Repository: api.Repository{Owner: "owner", Name: "repo"}},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListJSON(subIssues, parent)
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListJSON(&buf, subIssues, parent)
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
+	output := buf.Bytes()
 
 	var result SubListJSONOutput
 	if err := json.Unmarshal(output, &result); err != nil {
@@ -683,21 +668,14 @@ func TestOutputSubListJSON_RepositoryField(t *testing.T) {
 		},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListJSON(subIssues, parent)
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListJSON(&buf, subIssues, parent)
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
+	output := buf.Bytes()
 
 	var result SubListJSONOutput
 	if err := json.Unmarshal(output, &result); err != nil {
@@ -734,21 +712,14 @@ func TestOutputSubListJSON_AllFields(t *testing.T) {
 		},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListJSON(subIssues, parent)
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListJSON(&buf, subIssues, parent)
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
+	output := buf.Bytes()
 
 	var result SubListJSONOutput
 	if err := json.Unmarshal(output, &result); err != nil {
@@ -789,22 +760,14 @@ func TestOutputSubListTable_EmptyList(t *testing.T) {
 	}
 	subIssues := []api.SubIssue{}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListTable(subIssues, parent)
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListTable(&buf, subIssues, parent)
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-	outputStr := string(output)
+	outputStr := buf.String()
 
 	if !strings.Contains(outputStr, "No sub-issues found") {
 		t.Error("Expected 'No sub-issues found' message for empty list")
@@ -825,22 +788,14 @@ func TestOutputSubListTable_SingleRepo(t *testing.T) {
 		{Number: 2, Title: "Task 2", State: "CLOSED", Repository: api.Repository{Owner: "owner", Name: "repo"}},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListTable(subIssues, parent)
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListTable(&buf, subIssues, parent)
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-	outputStr := string(output)
+	outputStr := buf.String()
 
 	// Should show parent info
 	if !strings.Contains(outputStr, "#10") {
@@ -886,22 +841,14 @@ func TestOutputSubListTable_CrossRepo(t *testing.T) {
 		{Number: 100, Title: "Cross repo task", State: "OPEN", Repository: api.Repository{Owner: "other", Name: "project"}},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListTable(subIssues, parent)
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListTable(&buf, subIssues, parent)
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-	outputStr := string(output)
+	outputStr := buf.String()
 
 	// Should show repo info for cross-repo sub-issues
 	if !strings.Contains(outputStr, "other/project#100") {
@@ -957,22 +904,14 @@ func TestOutputSubListTable_ProgressCalculation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
-
-			err := outputSubListTable(tt.subs, parent)
-
-			w.Close()
-			os.Stdout = oldStdout
+			var buf bytes.Buffer
+			err := outputSubListTable(&buf, tt.subs, parent)
 
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
 
-			output, _ := io.ReadAll(r)
-			outputStr := string(output)
+			outputStr := buf.String()
 
 			if !strings.Contains(outputStr, tt.expected) {
 				t.Errorf("Expected progress '%s' in output, got: %s", tt.expected, outputStr)
@@ -1322,24 +1261,15 @@ func TestOutputSubListJSONExtended_ChildrenOnly(t *testing.T) {
 		},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListJSONExtended(result, "children")
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListJSONExtended(&buf, result, "children")
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-
 	var jsonResult SubListJSONExtended
-	if err := json.Unmarshal(output, &jsonResult); err != nil {
+	if err := json.Unmarshal(buf.Bytes(), &jsonResult); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v", err)
 	}
 
@@ -1379,24 +1309,15 @@ func TestOutputSubListJSONExtended_WithParent(t *testing.T) {
 		},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListJSONExtended(result, "parent")
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListJSONExtended(&buf, result, "parent")
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-
 	var jsonResult SubListJSONExtended
-	if err := json.Unmarshal(output, &jsonResult); err != nil {
+	if err := json.Unmarshal(buf.Bytes(), &jsonResult); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v", err)
 	}
 
@@ -1431,24 +1352,15 @@ func TestOutputSubListJSONExtended_WithSiblings(t *testing.T) {
 		},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListJSONExtended(result, "siblings")
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListJSONExtended(&buf, result, "siblings")
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-
 	var jsonResult SubListJSONExtended
-	if err := json.Unmarshal(output, &jsonResult); err != nil {
+	if err := json.Unmarshal(buf.Bytes(), &jsonResult); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v", err)
 	}
 
@@ -1479,22 +1391,14 @@ func TestOutputSubListTableExtended_ChildrenOnly(t *testing.T) {
 		},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListTableExtended(result, "children")
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListTableExtended(&buf, result, "children")
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-	outputStr := string(output)
+	outputStr := buf.String()
 
 	// Should show issue info
 	if !strings.Contains(outputStr, "#10") {
@@ -1536,22 +1440,14 @@ func TestOutputSubListTableExtended_ParentRelation(t *testing.T) {
 		},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListTableExtended(result, "parent")
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListTableExtended(&buf, result, "parent")
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-	outputStr := string(output)
+	outputStr := buf.String()
 
 	// Should show parent section
 	if !strings.Contains(outputStr, "Parent:") {
@@ -1588,22 +1484,14 @@ func TestOutputSubListTableExtended_AllRelations(t *testing.T) {
 		},
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListTableExtended(result, "all")
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListTableExtended(&buf, result, "all")
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-	outputStr := string(output)
+	outputStr := buf.String()
 
 	// Should show all sections
 	if !strings.Contains(outputStr, "Parent:") {
@@ -1628,22 +1516,14 @@ func TestOutputSubListTableExtended_NoParent(t *testing.T) {
 		Parent: nil, // No parent
 	}
 
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := outputSubListTableExtended(result, "siblings")
-
-	w.Close()
-	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	err := outputSubListTableExtended(&buf, result, "siblings")
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	output, _ := io.ReadAll(r)
-	outputStr := string(output)
+	outputStr := buf.String()
 
 	// Should indicate no parent
 	if !strings.Contains(outputStr, "No parent issue") {
