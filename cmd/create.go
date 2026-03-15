@@ -97,6 +97,54 @@ type issueFromFile struct {
 	Priority  string   `json:"priority" yaml:"priority"`
 }
 
+// validateCreateFlags checks flag constraints that can be evaluated without
+// network access, so errors surface before creating an API client.
+func validateCreateFlags(opts *createOptions) error {
+	if opts.fromFile != "" {
+		return validateCreateFromFileFlags(opts)
+	}
+	if opts.title == "" {
+		return fmt.Errorf("--title is required")
+	}
+	if opts.body != "" && opts.bodyFile != "" {
+		return fmt.Errorf("cannot use --body and --body-file together")
+	}
+	if opts.body != "" && opts.bodyStdin {
+		return fmt.Errorf("cannot use --body and --body-stdin together")
+	}
+	if opts.bodyFile != "" && opts.bodyStdin {
+		return fmt.Errorf("cannot use --body-file and --body-stdin together")
+	}
+	if opts.template != "" && (opts.body != "" || opts.bodyFile != "" || opts.bodyStdin) {
+		return fmt.Errorf("cannot use --template with --body or --body-file")
+	}
+	return nil
+}
+
+// validateCreateFromFileFlags validates --from-file inputs before API client creation.
+func validateCreateFromFileFlags(opts *createOptions) error {
+	data, err := os.ReadFile(opts.fromFile)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", opts.fromFile, err)
+	}
+
+	var issueData issueFromFile
+	if strings.HasSuffix(opts.fromFile, ".json") {
+		if err := json.Unmarshal(data, &issueData); err != nil {
+			return fmt.Errorf("failed to parse JSON file: %w", err)
+		}
+	} else {
+		if err := yaml.Unmarshal(data, &issueData); err != nil {
+			return fmt.Errorf("failed to parse YAML file: %w", err)
+		}
+	}
+
+	if issueData.Title == "" {
+		return fmt.Errorf("title is required in file")
+	}
+	return nil
+}
+
 func runCreate(cmd *cobra.Command, opts *createOptions) error {
 	// Load configuration
 	cwd, err := os.Getwd()
@@ -132,6 +180,11 @@ func runCreate(cmd *cobra.Command, opts *createOptions) error {
 			return fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
 		}
 		owner, repo = repoParts[0], repoParts[1]
+	}
+
+	// Validate flags before creating API client (fail fast without network)
+	if err := validateCreateFlags(opts); err != nil {
+		return err
 	}
 
 	// Create API client
