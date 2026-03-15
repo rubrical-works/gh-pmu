@@ -2942,9 +2942,9 @@ func TestRunMoveWithDeps_RecursiveBatchFallback_NilMap(t *testing.T) {
 	// Sub-issues available for individual fetch (fallback)
 	mock.subIssues["testowner/testrepo#1"] = []api.SubIssue{
 		{
-			ID:     "issue-2",
-			Number: 2,
-			Title:  "Sub Issue",
+			ID:         "issue-2",
+			Number:     2,
+			Title:      "Sub Issue",
 			Repository: api.Repository{Owner: "testowner", Name: "testrepo"},
 		},
 	}
