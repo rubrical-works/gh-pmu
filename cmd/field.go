@@ -8,6 +8,7 @@ import (
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
+	"github.com/rubrical-works/gh-pmu/internal/integrity"
 	"github.com/spf13/cobra"
 )
 
@@ -204,6 +205,9 @@ func runFieldCreateWithDeps(cmd *cobra.Command, fieldName string, opts *fieldCre
 		fmt.Fprintf(cmd.OutOrStdout(), "⚠ Created field but failed to update config: %v\n", err)
 		return nil
 	}
+
+	// Update checksum after saving config
+	_ = integrity.UpdateChecksumForConfig(configPath)
 
 	fmt.Fprintf(cmd.OutOrStdout(), "✓ Updated .gh-pmu.yml metadata\n")
 

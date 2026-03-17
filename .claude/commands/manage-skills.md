@@ -1,8 +1,9 @@
 ---
-version: "v0.62.1"
+version: "v0.65.0"
 allowed-tools: Bash, AskUserQuestion
 description: "Manage project skills: list, install, remove, info (project)"
 argument-hint: "[list|install|remove|info] [name] [--verbose]"
+copyright: "Rubrical Works (c) 2026"
 ---
 <!-- MANAGED -->
 Unified skill management for discovery, installation, removal, and status.
@@ -19,14 +20,13 @@ Run the manage-skills script:
 ```bash
 node .claude/scripts/shared/manage-skills.js "$ARGUMENTS"
 ```
-**Note:** The script is a library. Parse command and execute accordingly:
-### Direct Invocation Flow
-1. **Parse arguments** via `parseCommand(args)`
-2. **Route by mode:**
-   - `list` -> Call `listSkills(projectDir, { verbose })`, format with category grouping
-   - `install` -> Call `installSkill(projectDir, skillName)`, report result
-   - `remove` -> Call `removeSkill(projectDir, skillName)`, report result
-   - `info` -> Call `skillInfo(projectDir, skillName)`, format and display
+The script has a CLI entry point and outputs JSON. Parse the JSON result and format for the user.
+### Routing Reference
+The script routes internally by subcommand:
+   - `list` -> `listSkills(projectDir, { verbose })` with category grouping
+   - `install` -> Resolves `hubDir` from `framework-config.json` → `frameworkPath`. Calls `installSkill(projectDir, hubDir, skillName)`
+   - `remove` -> `removeSkill(projectDir, skillName)`
+   - `info` -> `skillInfo(projectDir, skillName)`
 ### List Display Format
 Both `/manage-skills` (no args) and `/manage-skills list` produce same output. Use `listSkills()` output (each skill has `name`, `description`, `installed`, `isDefault`, `category`).
 ```

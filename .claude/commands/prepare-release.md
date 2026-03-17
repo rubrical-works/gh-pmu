@@ -1,14 +1,15 @@
 ---
-version: "v0.62.1"
+version: "v0.65.0"
 description: Prepare release with PR, merge to main, and tag
 argument-hint: "[version] [--skip-coverage] [--dry-run] [--help]"
+copyright: "Rubrical Works (c) 2026"
 ---
-<!-- EXTENSIBLE -->
 
+<!-- EXTENSIBLE -->
 # /prepare-release
 Validate, create PR to main, merge, and tag for deployment.
 **Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command prepare-release`
-
+---
 ## Arguments
 | Argument | Description |
 |----------|-------------|
@@ -16,7 +17,7 @@ Validate, create PR to main, merge, and tag for deployment.
 | `--skip-coverage` | Skip coverage gate |
 | `--dry-run` | Preview without changes |
 | `--help` | Show extension points |
-
+---
 ## Execution Instructions
 **REQUIRED:** Before executing:
 1. **Generate Todo List:** Parse phases and extension points, use `TodoWrite` to create todos
@@ -24,15 +25,13 @@ Validate, create PR to main, merge, and tag for deployment.
 3. **Track Progress:** Mark todos `in_progress` -> `completed` as you work
 4. **Post-Compaction:** Re-read spec and regenerate todos after context compaction
 **Todo Rules:** One todo per numbered phase/step; one todo per active extension; skip commented-out extensions.
-
+---
 ## Pre-Checks
-
 ### Verify Current Branch
 ```bash
 git branch --show-current
 ```
 Record as `$BRANCH`.
-
 ### Auto-Create Release Branch (if on main)
 **If `$BRANCH` is `main`:**
 1. Analyze commits to recommend version:
@@ -51,32 +50,31 @@ Record as `$BRANCH`.
 6. Update `$BRANCH` to `release/$VERSION`
 7. Report: "Created release branch: release/$VERSION. Continuing..."
 **If NOT `main`:** Continue with existing working branch.
-
 ### Check for Incomplete Issues
 ```bash
  gh pmu list --branch current --status backlog,in_progress,in_review
 ```
 **Do not add `--json`** -- `status` is not a valid JSON field for `gh pmu list`.
+---
+
 <!-- USER-EXTENSION-START: pre-phase-1 -->
 <!-- USER-EXTENSION-END: pre-phase-1 -->
 
 ## Phase 1: Analysis
-
 ### Step 1.1: Analyze Changes
 ```bash
 git log $(git describe --tags --abbrev=0)..HEAD --oneline
 ```
-
 ### Analyze Commits
 ```bash
 node .claude/scripts/shared/analyze-commits.js
 ```
 Outputs JSON: `lastTag`, `commits`, `summary` (counts by type).
-
 ### Recommend Version
 ```bash
 node .claude/scripts/shared/recommend-version.js
 ```
+
 <!-- USER-EXTENSION-START: post-analysis -->
 
 ### Documentation Review
@@ -103,9 +101,11 @@ The script analyzes which E2E tests may be impacted by changes:
 **If `newCommandsWithoutTests` is non-empty, warn user about missing coverage.**
 
 <!-- USER-EXTENSION-END: post-analysis -->
-**ASK USER:** Confirm version before proceeding.
 
+**ASK USER:** Confirm version before proceeding.
+---
 ## Phase 2: Validation
+
 <!-- USER-EXTENSION-START: pre-validation -->
 ### Handle Incomplete Issues
 
@@ -127,6 +127,7 @@ The script outputs JSON: `{"success": true/false, "message": "..."}`
 Runs `golangci-lint run --timeout=5m` to catch lint errors before tagging.
 
 <!-- USER-EXTENSION-END: pre-validation -->
+
 <!-- USER-EXTENSION-START: post-validation -->
 
 ### Step 2.1: Run Tests
@@ -174,10 +175,10 @@ The script outputs JSON: `{"success": true/false, "testsRun": N, "testsPassed": 
 
 E2E tests validate complete workflows against the test project.
 <!-- USER-EXTENSION-END: post-validation -->
+
 **ASK USER:** Confirm validation passed.
-
+---
 ## Phase 3: Prepare
-
 ### Step 3.1: Update Version Files
 | File | Action |
 |------|--------|
@@ -185,6 +186,7 @@ E2E tests validate complete workflows against the test project.
 | `README.md` | Update version badge or header |
 | `README-DIST.md` | Verify skill/specialist counts match actuals, license populated |
 | `framework-config.json` | (Self-hosted only) Update `frameworkVersion` and `installedDate` |
+
 <!-- USER-EXTENSION-START: pre-commit -->
 ### Update Version Constant
 
@@ -197,6 +199,7 @@ git add CHANGELOG.md README.md README-DIST.md docs/
 git commit -m "chore: prepare release $VERSION"
 git push
 ```
+
 <!-- USER-EXTENSION-START: post-prepare -->
 ### Wait for CI
 
@@ -208,15 +211,16 @@ The script polls CI status every 60 seconds (5-minute timeout).
 
 **If CI fails, STOP and report the error.**
 <!-- USER-EXTENSION-END: post-prepare -->
+
 **CRITICAL:** Do not proceed until CI passes.
-
+---
 ## Phase 4: Git Operations
-
 ### Step 4.1: Create PR to Main
 ```bash
 gh pr create --base main --head $(git branch --show-current) \
   --title "Release $VERSION"
 ```
+
 <!-- USER-EXTENSION-START: post-pr-create -->
 
 ### Wait for CI
@@ -232,17 +236,16 @@ node .claude/scripts/shared/wait-for-ci.js
 ```bash
 gh pr merge --merge
 ```
-
 ### Step 4.3: Close Branch Tracker
 ```bash
 gh pmu branch close
 ```
-
 ### Step 4.4: Switch to Main
 ```bash
 git checkout main
 git pull origin main
 ```
+
 <!-- USER-EXTENSION-START: pre-tag -->
 ### Important Rules
 
@@ -258,34 +261,36 @@ git pull origin main
 ```bash
 node .claude/scripts/shared/lib/active-label.js remove [TRACKER_NUMBER]
 ```
-
 ### Step 4.6: Tag and Push
 **ASK USER:** Confirm ready to tag.
 ```bash
 git tag -a $VERSION -m "Release $VERSION"
 git push origin $VERSION
 ```
-
 ### Step 4.7: Wait for CI Workflow
+
 **Conditional:** Check if CI workflows exist before waiting.
+
 ```bash
 # Check for .github/workflows/*.yml or *.yaml files
 ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null
 ```
+
 **If no workflow files found:** Skip CI wait with message:
 ```
 No CI workflows detected — skipping CI wait.
 ```
+
 **If workflow files exist:** Proceed normally:
 ```bash
 node .claude/scripts/shared/wait-for-ci.js
 ```
 **If CI fails, STOP and report.**
-
 ### Step 4.8: Update Release Notes
 ```bash
 node .claude/scripts/shared/update-release-notes.js
 ```
+
 <!-- USER-EXTENSION-START: post-tag -->
 ### Monitor Release Workflow
 
@@ -321,59 +326,71 @@ Issues included in this release still require explicit user approval ("Done") to
 Do NOT auto-close issues just because they shipped.
 <!-- USER-EXTENSION-END: post-tag -->
 
+---
 ## Summary Checklist
 **Core (Before tagging):**
 - [ ] Commits analyzed
 - [ ] Version confirmed
 - [ ] CHANGELOG updated
 - [ ] PR merged
+
 <!-- USER-EXTENSION-START: checklist-before-tag -->
 - [ ] Coverage gate passed (or `--skip-coverage`)
 - [ ] CI passing
 <!-- USER-EXTENSION-END: checklist-before-tag -->
+
 **Core (After tagging):**
 - [ ] Tag pushed
 - [ ] CI workflow completed
 - [ ] Release notes updated
+
 <!-- USER-EXTENSION-START: checklist-after-tag -->
 - [ ] All CI jobs completed
 - [ ] Release assets uploaded
 - [ ] Release notes updated
 <!-- USER-EXTENSION-END: checklist-after-tag -->
+
+---
+
 <!-- USER-EXTENSION-START: pre-close -->
 <!-- Pre-close validation, notifications -->
 <!-- USER-EXTENSION-END: pre-close -->
 
 ## Phase 5: Close & Cleanup
 **ASK USER:** Confirm deployment verified and ready to close release.
-
 ### Step 5.1: Add Deployment Comment
 ```bash
 gh issue comment [TRACKER_NUMBER] --body "Release $VERSION deployed successfully"
 ```
-
 ### Step 5.2: Delete Working Branch
 ```bash
 git push origin --delete $BRANCH
 git branch -d $BRANCH
 ```
-
 ### Step 5.3: Verify GitHub Release
+
 Check if the GitHub release already exists (Step 4.8 may have created it):
+
 ```bash
 gh release view $VERSION
 ```
+
 - **If release exists:** Report `"GitHub release $VERSION already exists (created by Step 4.8). Skipping creation."` — no action needed.
 - **If release does not exist:** Create it:
+
 ```bash
 gh release create $VERSION \
   --title "Release $VERSION" \
   --notes-file CHANGELOG.md
 ```
+
 <!-- USER-EXTENSION-START: post-close -->
+
 <!-- USER-EXTENSION-END: post-close -->
 
+---
 ## Summary Checklist (Close)
+
 <!-- USER-EXTENSION-START: checklist-close -->
 - [ ] Tracker issue closed
 - [ ] Release closed in project
@@ -381,6 +398,7 @@ gh release create $VERSION \
 - [ ] GitHub Release created
 <!-- USER-EXTENSION-END: checklist-close -->
 
+---
 ## Completion
 Release $VERSION is complete:
 - Code merged to main
@@ -389,4 +407,5 @@ Release $VERSION is complete:
 - Tracker issue closed
 - Working branch deleted
 - GitHub Release created
+---
 **End of Prepare Release**

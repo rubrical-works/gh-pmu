@@ -1,7 +1,8 @@
 ---
-version: "v0.62.1"
+version: "v0.65.0"
 description: Review a proposal with tracked history (project)
 argument-hint: "#issue [--with ...] [--mode ...] [--force]"
+copyright: "Rubrical Works (c) 2026"
 ---
 
 <!-- EXTENSIBLE -->

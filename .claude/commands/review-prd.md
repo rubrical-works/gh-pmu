@@ -1,12 +1,13 @@
 ---
-version: "v0.62.1"
+version: "v0.65.0"
 description: Review a PRD with tracked history (project)
 argument-hint: "#issue [--with ...] [--mode ...] [--force]"
+copyright: "Rubrical Works (c) 2026"
 ---
 
 <!-- EXTENSIBLE -->
 # /review-prd
-Reviews a PRD document linked from a GitHub issue. Delegates setup to `review-preamble.js`, keeping this spec focused on evaluation and model judgment. Document file updates (Reviews metadata, Review Log) are handled inline; issue body updates, comment posting, and label assignment are handled by the calling orchestrator.
+Reviews a PRD document linked from a GitHub issue. Delegates setup to `review-preamble.js` and cleanup to `review-finalize.js`. Self-contained: handles document updates, issue finalization, and AC check-off directly (not delegated to calling orchestrator).
 **Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command review-prd`
 ---
 ## Prerequisites
@@ -82,13 +83,32 @@ Extension findings can **escalate** the recommendation but cannot downgrade it.
 ```
 Each review appends a new row. **Never edit or delete existing rows.**
 
-### Step 4: Write Findings
-Write structured findings to `.tmp-$ISSUE-findings.json` for the calling orchestrator. Include recommendation and all evaluated criteria.
+### Step 4: Finalize (Self-Contained)
+Write structured findings to `.tmp-$ISSUE-findings.json` and run finalize script directly (not delegated to calling orchestrator — restores Step 6.6 behavior lost in #1810 refactor):
+```bash
+node ./.claude/scripts/shared/review-finalize.js $ISSUE -F .tmp-$ISSUE-findings.json
+```
+The finalize script handles: body metadata update (`**Reviews:** N` increment), structured review comment posting, label assignment (`reviewed`/`pending`). Clean up temp file after.
 For non-`--with` runs, append discoverability tip:
 ```
 Tip: Use --with security,performance to add domain-specific review criteria.
 Available: security, accessibility, performance, chaos, contract, qa, seo, privacy (or --with all)
 ```
+
+### Step 5: AC Check-Off (Conditional)
+**Only when recommendation starts with "Ready for":**
+1. Export the issue body:
+   ```bash
+   gh pmu view $ISSUE --body-stdout > .tmp-$ISSUE.md
+   ```
+2. For each `- [ ]` checkbox in the issue body: if the corresponding criterion **passed** (✅), replace with `- [x]`. If **failed or flagged** (❌ or ⚠️), leave as `- [ ]`.
+3. Update the issue body:
+   ```bash
+   gh pmu edit $ISSUE -F .tmp-$ISSUE.md && rm .tmp-$ISSUE.md
+   ```
+4. Report: `"AC check-off: X/Y criteria checked off on issue #$ISSUE."`
+**No status transition** — `/create-backlog` owns the status transition for PRD issues.
+**If recommendation does NOT start with "Ready for":** Skip this step entirely.
 
 <!-- USER-EXTENSION-START: post-review -->
 <!-- USER-EXTENSION-END: post-review -->

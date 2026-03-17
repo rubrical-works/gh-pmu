@@ -15,7 +15,7 @@
     "tdd-refactor-phase",
     "test-writing-patterns"
   ],
-  "frameworkVersion": "0.62.1",
+  "frameworkVersion": "0.65.0",
   "installedDate": "2026-02-28",
   "frameworkPath": "C:\\ProgramData\\Praxis Hub Manager\\framework_root",
   "platform": "win32"

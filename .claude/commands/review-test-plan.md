@@ -1,12 +1,13 @@
 ---
-version: "v0.62.1"
+version: "v0.65.0"
 description: Review a test plan against its PRD (project)
 argument-hint: "#issue [--mode ...] [--force]"
+copyright: "Rubrical Works (c) 2026"
 ---
 
 <!-- MANAGED -->
 # /review-test-plan
-Reviews a TDD test plan document linked from a GitHub issue, cross-referencing it against the source PRD for coverage completeness. Delegates setup to `review-preamble.js`, keeping this spec focused on evaluation and model judgment. Document file updates (Reviews metadata, Review Log) are handled inline; issue body updates, comment posting, and label assignment are handled by the calling orchestrator.
+Reviews a TDD test plan document linked from a GitHub issue, cross-referencing it against the source PRD for coverage completeness. Delegates setup to `review-preamble.js` and cleanup to `review-finalize.js`. Self-contained: handles document updates, issue finalization, and approval gate AC check-off directly (not delegated to calling orchestrator).
 ---
 ## Prerequisites
 - `gh pmu` extension installed
@@ -66,8 +67,34 @@ Load subjective criteria from `test-plan-review-criteria.json`. Use `AskUserQues
 ```
 Each review appends a new row. **Never edit or delete existing rows.**
 
-### Step 4: Write Findings
-Write structured findings to `.tmp-$ISSUE-findings.json` for the calling orchestrator. Include recommendation, coverage summary, and all evaluated criteria.
+### Step 4: Finalize (Self-Contained)
+Write structured findings to `.tmp-$ISSUE-findings.json` and run finalize script directly (not delegated to calling orchestrator — restores #1404 Step 5.6 behavior lost in #1810 refactor):
+```bash
+node ./.claude/scripts/shared/review-finalize.js $ISSUE -F .tmp-$ISSUE-findings.json
+```
+The finalize script handles: body metadata update (`**Reviews:** N` increment), structured review comment posting, label assignment (`reviewed`/`pending`). Clean up temp file after.
+
+### Step 5: Approval Gate AC Check-Off (Conditional)
+**Only when recommendation is "Ready for approval":**
+1. Export the approval issue body:
+   ```bash
+   gh pmu view $ISSUE --body-stdout > .tmp-$ISSUE.md
+   ```
+2. For each `- [ ]` checkbox in the issue body: if the corresponding criterion **passed** (✅), replace with `- [x]`. If **failed or flagged** (❌ or ⚠️), leave as `- [ ]`.
+3. Update the issue body:
+   ```bash
+   gh pmu edit $ISSUE -F .tmp-$ISSUE.md && rm .tmp-$ISSUE.md
+   ```
+4. Move the approval issue to `in_review`:
+   ```bash
+   gh pmu move $ISSUE --status in_review
+   ```
+5. Report:
+   ```
+   Approval gate: X/Y criteria checked off. Issue #$ISSUE moved to in_review.
+   Run /done #$ISSUE to close the approval gate.
+   ```
+**If recommendation is NOT "Ready for approval":** Skip this step entirely — no AC check-off, no status transition.
 
 <!-- USER-EXTENSION-START: post-review -->
 <!-- USER-EXTENSION-END: post-review -->

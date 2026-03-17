@@ -31,6 +31,10 @@ dist/
 # Generated history files
 History/
 tmp/
+
+# Config integrity check artifacts
+.gh-pmu.checksum
+.gh-pmu-integrity-check.json
 # IDPF hub symlinks (machine-specific, do not commit)
 # NOTE: .claude/commands is committed (project-owned, not symlinked)
 .claude/hooks

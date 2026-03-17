@@ -1,37 +1,36 @@
 ---
-version: "v0.62.1"
+version: "v0.65.0"
 description: Verify hub upgrade integrity for project commands and scripts
 argument-hint: ""
+copyright: "Rubrical Works (c) 2026"
 ---
 <!-- MANAGED -->
-
 # /check-upgrade
 Verifies hub upgrade integrity for a user project. After updating the hub, confirms extension blocks preserved, custom scripts survived, commands are current, and symlinks healthy.
 **Backing script:** `.claude/scripts/shared/check-upgrade.js`
-
+---
 ## Prerequisites
 - Project installed via `install-project-existing.js` or `install-project-new.js`
 - Hub updated via `install-hub.js`
-
+---
 ## Arguments
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `--hub` | No | Path to hub directory (auto-detected from symlinks if omitted) |
 | `--commit` | No | Auto-commit upgraded files if all checks pass |
 | `--no-commit` | No | Do not commit |
-
+---
 ## Workflow
-
 ### Step 1: Detect Hub Path
 If `--hub` not provided, detect from symlink targets:
 ```bash
 readlink .claude/rules
 ```
 Extract hub root from symlink target. If detection fails: STOP.
-
 ### Step 2: Extension Integrity Check
 Call `checkExtensionIntegrity(projectDir)`:
 1. List all `.claude/commands/*.md` files
+
 2. For extensible commands: extract `USER-EXTENSION-START/END` blocks
 3. Check for non-empty content, compare against git state
 | Result | Meaning |
@@ -39,7 +38,6 @@ Call `checkExtensionIntegrity(projectDir)`:
 | PASS | All extension blocks intact |
 | WARN | Blocks exist but empty |
 | FAIL | Blocks missing or content lost |
-
 ### Step 3: Custom Script Check
 Call `checkCustomScripts(projectDir)`:
 1. List files in `.claude/scripts/` recursively
@@ -49,7 +47,6 @@ Call `checkCustomScripts(projectDir)`:
 | PASS | All custom scripts present |
 | WARN | No custom scripts found |
 | FAIL | Custom script(s) missing |
-
 ### Step 4: Command Version Drift Check
 Call `checkCommandVersionDrift(projectDir, hubDir)`:
 1. List all `.claude/commands/*.md` in project
@@ -61,7 +58,6 @@ Call `checkCommandVersionDrift(projectDir, hubDir)`:
 |--------|---------|
 | PASS | All commands match hub version (by version or content diff) |
 | FAIL | Command(s) have drifted — content differs from hub |
-
 ### Step 4.5: Stale Config Reference Check
 Call `checkStaleConfigReferences(projectDir, hubDir)`:
 1. Scan all `.claude/commands/*.md` for `.gh-pmu.yml` references
@@ -73,7 +69,6 @@ Call `checkStaleConfigReferences(projectDir, hubDir)`:
 |--------|---------|
 | PASS | No stale `.gh-pmu.yml` references |
 | WARN | Some commands still reference `.gh-pmu.yml` |
-
 ### Step 5: Symlink Health Check
 Call `checkSymlinkHealth(projectDir)`:
 Check: `.claude/rules/`, `.claude/hooks/`, `.claude/scripts/shared/`, `.claude/metadata/`, `.claude/skills/`
@@ -83,7 +78,6 @@ For each: verify symlink exists, target valid, target has files.
 | PASS | All symlinks valid |
 | WARN | Some symlinks missing |
 | FAIL | Target invalid or empty |
-
 ### Step 6: Produce Report
 Use PASS/WARN/FAIL indicators per check:
 ```
@@ -101,7 +95,6 @@ Overall: PASS
 - Version drift FAIL: Re-run `install-hub.js`
 - Stale config refs WARN: Replace `.gh-pmu.yml` with `.gh-pmu.json` or re-run project installer
 - Symlink FAIL: Re-run project installer
-
 ### Step 7: Optional Commit
 Parse the `---JSON---` structured output block from the script. Extract:
 - `commitReady` — `true` when all checks passed and `--no-commit` was not set
@@ -123,7 +116,7 @@ git commit -m "chore: upgrade hub to v{hubVersion}"
 ```
 If `hubVersion` is null, use: `git commit -m "chore: upgrade hub"`
 **Note:** Symlinked directories (`.claude/rules/`, `.claude/hooks/`, `.claude/scripts/shared/`, `.claude/metadata/`, `.claude/skills/`) are excluded — they point to the hub and are not project-owned.
-
+---
 ## Error Handling
 | Situation | Response |
 |-----------|----------|
@@ -131,4 +124,5 @@ If `hubVersion` is null, use: `git commit -m "chore: upgrade hub"`
 | No .claude/ directory | "Not an IDPF project." -> STOP |
 | Git not initialized | WARN, continue |
 | Script require fails | Report error, continue with remaining checks |
+---
 **End of /check-upgrade Command**

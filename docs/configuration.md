@@ -171,6 +171,27 @@ When `framework` is set to an IDPF variant (e.g., `IDPF`, `IDPF-Agile`), automat
 **Disable validation:**
 - Remove the `framework` field or set to a non-IDPF value
 
+### Config Integrity
+
+Optional integrity checking for `.gh-pmu.json`. When enabled in strict mode, commands are blocked if the local config differs from the committed version.
+
+```json
+{
+  "configIntegrity": "strict"
+}
+```
+
+| Value | Behavior |
+|-------|----------|
+| *(not set)* | Daily check warns on drift, does not block |
+| `"strict"` | Daily check blocks command execution on drift |
+
+**Related files:**
+- `.gh-pmu.checksum` — SHA-256 hash of known-good config (gitignored, auto-updated)
+- `.gh-pmu-integrity-check.json` — Throttle state for daily checks (gitignored)
+
+**Manual check:** `gh pmu config verify` (see [Commands](commands.md#config-verify))
+
 ### Acceptance (Auto-Generated)
 
 The `acceptance` section is written by `gh pmu accept` when terms are accepted. Do not edit manually:

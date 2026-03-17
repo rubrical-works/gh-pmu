@@ -48,7 +48,10 @@ This extension combines and replaces:
 Use 'gh pmu <command> --help' for more information about a command.`,
 		Version: getVersion(),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			return checkAcceptance(cmd)
+			if err := checkAcceptance(cmd); err != nil {
+				return err
+			}
+			return runDailyIntegrityCheck(cmd)
 		},
 	}
 
@@ -73,6 +76,7 @@ Use 'gh pmu <command> --help' for more information about a command.`,
 	cmd.AddCommand(newBranchCommand())
 	cmd.AddCommand(newAcceptCommand())
 	cmd.AddCommand(newLabelCommand())
+	cmd.AddCommand(newConfigCommand())
 
 	return cmd
 }
@@ -125,6 +129,28 @@ func checkAcceptance(cmd *cobra.Command) error {
 	}
 
 	return nil
+}
+
+// runDailyIntegrityCheck performs the throttled config integrity check.
+// Runs silently if no config exists or if already checked today.
+func runDailyIntegrityCheck(cmd *cobra.Command) error {
+	// Skip for exempt commands
+	name := cmd.Name()
+	if exemptCommands[name] || name == "config" {
+		return nil
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil
+	}
+
+	configPath, err := config.FindConfigFile(cwd)
+	if err != nil {
+		return nil // No config — skip
+	}
+
+	return runIntegrityCheck(configPath, cmd.ErrOrStderr())
 }
 
 // printTermsAndHint writes the full terms text and acceptance hints to stderr.

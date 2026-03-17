@@ -10,6 +10,7 @@ import (
 
 	"github.com/rubrical-works/gh-pmu/internal/config"
 	"github.com/rubrical-works/gh-pmu/internal/defaults"
+	"github.com/rubrical-works/gh-pmu/internal/integrity"
 	"github.com/spf13/cobra"
 )
 
@@ -95,6 +96,11 @@ func runAccept(cmd *cobra.Command, opts *acceptOptions) error {
 
 	if err := cfg.Save(configPath); err != nil {
 		return fmt.Errorf("failed to save acceptance: %w", err)
+	}
+
+	// Update checksum after saving config
+	if err := integrity.UpdateChecksumForConfig(configPath); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not update checksum: %v\n", err)
 	}
 
 	fmt.Fprintf(out, "Terms accepted by %s (v%s).\n", user, getVersion())
