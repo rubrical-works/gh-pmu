@@ -34,8 +34,8 @@ triage:
 acceptance:
     accepted: true
     user: sbeals
-    date: "2026-03-09"
-    version: 1.2.0
+    date: "2026-03-15"
+    version: 1.3.0
 metadata:
     project:
         id: PVT_kwHOAATLPs4BJeuX
@@ -120,4 +120,7 @@ metadata:
           data_type: DATE
         - name: Branch
           id: PVTF_lAHOAATLPs4BJeuXzg8L4a8
+          data_type: TEXT
+        - name: TestField
+          id: PVTF_lAHOAATLPs4BJeuXzg_f7-s
           data_type: TEXT
