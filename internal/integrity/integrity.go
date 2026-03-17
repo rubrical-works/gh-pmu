@@ -112,7 +112,7 @@ func UpdateChecksumForConfig(configPath string) error {
 // CompareContent compares local config content against committed content.
 // If committed is nil or empty, reports drift (no committed version found).
 func CompareContent(local, committed []byte) (*ComparisonResult, error) {
-	if committed == nil || len(committed) == 0 {
+	if len(committed) == 0 {
 		return &ComparisonResult{
 			Drifted: true,
 			Changes: []string{"No committed version found — local config has no git baseline"},

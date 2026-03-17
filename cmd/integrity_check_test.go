@@ -16,7 +16,9 @@ func TestRunIntegrityCheck_NoDrift_NoOutput(t *testing.T) {
 	dir := t.TempDir()
 	configContent := []byte(`{"project":{"owner":"test","number":1},"repositories":["test/repo"]}`)
 	configPath := filepath.Join(dir, ".gh-pmu.json")
-	os.WriteFile(configPath, configContent, 0644)
+	if err := os.WriteFile(configPath, configContent, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	runGit(t, dir, "init")
 	runGit(t, dir, "add", ".gh-pmu.json")
@@ -42,14 +44,18 @@ func TestRunIntegrityCheck_WithDrift_WarnsUser(t *testing.T) {
 	dir := t.TempDir()
 	original := []byte(`{"project":{"owner":"original","number":1},"repositories":["test/repo"]}`)
 	configPath := filepath.Join(dir, ".gh-pmu.json")
-	os.WriteFile(configPath, original, 0644)
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	runGit(t, dir, "init")
 	runGit(t, dir, "add", ".gh-pmu.json")
 	runGit(t, dir, "commit", "-m", "init")
 
 	modified := []byte(`{"project":{"owner":"changed","number":1},"repositories":["test/repo"]}`)
-	os.WriteFile(configPath, modified, 0644)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	buf := new(bytes.Buffer)
 
@@ -71,14 +77,18 @@ func TestRunIntegrityCheck_StrictMode_ReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	original := []byte(`{"project":{"owner":"original","number":1},"repositories":["test/repo"],"configIntegrity":"strict"}`)
 	configPath := filepath.Join(dir, ".gh-pmu.json")
-	os.WriteFile(configPath, original, 0644)
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	runGit(t, dir, "init")
 	runGit(t, dir, "add", ".gh-pmu.json")
 	runGit(t, dir, "commit", "-m", "init")
 
 	modified := []byte(`{"project":{"owner":"changed","number":1},"repositories":["test/repo"],"configIntegrity":"strict"}`)
-	os.WriteFile(configPath, modified, 0644)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	buf := new(bytes.Buffer)
 
@@ -96,7 +106,9 @@ func TestRunIntegrityCheck_Throttled_Skips(t *testing.T) {
 	dir := t.TempDir()
 	original := []byte(`{"project":{"owner":"original","number":1},"repositories":["test/repo"]}`)
 	configPath := filepath.Join(dir, ".gh-pmu.json")
-	os.WriteFile(configPath, original, 0644)
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	runGit(t, dir, "init")
 	runGit(t, dir, "add", ".gh-pmu.json")
@@ -104,14 +116,18 @@ func TestRunIntegrityCheck_Throttled_Skips(t *testing.T) {
 
 	// Modify config
 	modified := []byte(`{"project":{"owner":"changed","number":1},"repositories":["test/repo"]}`)
-	os.WriteFile(configPath, modified, 0644)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Set throttle to today
 	state := integrity.ThrottleState{
 		LastCheck: time.Now().UTC().Format(time.RFC3339),
 	}
 	data, _ := json.Marshal(state)
-	os.WriteFile(filepath.Join(dir, integrity.ThrottleFileName), data, 0644)
+	if err := os.WriteFile(filepath.Join(dir, integrity.ThrottleFileName), data, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	buf := new(bytes.Buffer)
 
@@ -133,7 +149,9 @@ func TestRunIntegrityCheck_Performance(t *testing.T) {
 	dir := t.TempDir()
 	configContent := []byte(`{"project":{"owner":"test","number":1},"repositories":["test/repo"]}`)
 	configPath := filepath.Join(dir, ".gh-pmu.json")
-	os.WriteFile(configPath, configContent, 0644)
+	if err := os.WriteFile(configPath, configContent, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	runGit(t, dir, "init")
 	runGit(t, dir, "add", ".gh-pmu.json")

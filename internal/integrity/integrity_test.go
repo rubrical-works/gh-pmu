@@ -70,7 +70,9 @@ func TestLoadChecksum_ReadsChecksumFile(t *testing.T) {
 	// ARRANGE
 	dir := t.TempDir()
 	checksumPath := filepath.Join(dir, ChecksumFileName)
-	os.WriteFile(checksumPath, []byte("abc123def456\n"), 0644)
+	if err := os.WriteFile(checksumPath, []byte("abc123def456\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// ACT
 	checksum, err := LoadChecksum(dir)
@@ -123,7 +125,9 @@ func TestIsThrottled_CheckedToday_ReturnsTrue(t *testing.T) {
 		LastCheck: time.Now().UTC().Format(time.RFC3339),
 	}
 	data, _ := json.Marshal(state)
-	os.WriteFile(filepath.Join(dir, ThrottleFileName), data, 0644)
+	if err := os.WriteFile(filepath.Join(dir, ThrottleFileName), data, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// ACT
 	throttled, err := IsThrottled(dir)
@@ -145,7 +149,9 @@ func TestIsThrottled_CheckedYesterday_ReturnsFalse(t *testing.T) {
 		LastCheck: yesterday.Format(time.RFC3339),
 	}
 	data, _ := json.Marshal(state)
-	os.WriteFile(filepath.Join(dir, ThrottleFileName), data, 0644)
+	if err := os.WriteFile(filepath.Join(dir, ThrottleFileName), data, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// ACT
 	throttled, err := IsThrottled(dir)
@@ -197,7 +203,9 @@ func TestCompareConfigs_NoDrift(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, ".gh-pmu.json")
 	content := []byte(`{"project":{"owner":"test","number":1}}`)
-	os.WriteFile(configPath, content, 0644)
+	if err := os.WriteFile(configPath, content, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// ACT
 	result, err := CompareContent(content, content)
@@ -236,7 +244,9 @@ func TestUpdateChecksumForConfig_CreatesChecksumFile(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, ".gh-pmu.json")
 	content := []byte(`{"project":{"owner":"test","number":1}}`)
-	os.WriteFile(configPath, content, 0644)
+	if err := os.WriteFile(configPath, content, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// ACT
 	err := UpdateChecksumForConfig(configPath)

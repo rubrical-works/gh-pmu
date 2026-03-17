@@ -41,6 +41,9 @@ Label Management:
   label update  Update a label
   label delete  Delete a label
 
+Configuration:
+  config verify  Verify config integrity against git HEAD
+
 Workflow Commands:
   branch      Manage branches for development workflows
   validation  Manage status transition validation rules
@@ -818,6 +821,38 @@ Terms and Conditions
   Accepted on: 2026-02-20
   Version: 0.16.0
 ```
+
+---
+
+### config verify
+
+Verify config integrity against the last committed version in git HEAD.
+
+```bash
+# Basic integrity check
+gh pmu config verify
+
+# Include remote (origin/main) comparison
+gh pmu config verify --remote
+
+# Check config in a specific directory
+gh pmu config verify --dir /path/to/repo
+```
+
+**Flags:**
+| Flag | Purpose |
+|------|---------|
+| `--remote` | Also compare against origin/main |
+| `--dir` | Directory to search for config (default: current directory) |
+
+**Daily Auto-Check:**
+On the first `gh pmu` command each day, the tool automatically compares local `.gh-pmu.json` against HEAD and warns if drift is detected. This check is throttled to once per day.
+
+**Strict Mode:**
+Add `"configIntegrity": "strict"` to `.gh-pmu.json` to block command execution when config drift is detected.
+
+**Checksum File:**
+A `.gh-pmu.checksum` file (gitignored) stores the SHA-256 hash of the known-good config. Updated automatically when config is written via `gh pmu accept` or `gh pmu field`.
 
 ---
 

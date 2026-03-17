@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-03-17
+
+### Added
+- Config integrity check: daily comparison of local `.gh-pmu.json` against git HEAD (#773)
+- `gh pmu config verify` subcommand for on-demand integrity verification
+- `--remote` flag for origin/main comparison in config verify
+- Strict mode (`configIntegrity: "strict"`) to block commands on config drift
+- SHA-256 checksum file (`.gh-pmu.checksum`) for fast config validation
+- Daily throttle with ISO 8601 midnight boundary for integrity checks
+- Auto-update checksum on config save (accept, field commands)
+
 ## [1.3.0] - 2026-03-15
 
 ### Added

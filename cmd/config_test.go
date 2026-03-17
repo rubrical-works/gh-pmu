@@ -32,7 +32,9 @@ func TestConfigVerify_CleanConfig_ReportsNoIssues(t *testing.T) {
 	dir := t.TempDir()
 	configContent := []byte(`{"project":{"owner":"test","number":1},"repositories":["test/repo"]}`)
 	configPath := filepath.Join(dir, ".gh-pmu.json")
-	os.WriteFile(configPath, configContent, 0644)
+	if err := os.WriteFile(configPath, configContent, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Init git repo and commit config
 	runGit(t, dir, "init")
@@ -63,7 +65,9 @@ func TestConfigVerify_DriftedConfig_ReportsChanges(t *testing.T) {
 	dir := t.TempDir()
 	original := []byte(`{"project":{"owner":"original","number":1},"repositories":["test/repo"]}`)
 	configPath := filepath.Join(dir, ".gh-pmu.json")
-	os.WriteFile(configPath, original, 0644)
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	runGit(t, dir, "init")
 	runGit(t, dir, "add", ".gh-pmu.json")
@@ -71,7 +75,9 @@ func TestConfigVerify_DriftedConfig_ReportsChanges(t *testing.T) {
 
 	// Modify config locally
 	modified := []byte(`{"project":{"owner":"changed","number":1},"repositories":["test/repo"]}`)
-	os.WriteFile(configPath, modified, 0644)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := NewRootCommand()
 	buf := new(bytes.Buffer)
@@ -100,7 +106,9 @@ func TestConfigVerify_StrictMode_ErrorsOnDrift(t *testing.T) {
 	dir := t.TempDir()
 	original := []byte(`{"project":{"owner":"original","number":1},"repositories":["test/repo"],"configIntegrity":"strict"}`)
 	configPath := filepath.Join(dir, ".gh-pmu.json")
-	os.WriteFile(configPath, original, 0644)
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	runGit(t, dir, "init")
 	runGit(t, dir, "add", ".gh-pmu.json")
@@ -108,7 +116,9 @@ func TestConfigVerify_StrictMode_ErrorsOnDrift(t *testing.T) {
 
 	// Modify config
 	modified := []byte(`{"project":{"owner":"changed","number":1},"repositories":["test/repo"],"configIntegrity":"strict"}`)
-	os.WriteFile(configPath, modified, 0644)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := NewRootCommand()
 	buf := new(bytes.Buffer)
