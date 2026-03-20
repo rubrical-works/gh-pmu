@@ -1,5 +1,5 @@
 ---
-version: "v0.65.0"
+version: "v0.67.0"
 allowed-tools: Bash
 description: Switch branch context (project)
 argument-hint: "[branch-name]"

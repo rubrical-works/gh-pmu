@@ -46,3 +46,20 @@ run_claude.cmd
 run_claude.sh
 runp_claude.cmd
 runp_claude.sh
+
+# Project defaults (managed by Praxis Hub Manager)
+node_modules/
+bower_components/
+out/
+build/
+*.dmg
+*.deb
+*.rpm
+*.msi
+*.AppImage
+.env
+.env.local
+
+# IDPF Framework (managed by Praxis Hub Manager)
+run_claude
+runp_claude

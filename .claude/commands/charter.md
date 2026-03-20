@@ -1,5 +1,5 @@
 ---
-version: "v0.65.0"
+version: "v0.67.0"
 description: View, create, or manage project charter
 argument-hint: "[update|refresh|validate]"
 copyright: "Rubrical Works (c) 2026"
@@ -47,7 +47,7 @@ grep -E '\{[a-z][a-z0-9-]*\}' CHARTER.md
 3. If empty → Use inception mode
 4. Proceed directly to charter creation (no skip option)
 ### Extraction Mode (Existing Projects)
-**Step 1:** Load `Skills/codebase-analysis/SKILL.md`
+**Step 1:** Load `{frameworkPath}/Skills/codebase-analysis/SKILL.md`
 **Step 2:** Analyze codebase (tech stack, architecture, test parsing, NFR detection)
 **Step 3:** Present findings, ask user to confirm/adjust
 **Step 4:** Generate CHARTER.md and Inception/ artifacts from confirmed findings
@@ -184,7 +184,7 @@ Present all 11 domains with pre-checked ones based on auto-detection.
 **Step 4:** If Tech Stack modified, trigger skill and recipe suggestions (NEW items only). Also detect new default skills not in current `projectSkills` (via `getDefaultSkills()` from `manage-skills.js`) and add them additively.
 **Step 4b:** If Deployment Target selected: read existing `deploymentTarget` from `framework-config.json`. If changing platforms, uninstall old deployment skill and install new one. Update `deploymentTarget` in config. If no previous target existed, treat as fresh install.
 ### /charter refresh
-**Step 1:** Load `Skills/codebase-analysis/SKILL.md`
+**Step 1:** Load `{frameworkPath}/Skills/codebase-analysis/SKILL.md`
 **Step 2:** Analyze codebase
 **Step 3:** Compare with existing Inception/ artifacts, identify differences
 **Step 4:** Present diff, ask for confirmation
