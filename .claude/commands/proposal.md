@@ -1,5 +1,5 @@
 ---
-version: "v0.67.0"
+version: "v0.67.1"
 description: Create a proposal document and tracking issue (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
