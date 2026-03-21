@@ -1,5 +1,5 @@
 ---
-version: "v0.67.1"
+version: "v0.67.2"
 description: Transform proposal into Agile PRD
 argument-hint: "<issue-number> | extract [<directory>]"
 copyright: "Rubrical Works (c) 2026"

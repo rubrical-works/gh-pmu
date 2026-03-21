@@ -1,5 +1,5 @@
 ---
-version: "v0.67.1"
+version: "v0.67.2"
 description: Prepare release with PR, merge to main, and tag
 argument-hint: "[version] [--skip-coverage] [--dry-run] [--help]"
 copyright: "Rubrical Works (c) 2026"

@@ -1,5 +1,5 @@
 ---
-version: "v0.67.1"
+version: "v0.67.2"
 description: Tag beta from feature branch (no merge to main)
 argument-hint: "[--skip-coverage] [--dry-run] [--help]"
 copyright: "Rubrical Works (c) 2026"
