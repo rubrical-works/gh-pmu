@@ -435,7 +435,7 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 			}
 			fmt.Fprintln(cmd.OutOrStdout())
 
-			if !opts.yes {
+			if !opts.yes && !opts.force {
 				fmt.Fprintf(cmd.OutOrStdout(), "Proceed anyway? [y/N]: ")
 				var response string
 				_, _ = fmt.Scanln(&response)

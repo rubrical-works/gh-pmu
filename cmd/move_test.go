@@ -2511,6 +2511,47 @@ func TestRunMoveWithDeps_ForceYesSkipsConfirmation(t *testing.T) {
 	}
 }
 
+// AC-778-1: Given --force without --yes, Then confirmation prompt is skipped (--force implies --yes)
+func TestRunMoveWithDeps_ForceAloneSkipsConfirmation(t *testing.T) {
+	// ARRANGE - Issue with unchecked checkboxes to trigger force warning
+	body := "## Acceptance Criteria\n- [ ] Unchecked item\n- [ ] Another unchecked"
+	mock := setupMockWithIssueAndBody(42, "Test Issue", body, "item-42")
+	mock.openIssuesByLabel["branch"] = []api.Issue{
+		{ID: "BRANCH_1", Number: 100, Title: "Branch: release/v1.0.0", State: "OPEN"},
+	}
+	cfg := testIDPFMoveConfig()
+
+	cmd := &cobra.Command{}
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	// --force WITHOUT --yes
+	opts := &moveOptions{status: "done", force: true, yes: false}
+
+	// ACT
+	err := runMoveWithDeps(cmd, []string{"42"}, opts, cfg, mock)
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	// Should NOT prompt for confirmation (--force implies --yes)
+	if strings.Contains(output, "Proceed anyway?") {
+		t.Error("Expected --force alone to skip confirmation prompt, but 'Proceed anyway?' was found in output")
+	}
+	// Should still show warning about bypassing
+	if !strings.Contains(output, "Warning: --force bypasses checkbox validation") {
+		t.Error("Expected warning about --force bypassing validation")
+	}
+	// Should have made the update
+	if len(mock.fieldUpdates) == 0 {
+		t.Error("Expected field updates to be made with --force alone")
+	}
+}
+
 // AC-648-2: Given IDPF project with --force bypass, Then WARNING is displayed after update
 func TestRunMoveWithDeps_IDPFProjectOutputsWarningAfterForceBypass(t *testing.T) {
 	// ARRANGE - Issue with unchecked checkboxes
