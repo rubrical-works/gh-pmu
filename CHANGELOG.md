@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-03-22
+
+### Changed
+- `--force` on `gh pmu move` now implies `--yes` for the checkbox confirmation prompt, preventing hangs in non-interactive environments (#778)
+
 ## [1.3.1] - 2026-03-17
 
 ### Added
