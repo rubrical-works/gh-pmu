@@ -63,3 +63,25 @@ build/
 # IDPF Framework (managed by Praxis Hub Manager)
 run_claude
 runp_claude
+
+# IDPF Framework (managed by Praxis Hub Manager)
+.claude/recipes
+.claude/commands/add-story.md
+.claude/commands/assign-branch.md
+.claude/commands/bad-test-review.md
+.claude/commands/change-domain-expert.md
+.claude/commands/charter.md
+.claude/commands/code-review.md
+.claude/commands/complete-prd.md
+.claude/commands/create-backlog.md
+.claude/commands/extensions.md
+.claude/commands/idpf-stats.md
+.claude/commands/issue-reset.md
+.claude/commands/pivot.md
+.claude/commands/plan-workstreams.md
+.claude/commands/playwright-check.md
+.claude/commands/resolve-review.md
+.claude/commands/review-test-plan.md
+.claude/commands/split-story.md
+.claude/commands/switch-branch.md
+.claude/commands/transfer-issue.md

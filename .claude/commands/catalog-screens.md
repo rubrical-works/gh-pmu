@@ -1,248 +1,138 @@
 ---
-version: "v0.67.2"
+version: "v0.70.0"
 description: Discover and catalog screen elements from source code (project)
-argument-hint: "[screen-name...] [--scope <path>] [--update]"
+argument-hint: ""
 copyright: "Rubrical Works (c) 2026"
 ---
-
 <!-- EXTENSIBLE -->
 # /catalog-screens
-
-Discovers and catalogs UI screen elements from application source code, producing structured per-screen specification documents. The agent reads source files to identify screens and their elements, then presents findings to the user for confirmation and enrichment with behavioral constraints.
-
+Discovers and catalogs UI screen elements from source code. Fully interactive via `AskUserQuestion`. Element fields defined by shared schema at `.claude/metadata/screen-spec-schema.json`.
 **Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command catalog-screens`
-
 ---
-
 ## Prerequisites
-
 - Project contains UI source code (React, Electron, Vue, vanilla HTML, or React Native)
-- `Screen-Specs/` directory at project root (created automatically if missing)
-
+- Shared screen spec schema: `.claude/metadata/screen-spec-schema.json`
 ---
-
 ## Arguments
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| *(none)* | No | Full discovery — scan all source code for screens |
-| `<screen-name>` | No | Catalog a single named screen (e.g., `Login`) |
-| `<name1> <name2>` | No | Catalog multiple named screens in one invocation |
-| `--scope <path>` | No | Narrow discovery to a specific directory or component subtree |
-| `--update` | No | Re-scan source against existing specs; preserve user-enriched fields and report changes |
-
+Zero arguments. All former arguments (screen names, `--scope`, `--update`) incorporated into interactive question flow.
+```
+/catalog-screens
+```
 ---
-
 ## Execution Instructions
-
 **REQUIRED:** Before executing:
-
 1. **Generate Todo List:** Parse workflow steps, use `TodoWrite` to create todos
 2. **Include Extensions:** Add todo for each non-empty `USER-EXTENSION` block
 3. **Track Progress:** Mark todos `in_progress` → `completed` as you work
 4. **Post-Compaction:** Re-read spec and regenerate todos after context compaction
-
 ---
-
 ## Workflow
 
 <!-- USER-EXTENSION-START: pre-catalog -->
 <!-- USER-EXTENSION-END: pre-catalog -->
 
-### Step 1: Parse Arguments and Validate
-
-Extract arguments: screen names, `--scope`, `--update`.
-
-**If `--scope` specified:** Validate the path exists relative to project root.
-- **Path does not exist:** Report error with path suggestion:
-  ```
-  Directory not found: {path}
-  Did you mean one of these?
-    - {similar-path-1}
-    - {similar-path-2}
-  ```
-  → **STOP**
-
-**If `--update` specified:** Verify `Screen-Specs/` directory exists with at least one spec file.
-- **No existing specs:** `"No existing screen specs found in Screen-Specs/. Run /catalog-screens first to create initial specs."` → **STOP**
-
+### Step 1: Discovery and Interactive Setup
+**Step 1a: Load Shared Schema**
+Read `.claude/metadata/screen-spec-schema.json` for element field definitions. Do not define fields inline.
+**Step 1b: Discover Existing Content**
+Before asking questions, scan `Mockups/` and subdirectories:
+- List all `Mockups/{Name}/` directories
+- Check `Specs/` for existing screen spec files
+- Note last-updated dates and element counts
+**Step 1c: Interactive Question Flow**
+**Q1: What would you like to do?** `AskUserQuestion`:
+- "Create new screen specs"
+- "Update existing screen specs"
+- "Re-scan source for changes"
+**Condition:** If no existing specs found, skip Q1 and default to "Create new screen specs".
+**Q2: Which mockup set?** `AskUserQuestion`:
+- List existing `Mockups/{Name}/` directories
+- "Create a new mockup set"
+**Q2a** (if new): Free text name → creates `Mockups/{Name}/Specs/`.
+**Q3: How should screens be discovered?** `AskUserQuestion`:
+- "Scan source code automatically"
+- "Scan a specific directory"
+- "Enter screen details manually"
+**Condition:** Only for "Create new" flow. Update/Re-scan skips to Q6.
+**Q3a** (if specific dir): Free text path. Validate existence.
+**Q4** (after scan): **Which screens?** `AskUserQuestion` `multiSelect: true`:
+- Discovered screens with element counts
+- "All of the above"
+**Q5** (per screen): **Review elements?** `AskUserQuestion`:
+- "Looks good, save as-is"
+- "I'd like to add or correct details"
+- "Skip this screen"
+If "add or correct": prompt per-element for missing schema fields.
+**Q6** (Update/Re-scan flow): **Which specs?** `AskUserQuestion` `multiSelect: true`:
+- Existing specs with last-updated dates
+- "All specs in this set"
 ### Step 2: Framework Detection
-
-Scan project source files to identify the UI framework(s) in use.
-
-**Detection strategies:**
-
 | Framework | Detection Signals | Discovery Approach |
 |-----------|-------------------|--------------------|
-| React / Next.js | `.jsx`/`.tsx` files, React imports, JSX syntax, form libraries (Formik, React Hook Form) | Parse JSX components for props, form elements, event handlers; traverse component hierarchy for nested screens |
-| Electron | `BrowserWindow` usage, electron main process, IPC-bound forms | Identify BrowserWindow views, parse IPC channel bindings, extract form elements from renderer process HTML/JSX |
-| Vue | `.vue` files, single-file components, `<template>` blocks | Parse `<template>` blocks for form elements, extract `v-model` bindings, `v-if`/`v-show` conditions |
-| Vanilla HTML | `.html` files with `<form>`, `<input>`, `<select>` elements | Parse HTML form elements, extract `name`, `type`, `required`, `pattern` attributes directly |
-| React Native | React Native imports, `NavigationContainer`, screen components | Identify screen components via navigation structure, extract `TextInput`, `Picker`, `Switch` elements |
-
-**Consistent output:** Regardless of source framework, all screen specs use the same 10-field element table format. The `**Framework:**` metadata field in the output records which detection strategy was used.
-
-**Conditionally rendered elements:** Elements rendered conditionally (`v-if`, ternary JSX, feature flags) must note their rendering conditions in the Notes field of the element table.
-
-**Deeply nested components:** Traverse component trees up to 10+ levels deep. For deeply nested element hierarchies, flatten into a single element table with parent component noted in the Notes field.
-
-**Circular element dependencies:** If element A depends on element B and B depends on A, document both dependencies with a `(circular)` warning in the Dependencies field. Do not fail — report the cycle and continue.
-
-**If no UI framework detected:**
-```
-No recognized UI framework found in project source.
-Suggestions:
-  - Check --scope to target a specific directory
-  - Verify the project contains UI code
-  - For non-standard frameworks, use manual cataloging mode
-```
-→ **STOP**
-
-**If multiple frameworks detected:** Apply all relevant discovery strategies. Report: `"Detected frameworks: {list}"`
-
-**If source files are unparseable** (binary, minified, unsupported language):
-```
-Cannot parse source files in {path} — falling back to manual catalog mode.
-```
-→ Switch to **Manual Catalog Mode** (Step 3b).
-
+| React / Next.js | `.jsx`/`.tsx`, React imports, JSX, form libs | Parse JSX for props, elements, handlers; traverse component hierarchy |
+| Electron | `BrowserWindow`, electron main, IPC-bound forms | Identify views, parse IPC bindings, extract renderer elements |
+| Vue | `.vue` files, `<template>` blocks | Parse templates, extract `v-model`, `v-if`/`v-show` |
+| Vanilla HTML | `.html` with `<form>`, `<input>`, `<select>` | Parse elements, extract `name`, `type`, `required`, `pattern` |
+| React Native | RN imports, `NavigationContainer` | Identify screens via navigation, extract `TextInput`, `Picker`, `Switch` |
+**Consistent output:** All specs use fields from `.claude/metadata/screen-spec-schema.json`.
+**Conditionally rendered elements:** Populate `conditionalRender` field.
+**Deeply nested components:** Flatten into single table, note parent in `componentRef`.
+**Abstraction-layer tracing (CRITICAL):** Follow delegation chains to actual DOM-producing code. Trust implementation over wrapper API. Record in `componentRef` and `libraryComponent`.
+**Circular dependencies:** Document with `(circular)` warning. Do not fail.
+**No UI framework detected:** Report suggestions → **STOP**
+**Multiple frameworks:** Apply all strategies. Report detected list.
+**Unparseable source:** Fall back to Manual Catalog Mode (Step 3b).
 ### Step 3: Screen Discovery
-
 **Step 3a: Automated Discovery**
-
-Based on the detected framework, scan source code to identify screens and their elements.
-
-**For each screen discovered, extract:**
-- Screen name (from component name, route, or file name)
-- All interactive elements (inputs, buttons, selects, checkboxes, etc.)
-- Element properties discoverable from source (type, label, default values, validation)
-
-**No arguments (full discovery):** Scan all source code within scope. Present all discovered screens to the user:
-```
-Discovered N screens:
-  1. Login — 5 elements (2 inputs, 2 buttons, 1 link)
-  2. Dashboard — 12 elements (3 charts, 4 buttons, 5 nav items)
-  ...
-
-Confirm these screens? Select which to catalog:
-```
-Use `AskUserQuestion` with `multiSelect: true` to let user confirm/deselect screens.
-
-**Named screen(s):** Search for the named screen(s) in source code.
-- **Screen found:** Proceed to element extraction.
-- **Screen not found:** Report with fuzzy suggestions:
-  ```
-  Screen "FooBar" not found in source.
-  Did you mean one of these?
-    - Foobar (src/views/Foobar.tsx)
-    - FooBarSettings (src/views/FooBarSettings.vue)
-  ```
-  → **STOP** (for that screen; continue with others if multi-screen)
-
-**CLI-only or API-only project (no screens found):**
-```
-No screens found in project source.
-This appears to be a CLI-only or API-only project.
-Check --scope if UI code is in a specific directory.
-```
-→ **STOP**
-
+Extract per screen: name, elements, all discoverable schema fields (core + convention), screen-level `libraries`.
+**Delegation chain verification:** Trace to actual rendering code before classifying.
+Present screens via Q4.
+**Screen not found:** Fuzzy suggestions.
+**No screens (CLI/API):** Report → **STOP**
 **Step 3b: Manual Catalog Mode (Fallback)**
-
-When automated discovery fails (unparseable source, unsupported framework):
-
-1. Ask user to name the screen
-2. For each element, prompt user for the 10 specification fields
-3. Build the spec from user input
-
-Use `AskUserQuestion` for each element to gather field values.
+When automated fails or user selects "Enter screen details manually" in Q3:
+1. Ask screen name
+2. Prompt per-element for all schema fields (core required, convention optional)
+3. Build spec from input
 
 <!-- USER-EXTENSION-START: post-discovery -->
 <!-- USER-EXTENSION-END: post-discovery -->
 
-### Step 4: Element Specification
-
-For each confirmed screen, build the per-element specification table.
-
-**Per-element fields (10 required):**
-
-| Field | Description |
-|-------|-------------|
-| Element ID/Name | Unique identifier for the element within the screen |
-| Type | Element type (text input, dropdown, checkbox, button, link, etc.) |
-| Label | User-facing label text |
-| Default Value | Initial/default value (if any) |
-| Valid Input | Description of valid input values or formats |
-| Input Range | Minimum/maximum values, length constraints |
-| Required | Yes/No — whether the element is required |
-| Validation Message | Error message shown on invalid input |
-| Dependencies | Other elements this element depends on (e.g., "Visible when Country = US") |
-| Notes | Additional behavioral constraints, conditional rendering, etc. |
-
-**Discovery fills what it can from source code.** Present to user for enrichment:
-```
-Screen: Login
-  Element: username (text input)
-    - Label: "Username" (from source)
-    - Required: Yes (from validation)
-    - Default Value: (unknown — please specify or leave blank)
-    - Validation Message: (unknown — please specify)
-    ...
-```
-
-Use `AskUserQuestion` to let user enrich fields the agent couldn't determine.
-
-### Step 5: Incremental Update (`--update` mode)
-
-When `--update` is specified:
-
-1. **Read existing specs** from `Screen-Specs/`
-2. **Re-scan source** for current elements
-3. **Diff** source-discovered elements against existing spec:
-   - **New elements:** Report additions, append to spec
-   - **Removed elements:** Mark as `(source removed)` in spec, preserve all user-enriched data, flag for review
-   - **Changed elements:** Report changes, preserve user-enriched fields (defaults, validation rules, notes)
-   - **Orphaned specs:** Screen renamed in source but spec has old name — detect via fuzzy matching (similar element sets, file path patterns), suggest rename: `"Screen-Specs/OldName.md appears orphaned — source component renamed to NewName. Rename spec? (y/n)"`
-   - **Deleted source components:** If a source component is deleted entirely, mark all its elements as `(source removed)` in the spec, preserve all user data, and flag: `"Source component deleted — spec preserved for review"`
-4. **Present changes** to user for confirmation before writing
-
-**Conflict resolution:** If user edits spec while `--update` runs, re-read the spec file before writing.
-
+### Step 4: Element Specification and Enrichment
+Build per-element spec using fields from `.claude/metadata/screen-spec-schema.json`.
+Discovery fills what it can. Present via Q5 for enrichment.
+### Step 5: Incremental Update (Q1 "Update"/"Re-scan" flow)
+1. Read existing specs from `Mockups/{Name}/Specs/` (Q2 + Q6)
+2. Re-scan source
+3. Diff: new (append), removed (mark `(source removed)`, preserve user data), changed (preserve user fields), orphaned (fuzzy match, suggest rename), deleted source (preserve, flag)
+4. Present changes for confirmation
 **Never silently overwrite user-enriched data.**
-
 ### Step 6: Write Screen Specs
-
-Ensure `Screen-Specs/` directory exists (create if missing).
-
-Write one file per screen: `Screen-Specs/{Screen-Name}.md`
-
-**Screen spec format:**
-
+**Collision protection:** If target exists, `AskUserQuestion`: overwrite / alternative name / skip.
+Create `Mockups/{Name}/Specs/` if missing. Write: `Mockups/{Name}/Specs/{Screen-Name}.md`
+**Format:**
 ```markdown
 # Screen: {Screen Name}
-
-**Source:** {source file path}
-**Framework:** {detected framework}
+**Source:** {path}
+**Framework:** {framework}
+**Route:** {route/URL}
 **Last Updated:** {YYYY-MM-DD}
 **Elements:** {count}
-
+**Parent Screen:** {parent or "none"}
+**Authentication:** {none|required|optional}
+**Libraries:** {component: [...], css: [...], form: [...], animation: [...], icon: [...]}
 ---
-
 ## Elements
-
-| Element ID/Name | Type | Label | Default Value | Valid Input | Input Range | Required | Validation Message | Dependencies | Notes |
-|-----------------|------|-------|---------------|-------------|-------------|----------|--------------------|--------------|-------|
-| username | text input | Username | (none) | Non-empty string | 3-50 chars | Yes | "Username is required" | — | — |
-| password | password | Password | (none) | Min 8 chars, 1 uppercase | 8-128 chars | Yes | "Password must be at least 8 characters" | — | — |
-
+| Element ID | Type | Label | Default Value | Valid Input | Input Range | Required | Validation Message | Dependencies | Notes |
+|------------|------|-------|---------------|-------------|-------------|----------|--------------------|--------------|-------|
+### Convention Fields (per element, when discovered)
+**{elementId}:**
+- dataTestId: `{value}`
+- ariaLabel: `{value}`
 ---
-
 ## Related Artifacts
-
-- **Mockup:** (none — run `/mockups {Screen-Name}` to create)
-
+- **Mockup:** (none — run `/mockups` to create)
 ---
-
 *Cataloged {YYYY-MM-DD} by /catalog-screens*
 ```
 
@@ -250,47 +140,30 @@ Write one file per screen: `Screen-Specs/{Screen-Name}.md`
 <!-- USER-EXTENSION-END: post-catalog -->
 
 ### Step 7: Proposal Writeback (if applicable)
-
-If `/catalog-screens` was triggered from a proposal context (proposal file path available):
-
-1. Read the proposal document
-2. Append or update `## Screen Specs` section with file references:
-   ```markdown
-   ## Screen Specs
-
-   - `Screen-Specs/{Screen-Name-1}.md` — {element count} elements
-   - `Screen-Specs/{Screen-Name-2}.md` — {element count} elements
-   ```
-3. If proposal file path is invalid or deleted → warn, skip writeback, screen spec still created
-
+If triggered from proposal context: append `## Screen Specs` with `Mockups/{Name}/Specs/` references.
+Invalid path → warn, skip writeback, spec still created.
 ### Step 8: Report
-
 ```
 Screen Catalog complete.
   Screens cataloged: N
   Total elements: M
-  Output: Screen-Specs/{names...}.md
-
-  Next: Run /mockups {screen-name} to create visual mockups.
+  Output: Mockups/{Name}/Specs/{names...}.md
+  Next: Run /mockups to create visual mockups.
 ```
-
 **STOP.** Do not proceed without user instruction.
-
 ---
-
 ## Error Handling
-
 | Situation | Response |
 |-----------|----------|
-| No UI framework detected | Report failure with suggestions → STOP |
-| `--scope` path not found | Error with path suggestion → STOP |
-| Named screen not found | Report with fuzzy suggestions from discovered screens → STOP (for that screen) |
-| CLI/API project, no screens | Report no screens found, suggest checking project type → STOP |
-| Unparseable source files | Fall back to manual catalog mode |
-| `--update` with no existing specs | "Run /catalog-screens first" → STOP |
-| Proposal writeback path invalid | Warn, skip writeback, spec still created |
-| `Screen-Specs/` missing | Create directory automatically |
-
+| No UI framework | Suggestions → STOP |
+| Scan dir not found | Suggestion → re-ask Q3a |
+| Screen not found | Fuzzy suggestions → continue |
+| CLI/API project | Report → STOP |
+| Unparseable source | Manual catalog mode |
+| No specs (Update) | Redirect to Create |
+| Proposal path invalid | Warn, skip writeback |
+| Dirs missing | Create automatically |
+| File collision | Ask: overwrite, alternative, skip |
+| Schema missing | STOP |
 ---
-
 **End of /catalog-screens Command**

@@ -7,6 +7,8 @@ extensionPoints:
 appliesTo:
   - prepare-release:pre-commit
   - prepare-beta:pre-commit
+  - prepare-release:post-analysis
+  - prepare-beta:post-analysis
 prerequisites:
   - generate-changelog.js (included with framework)
   - Conventional commit messages

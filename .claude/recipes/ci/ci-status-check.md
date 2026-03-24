@@ -7,6 +7,8 @@ extensionPoints:
 appliesTo:
   - prepare-release:post-analysis
   - prepare-beta:post-analysis
+  - prepare-release:post-prepare
+  - prepare-beta:post-prepare
 prerequisites:
   - gh CLI (GitHub CLI)
   - "GitHub Actions workflows configured (run /ci to check status)"

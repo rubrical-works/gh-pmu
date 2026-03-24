@@ -9,7 +9,16 @@
       "Bash(go test:*)",
       "Bash(test:*)",
       "Bash(node:*)",
-      "Bash(gh pmu:*)"
+      "Bash(gh pmu:*)",
+      "Bash(git checkout:*)",
+      "Bash(git push:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh pr:*)",
+      "Bash(rm .tmp-pr-body.md)",
+      "Bash(git pull:*)",
+      "Bash(git tag:*)",
+      "Bash(git branch:*)",
+      "Bash(gh release:*)"
     ],
     "deny": [
       "Bash^(rm -rf /:*^)",

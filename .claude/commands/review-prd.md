@@ -1,5 +1,5 @@
 ---
-version: "v0.67.2"
+version: "v0.70.0"
 description: Review a PRD with tracked history (project)
 argument-hint: "#issue [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
