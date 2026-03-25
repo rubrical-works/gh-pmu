@@ -2077,3 +2077,49 @@ func TestRunCreateWithDeps_BodyStdinAndBodyFileMutuallyExclusive(t *testing.T) {
 		t.Errorf("expected mutual exclusivity error, got: %v", err)
 	}
 }
+
+func TestLoadIssueTemplate_LocalFile(t *testing.T) {
+	// Create a temp dir with a local template
+	dir := t.TempDir()
+	templateDir := filepath.Join(dir, ".github", "ISSUE_TEMPLATE")
+	if err := os.MkdirAll(templateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	templateContent := "---\nname: Bug\n---\nPlease describe the bug."
+	if err := os.WriteFile(filepath.Join(templateDir, "bug.md"), []byte(templateContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Change to temp dir so local paths resolve
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := loadIssueTemplate("owner", "repo", "bug")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if content != "Please describe the bug." {
+		t.Errorf("unexpected content: %q", content)
+	}
+}
+
+func TestLoadIssueTemplate_NotFoundReturnsError(t *testing.T) {
+	// In a dir without templates, the function should try REST and fail
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadIssueTemplate("nonexistent-owner", "nonexistent-repo", "nonexistent-template")
+	if err == nil {
+		t.Fatal("expected error for nonexistent template")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}

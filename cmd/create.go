@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	ghapi "github.com/cli/go-gh/v2/pkg/api"
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
 	"github.com/rubrical-works/gh-pmu/internal/ui"
@@ -531,18 +531,23 @@ func loadIssueTemplate(owner, repo, templateName string) (string, error) {
 		}
 	}
 
-	// Fall back to fetching from GitHub
-	cmd := exec.Command("gh", "api",
-		fmt.Sprintf("/repos/%s/%s/contents/.github/ISSUE_TEMPLATE/%s.md", owner, repo, templateName),
-		"--jq", ".content",
-	)
-	output, err := cmd.Output()
+	// Fall back to fetching from GitHub via go-gh REST client
+	restClient, err := ghapi.DefaultRESTClient()
+	if err != nil {
+		return "", fmt.Errorf("template '%s' not found (failed to create REST client: %w)", templateName, err)
+	}
+
+	var fileContent struct {
+		Content string `json:"content"`
+	}
+	endpoint := fmt.Sprintf("repos/%s/%s/contents/.github/ISSUE_TEMPLATE/%s.md", owner, repo, templateName)
+	err = restClient.Get(endpoint, &fileContent)
 	if err != nil {
 		return "", fmt.Errorf("template '%s' not found", templateName)
 	}
 
 	// Decode base64 content
-	decoded, err := decodeBase64Content(strings.TrimSpace(string(output)))
+	decoded, err := decodeBase64Content(strings.TrimSpace(fileContent.Content))
 	if err != nil {
 		return "", fmt.Errorf("failed to decode template: %w", err)
 	}
