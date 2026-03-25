@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -49,10 +52,17 @@ type GraphQLClient interface {
 	Mutate(name string, mutation interface{}, variables map[string]interface{}) error
 }
 
+// RawGraphQLDoer executes raw GraphQL queries and returns the full response bytes.
+// This is used for dynamic/batch queries with aliased fields that don't fit typed clients.
+type RawGraphQLDoer interface {
+	DoRaw(query string, headers map[string]string) ([]byte, error)
+}
+
 // Client wraps the GitHub GraphQL API client with project management features
 type Client struct {
-	gql  GraphQLClient
-	opts ClientOptions
+	gql    GraphQLClient
+	rawGQL RawGraphQLDoer
+	opts   ClientOptions
 }
 
 // ClientOptions configures the API client
@@ -132,15 +142,69 @@ func NewClientWithOptions(opts ClientOptions) (*Client, error) {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
 
+	// Create raw HTTP client for dynamic/batch GraphQL queries
+	httpClient, err := api.NewHTTPClient(apiOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
+	}
+
 	return &Client{
-		gql:  gql,
-		opts: opts,
+		gql:    gql,
+		rawGQL: &httpRawGraphQL{httpClient: httpClient, host: opts.Host},
+		opts:   opts,
 	}, nil
 }
 
 // NewClientWithGraphQL creates a Client with a custom GraphQL client (for testing)
 func NewClientWithGraphQL(gql GraphQLClient) *Client {
 	return &Client{gql: gql}
+}
+
+// httpRawGraphQL implements RawGraphQLDoer using go-gh's HTTP client.
+type httpRawGraphQL struct {
+	httpClient *http.Client
+	host       string
+}
+
+// DoRaw executes a raw GraphQL query and returns the full JSON response bytes.
+// Extra headers (e.g. feature previews) are merged into the request.
+func (h *httpRawGraphQL) DoRaw(query string, headers map[string]string) ([]byte, error) {
+	body, err := json.Marshal(map[string]interface{}{"query": query})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal GraphQL request: %w", err)
+	}
+
+	host := h.host
+	if host == "" {
+		host = "github.com"
+	}
+	url := fmt.Sprintf("https://api.%s/graphql", host)
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GraphQL request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GraphQL request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read GraphQL response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GraphQL request returned status %d: %s", resp.StatusCode, string(data))
+	}
+
+	return data, nil
 }
 
 // joinFeatures joins feature names with commas

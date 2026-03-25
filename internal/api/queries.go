@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"strings"
 
 	graphql "github.com/cli/shurcooL-graphql"
@@ -852,19 +851,14 @@ func (c *Client) getMinimalProjectItemsPage(projectID string, cursor *string) ([
 	}, nil
 }
 
-// buildGraphQLRequestBody wraps a GraphQL query string in the JSON request format
-// required by `gh api graphql --input -`. This avoids passing the query as a CLI
-// argument (via `-f query=`), which can exceed Windows' ~32KB command-line limit
-// when queries contain many aliased operations.
-func buildGraphQLRequestBody(query string) (string, error) {
-	requestBody := map[string]interface{}{
-		"query": query,
+// doRawGraphQL executes a raw GraphQL query via the go-gh HTTP client.
+// Returns the full JSON response bytes (including {"data": ...} wrapper).
+// Extra headers are merged into the request (e.g. feature previews).
+func (c *Client) doRawGraphQL(query string, extraHeaders map[string]string) ([]byte, error) {
+	if c.rawGQL == nil {
+		return nil, fmt.Errorf("raw GraphQL client not initialized")
 	}
-	bodyBytes, err := json.Marshal(requestBody)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal GraphQL request body: %w", err)
-	}
-	return string(bodyBytes), nil
+	return c.rawGQL.DoRaw(query, extraHeaders)
 }
 
 // GetProjectItemsByIssues fetches project items for specific issues using a targeted query.
@@ -936,18 +930,9 @@ func (c *Client) GetProjectItemsByIssues(projectID string, refs []IssueRef) ([]P
 
 	query := fmt.Sprintf(`query { %s }`, strings.Join(queryParts, " "))
 
-	// Execute via gh api graphql using stdin to avoid Windows command-line length limits
-	requestBody, err := buildGraphQLRequestBody(query)
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQL(query, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build targeted project items request: %w", err)
-	}
-	cmd := exec.Command("gh", "api", "graphql", "--input", "-")
-	cmd.Stdin = strings.NewReader(requestBody)
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("failed to execute targeted project items query: %s", string(exitErr.Stderr))
-		}
 		return nil, fmt.Errorf("failed to execute targeted project items query: %w", err)
 	}
 
@@ -1341,21 +1326,9 @@ func (c *Client) GetSubIssueCounts(owner, repo string, numbers []int) (map[int]i
 	query := fmt.Sprintf(`query { repository(owner: %q, name: %q) { %s } }`,
 		owner, repo, strings.Join(queryParts, " "))
 
-	// Execute via gh api graphql using stdin to avoid Windows command-line length limits
-	requestBody, err := buildGraphQLRequestBody(query)
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQL(query, map[string]string{"X-Github-Next": "sub_issues"})
 	if err != nil {
-		return nil, fmt.Errorf("failed to build batch sub-issue count request: %w", err)
-	}
-	cmd := exec.Command("gh", "api", "graphql",
-		"-H", "X-Github-Next: sub_issues",
-		"--input", "-")
-	cmd.Stdin = strings.NewReader(requestBody)
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("failed to execute batch sub-issue query: %s", string(exitErr.Stderr))
-		}
 		return nil, fmt.Errorf("failed to execute batch sub-issue query: %w", err)
 	}
 
@@ -1429,21 +1402,9 @@ func (c *Client) GetSubIssuesBatch(owner, repo string, numbers []int) (map[int][
 	query := fmt.Sprintf(`query { repository(owner: %q, name: %q) { %s } }`,
 		owner, repo, strings.Join(queryParts, " "))
 
-	// Execute via gh api graphql using stdin to avoid Windows command-line length limits
-	requestBody, err := buildGraphQLRequestBody(query)
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQL(query, map[string]string{"X-Github-Next": "sub_issues"})
 	if err != nil {
-		return nil, fmt.Errorf("failed to build batch sub-issue request: %w", err)
-	}
-	cmd := exec.Command("gh", "api", "graphql",
-		"-H", "X-Github-Next: sub_issues",
-		"--input", "-")
-	cmd.Stdin = strings.NewReader(requestBody)
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("failed to execute batch sub-issue query: %s", string(exitErr.Stderr))
-		}
 		return nil, fmt.Errorf("failed to execute batch sub-issue query: %w", err)
 	}
 
@@ -1778,18 +1739,9 @@ func (c *Client) getProjectFieldsForIssuesBatch(projectID string, issueIDs []str
 
 	query := fmt.Sprintf("query { %s }", strings.Join(queryParts, " "))
 
-	// Execute via gh api graphql using stdin to avoid Windows command-line length limits
-	requestBody, err := buildGraphQLRequestBody(query)
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQL(query, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build batch project fields request: %w", err)
-	}
-	cmd := exec.Command("gh", "api", "graphql", "--input", "-")
-	cmd.Stdin = strings.NewReader(requestBody)
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("failed to execute batch project fields query: %s", string(exitErr.Stderr))
-		}
 		return nil, fmt.Errorf("failed to execute batch project fields query: %w", err)
 	}
 
@@ -2410,18 +2362,9 @@ func (c *Client) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []i
 	query := fmt.Sprintf(`query { repository(owner: %q, name: %q) { %s } }`,
 		owner, repo, strings.Join(queryParts, " "))
 
-	requestBody, err := buildGraphQLRequestBody(query)
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQL(query, nil)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to build batch issues request: %w", err)
-	}
-	cmd := exec.Command("gh", "api", "graphql", "--input", "-")
-	cmd.Stdin = strings.NewReader(requestBody)
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, nil, nil, fmt.Errorf("failed to execute batch issues query: %s", string(exitErr.Stderr))
-		}
 		return nil, nil, nil, fmt.Errorf("failed to execute batch issues query: %w", err)
 	}
 
@@ -2592,20 +2535,9 @@ func (c *Client) GetParentIssueBatch(owner, repo string, numbers []int) (map[int
 	query := fmt.Sprintf(`query { repository(owner: %q, name: %q) { %s } }`,
 		owner, repo, strings.Join(queryParts, " "))
 
-	requestBody, err := buildGraphQLRequestBody(query)
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQL(query, map[string]string{"X-Github-Next": "sub_issues"})
 	if err != nil {
-		return nil, fmt.Errorf("failed to build batch parent issue request: %w", err)
-	}
-	cmd := exec.Command("gh", "api", "graphql",
-		"-H", "X-Github-Next: sub_issues",
-		"--input", "-")
-	cmd.Stdin = strings.NewReader(requestBody)
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("failed to execute batch parent issue query: %s", string(exitErr.Stderr))
-		}
 		return nil, fmt.Errorf("failed to execute batch parent issue query: %w", err)
 	}
 

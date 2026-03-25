@@ -14,6 +14,19 @@ import (
 	"github.com/rubrical-works/gh-pmu/internal/defaults"
 )
 
+// buildGraphQLRequestBody wraps a GraphQL query string in the JSON request format
+// required by `gh api graphql --input -`.
+func buildGraphQLRequestBody(query string) (string, error) {
+	requestBody := map[string]interface{}{
+		"query": query,
+	}
+	bodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal GraphQL request body: %w", err)
+	}
+	return string(bodyBytes), nil
+}
+
 // CreateIssue creates a new issue in a repository
 func (c *Client) CreateIssue(owner, repo, title, body string, labels []string) (*Issue, error) {
 
