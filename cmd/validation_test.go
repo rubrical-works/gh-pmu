@@ -517,7 +517,7 @@ func TestCountUncheckedBoxes_ExcludesCodeBlocks(t *testing.T) {
 
 ` + "```" + `markdown
 ### Manual Testing Checklist
-- [ ] ` + "`gh pmu init`" + ` - interactive prompts work
+- [ ] ` + "`gh pmu init --non-interactive`" + ` - non-interactive setup works
 - [ ] ` + "`gh pmu board`" + ` - kanban display renders correctly
 ` + "```" + `
 
@@ -612,7 +612,7 @@ This issue proposes a new testing structure.
 
 ` + "```" + `markdown
 ### Manual Testing Checklist
-- [ ] ` + "`gh pmu init`" + ` - interactive prompts work
+- [ ] ` + "`gh pmu init --non-interactive`" + ` - non-interactive setup works
 - [ ] ` + "`gh pmu board`" + ` - kanban display renders correctly
 ` + "```" + `
 

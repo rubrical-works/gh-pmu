@@ -33,7 +33,7 @@ type createOptions struct {
 	body      string
 	bodyFile  string
 	bodyStdin bool
-	template string
+	template  string
 	web       bool
 	status    string
 	priority  string
