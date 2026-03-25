@@ -18,7 +18,6 @@ import (
 	"github.com/rubrical-works/gh-pmu/internal/defaults"
 	"github.com/rubrical-works/gh-pmu/internal/ui"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 // ErrRepoRootProtected is returned when attempting to write config to repo root during tests
@@ -819,20 +818,23 @@ func detectRepository() string {
 	return parseGitRemote(strings.TrimSpace(string(output)))
 }
 
-// existingConfigRaw is used for YAML unmarshaling to get framework
+// existingConfigRaw is used for JSON unmarshaling to get framework
 type existingConfigRaw struct {
-	Framework string `yaml:"framework"`
+	Framework string `json:"framework"`
 }
 
 // loadExistingFramework loads framework from existing config
 func loadExistingFramework(dir string) (string, error) {
-	configPath := filepath.Join(dir, ".gh-pmu.yml")
+	configPath, err := config.FindConfigFile(dir)
+	if err != nil {
+		return "", err
+	}
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return "", err
 	}
 	var raw existingConfigRaw
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return "", err
 	}
 	return raw.Framework, nil
@@ -1023,17 +1025,6 @@ func writeConfig(dir string, cfg *InitConfig) error {
 		},
 	}
 
-	data, err := yaml.Marshal(configFile)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	configPath := filepath.Join(dir, ".gh-pmu.yml")
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	// Write JSON companion
 	jsonData, err := json.MarshalIndent(configFile, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON config: %w", err)
@@ -1041,7 +1032,7 @@ func writeConfig(dir string, cfg *InitConfig) error {
 	jsonData = append(jsonData, '\n')
 	jsonPath := filepath.Join(dir, config.ConfigFileName)
 	if err := os.WriteFile(jsonPath, jsonData, 0600); err != nil {
-		return fmt.Errorf("failed to write JSON config file: %w", err)
+		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil
@@ -1115,17 +1106,6 @@ func writeConfigWithMetadata(dir string, cfg *InitConfig, metadata *ProjectMetad
 		},
 	}
 
-	data, err := yaml.Marshal(configFile)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	configPath := filepath.Join(dir, ".gh-pmu.yml")
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	// Write JSON companion
 	jsonData, err := json.MarshalIndent(configFile, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON config: %w", err)
@@ -1133,7 +1113,7 @@ func writeConfigWithMetadata(dir string, cfg *InitConfig, metadata *ProjectMetad
 	jsonData = append(jsonData, '\n')
 	jsonPath := filepath.Join(dir, config.ConfigFileName)
 	if err := os.WriteFile(jsonPath, jsonData, 0600); err != nil {
-		return fmt.Errorf("failed to write JSON config file: %w", err)
+		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil

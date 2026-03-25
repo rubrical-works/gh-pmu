@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"gopkg.in/yaml.v3"
 )
 
-// ghPmuConfig represents the relevant parts of .gh-pmu.yml for framework detection
+// ghPmuConfig represents the relevant parts of .gh-pmu.json for framework detection
 type ghPmuConfig struct {
-	Framework string `yaml:"framework"`
+	Framework string `json:"framework"`
 }
 
 // frameworkConfig represents the relevant parts of framework-config.json
@@ -23,13 +21,13 @@ type frameworkConfig struct {
 
 // DetectFramework detects the framework from config files in the given directory.
 // It checks in order:
-//  1. .gh-pmu.yml - framework field
+//  1. .gh-pmu.json - framework field
 //  2. framework-config.json - projectType.processFramework field
 //
 // Returns empty string if no framework is configured (no restriction applied).
 func DetectFramework(dir string) (string, error) {
-	// Check .gh-pmu.yml first (takes precedence)
-	framework, err := detectFromGhPmuYml(dir)
+	// Check .gh-pmu.json first (takes precedence)
+	framework, err := detectFromGhPmuJson(dir)
 	if err == nil && framework != "" {
 		return framework, nil
 	}
@@ -44,9 +42,9 @@ func DetectFramework(dir string) (string, error) {
 	return "", nil
 }
 
-// detectFromGhPmuYml reads the framework field from .gh-pmu.yml
-func detectFromGhPmuYml(dir string) (string, error) {
-	path := filepath.Join(dir, ".gh-pmu.yml")
+// detectFromGhPmuJson reads the framework field from .gh-pmu.json
+func detectFromGhPmuJson(dir string) (string, error) {
+	path := filepath.Join(dir, ".gh-pmu.json")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -54,7 +52,7 @@ func detectFromGhPmuYml(dir string) (string, error) {
 	}
 
 	var cfg ghPmuConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := json.Unmarshal(data, &cfg); err != nil {
 		return "", err
 	}
 
