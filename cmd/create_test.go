@@ -767,25 +767,6 @@ func TestCreateCommand_HasTemplateFlag(t *testing.T) {
 	}
 }
 
-func TestCreateCommand_HasWebFlag(t *testing.T) {
-	cmd := NewRootCommand()
-	createCmd, _, err := cmd.Find([]string{"create"})
-	if err != nil {
-		t.Fatalf("create command not found: %v", err)
-	}
-
-	flag := createCmd.Flags().Lookup("web")
-	if flag == nil {
-		t.Fatal("Expected --web flag to exist")
-	}
-	if flag.Shorthand != "w" {
-		t.Errorf("Expected shorthand 'w', got '%s'", flag.Shorthand)
-	}
-	if flag.Value.Type() != "bool" {
-		t.Errorf("Expected --web to be bool, got %s", flag.Value.Type())
-	}
-}
-
 // ============================================================================
 // readBodyFile Tests
 // ============================================================================

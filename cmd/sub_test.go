@@ -1048,22 +1048,6 @@ func TestSubListCommand_HasLimitFlag(t *testing.T) {
 	}
 }
 
-func TestSubListCommand_HasWebFlag(t *testing.T) {
-	cmd := NewRootCommand()
-	subCmd, _, err := cmd.Find([]string{"sub", "list"})
-	if err != nil {
-		t.Fatalf("sub list command not found: %v", err)
-	}
-
-	flag := subCmd.Flags().Lookup("web")
-	if flag == nil {
-		t.Fatal("Expected --web flag to exist")
-	}
-	if flag.Shorthand != "w" {
-		t.Errorf("Expected --web shorthand 'w', got '%s'", flag.Shorthand)
-	}
-}
-
 func TestSubListCommand_HasRelationFlag(t *testing.T) {
 	cmd := NewRootCommand()
 	subCmd, _, err := cmd.Find([]string{"sub", "list"})
@@ -1099,7 +1083,6 @@ func TestSubListCommand_HelpDocumentsNewFlags(t *testing.T) {
 	tests := []string{
 		"-s, --state",
 		"-n, --limit",
-		"-w, --web",
 		"--relation",
 		"open",
 		"closed",

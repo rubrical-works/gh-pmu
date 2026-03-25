@@ -721,25 +721,6 @@ func TestListCommand_HasLimitFlag(t *testing.T) {
 	}
 }
 
-func TestListCommand_HasWebFlag(t *testing.T) {
-	cmd := NewRootCommand()
-	listCmd, _, err := cmd.Find([]string{"list"})
-	if err != nil {
-		t.Fatalf("list command not found: %v", err)
-	}
-
-	flag := listCmd.Flags().Lookup("web")
-	if flag == nil {
-		t.Fatal("Expected --web flag to exist")
-	}
-	if flag.Shorthand != "w" {
-		t.Errorf("Expected shorthand 'w', got '%s'", flag.Shorthand)
-	}
-	if flag.Value.Type() != "bool" {
-		t.Errorf("Expected --web to be bool, got %s", flag.Value.Type())
-	}
-}
-
 func TestListCommand_HasPriorityFlag(t *testing.T) {
 	cmd := NewRootCommand()
 	listCmd, _, err := cmd.Find([]string{"list"})

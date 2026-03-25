@@ -14,8 +14,7 @@ import (
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
-	"github.com/rubrical-works/gh-pmu/internal/ui"
-	"github.com/spf13/cobra"
+"github.com/spf13/cobra"
 )
 
 // viewClient defines the interface for API methods used by view functions.
@@ -53,7 +52,6 @@ type viewOptions struct {
 	jsonFields string // Empty = not set, "all" = all fields, "field1,field2" = specific fields
 	jq         string
 	template   string // Go template (not supported - returns helpful error)
-	web        bool
 	comments   bool
 	repo       string
 	bodyFile   bool
@@ -97,7 +95,7 @@ JSON output (--json) returns an array for multiple issues, a single object for o
 
 Also shows sub-issues if any exist, and parent issue if this is a sub-issue.
 
-Note: --body-file, --body-stdout, and --web are only supported for single issues.`,
+Note: --body-file and --body-stdout are only supported for single issues.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			// --json-fields doesn't require an issue number
 			if listFields, _ := cmd.Flags().GetBool("json-fields"); listFields {
@@ -117,8 +115,7 @@ Note: --body-file, --body-stdout, and --web are only supported for single issues
 	cmd.Flags().Bool("json-fields", false, "List available JSON fields")
 	cmd.Flags().StringVarP(&opts.jq, "jq", "q", "", "Filter JSON output using a jq expression")
 	cmd.Flags().StringVarP(&opts.template, "template", "t", "", "Format output using a Go template (not supported; see error for alternatives)")
-	cmd.Flags().BoolVarP(&opts.web, "web", "w", false, "Open issue in browser")
-	cmd.Flags().BoolVarP(&opts.comments, "comments", "c", false, "Show issue comments")
+cmd.Flags().BoolVarP(&opts.comments, "comments", "c", false, "Show issue comments")
 	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Repository for the issue (owner/repo format)")
 	cmd.Flags().BoolVarP(&opts.bodyFile, "body-file", "b", false, "Write issue body to tmp/issue-{number}.md")
 	cmd.Flags().BoolVar(&opts.bodyStdout, "body-stdout", false, "Output issue body to stdout (raw markdown)")
@@ -205,9 +202,6 @@ func runViewMulti(cmd *cobra.Command, opts *viewOptions, client viewClient, refs
 	}
 	if opts.bodyStdout {
 		return fmt.Errorf("--body-stdout is only supported for single issue")
-	}
-	if opts.web {
-		return fmt.Errorf("--web is only supported for single issue")
 	}
 	if opts.template != "" {
 		return fmt.Errorf("--template is not supported")
@@ -388,9 +382,6 @@ func runViewWithDeps(cmd *cobra.Command, opts *viewOptions, client viewClient, o
 		if opts.bodyStdout {
 			return fmt.Errorf("cannot use --json with --body-stdout")
 		}
-		if opts.web {
-			return fmt.Errorf("cannot use --json with --web")
-		}
 		if opts.comments {
 			return fmt.Errorf("cannot use --json with --comments; use --json comments instead")
 		}
@@ -404,15 +395,6 @@ func runViewWithDeps(cmd *cobra.Command, opts *viewOptions, client viewClient, o
 	// --template is not supported; provide helpful error with alternatives
 	if opts.template != "" {
 		return fmt.Errorf("--template is not supported; use 'gh issue view %d --template' for standard fields, or use --jq for project fields", number)
-	}
-
-	// For --web flag, only need basic issue info
-	if opts.web {
-		issue, err := client.GetIssue(owner, repo, number)
-		if err != nil {
-			return fmt.Errorf("failed to get issue: %w", err)
-		}
-		return ui.OpenInBrowser(issue.URL)
 	}
 
 	// Fetch issue with project field values in a single query (optimized)
