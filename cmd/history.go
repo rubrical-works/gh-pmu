@@ -616,7 +616,7 @@ func outputMarkdown(commits []CommitInfo, targetPath, repoOwner, repoName string
 	}
 
 	// Write file
-	if err := os.WriteFile(fullPath, []byte(b.String()), 0644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(b.String()), 0600); err != nil {
 		return fmt.Errorf("failed to write history file: %w", err)
 	}
 

@@ -42,7 +42,7 @@ func ComputeChecksum(path string) (string, error) {
 // SaveChecksum writes a checksum string to the checksum file in dir.
 func SaveChecksum(dir, checksum string) error {
 	path := filepath.Join(dir, ChecksumFileName)
-	return os.WriteFile(path, []byte(checksum+"\n"), 0644)
+	return os.WriteFile(path, []byte(checksum+"\n"), 0600)
 }
 
 // LoadChecksum reads the stored checksum from the checksum file in dir.
@@ -97,7 +97,7 @@ func RecordCheck(dir string) error {
 		return fmt.Errorf("failed to marshal throttle state: %w", err)
 	}
 	path := filepath.Join(dir, ThrottleFileName)
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 // UpdateChecksumForConfig computes the checksum of the config file at path

@@ -1029,7 +1029,7 @@ func writeConfig(dir string, cfg *InitConfig) error {
 	}
 
 	configPath := filepath.Join(dir, ".gh-pmu.yml")
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -1040,7 +1040,7 @@ func writeConfig(dir string, cfg *InitConfig) error {
 	}
 	jsonData = append(jsonData, '\n')
 	jsonPath := filepath.Join(dir, config.ConfigFileName)
-	if err := os.WriteFile(jsonPath, jsonData, 0644); err != nil {
+	if err := os.WriteFile(jsonPath, jsonData, 0600); err != nil {
 		return fmt.Errorf("failed to write JSON config file: %w", err)
 	}
 
@@ -1121,7 +1121,7 @@ func writeConfigWithMetadata(dir string, cfg *InitConfig, metadata *ProjectMetad
 	}
 
 	configPath := filepath.Join(dir, ".gh-pmu.yml")
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -1132,7 +1132,7 @@ func writeConfigWithMetadata(dir string, cfg *InitConfig, metadata *ProjectMetad
 	}
 	jsonData = append(jsonData, '\n')
 	jsonPath := filepath.Join(dir, config.ConfigFileName)
-	if err := os.WriteFile(jsonPath, jsonData, 0644); err != nil {
+	if err := os.WriteFile(jsonPath, jsonData, 0600); err != nil {
 		return fmt.Errorf("failed to write JSON config file: %w", err)
 	}
 

@@ -819,7 +819,7 @@ func writeBodyToFile(w io.Writer, number int, body string) error {
 	filename := fmt.Sprintf("issue-%d.md", number)
 	filePath := filepath.Join(tmpDir, filename)
 
-	if err := os.WriteFile(filePath, []byte(body), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(body), 0600); err != nil {
 		return fmt.Errorf("failed to write body file: %w", err)
 	}
 

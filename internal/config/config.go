@@ -305,7 +305,7 @@ func (c *Config) Save(path string) error {
 	jsonData = append(jsonData, '\n')
 
 	jsonPath := filepath.Join(dir, ConfigFileName)
-	if err := os.WriteFile(jsonPath, jsonData, 0644); err != nil {
+	if err := os.WriteFile(jsonPath, jsonData, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -607,7 +607,7 @@ func ensureGitignore(projectRoot string) error {
 	content += TempDirName + "/\n"
 
 	// Write (single handle, then close)
-	file, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open .gitignore: %w", err)
 	}
