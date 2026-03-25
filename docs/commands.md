@@ -179,17 +179,11 @@ gh pmu create --title "Fix bug" --status ready --priority p0
 # Create from YAML/JSON file (🆕 unique to gh-pmu)
 gh pmu create --from-file issue.yml
 
-# Interactive mode with prompts (🆕 unique to gh-pmu)
-gh pmu create --interactive
-
 # With body
 gh pmu create --title "Add caching" --body "Implement Redis caching for API"
 
 # With body from file
 gh pmu create --title "Add caching" --body-file description.md
-
-# Open editor to compose body
-gh pmu create --title "Add caching" --editor
 
 # Use issue template
 gh pmu create --title "Bug report" --template bug
@@ -208,14 +202,12 @@ gh pmu create --title "Security fix" --label bug --label security
 | `--priority` | Set project priority field on create |
 | `--branch` | Assign to branch (use 'current' for active) |
 | `--from-file` | Create issue from YAML/JSON file |
-| `--interactive` | Prompt for all fields interactively |
 
 **Flags matching `gh issue create`:**
 | Flag | Purpose |
 |------|---------|
 | `--body-file` / `-F` | Read body text from file |
 | `--body-stdin` | Read body text from standard input |
-| `--editor` / `-e` | Open editor to compose body |
 | `--template` / `-T` | Use issue template from `.github/ISSUE_TEMPLATE/` |
 | `--web` / `-w` | Open browser after creating issue |
 
@@ -559,9 +551,6 @@ gh pmu triage untracked --dry-run
 
 # Apply rule
 gh pmu triage untracked --apply
-
-# Interactive mode (prompts for each issue)
-gh pmu triage untracked --interactive
 ```
 
 ### split
@@ -802,7 +791,7 @@ gh pmu accept --dir /path/to/repo
 **Flags:**
 | Flag | Purpose |
 |------|---------|
-| `--yes` | Accept terms without interactive prompt |
+| `--yes` | Accept terms (required) |
 | `--dir` | Directory to search for config (default: current directory) |
 
 **Notes:**
