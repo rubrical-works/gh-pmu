@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -154,7 +153,7 @@ func runFieldCreateWithDeps(cmd *cobra.Command, fieldName string, opts *fieldCre
 		}
 	}
 
-	// Show confirmation unless --yes
+	// Require --yes for confirmation
 	if !opts.yes {
 		fmt.Fprintf(cmd.OutOrStdout(), "Create field in project %q:\n", project.Title)
 		fmt.Fprintf(cmd.OutOrStdout(), "  Name: %s\n", fieldName)
@@ -162,15 +161,7 @@ func runFieldCreateWithDeps(cmd *cobra.Command, fieldName string, opts *fieldCre
 		if len(opts.options) > 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "  Options: %s\n", strings.Join(opts.options, ", "))
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "\nProceed? [y/N]: ")
-
-		reader := bufio.NewReader(os.Stdin)
-		response, _ := reader.ReadString('\n')
-		response = strings.ToLower(strings.TrimSpace(response))
-		if response != "y" && response != "yes" {
-			fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
-			return nil
-		}
+		return fmt.Errorf("use --yes to confirm field creation")
 	}
 
 	// Create the field
