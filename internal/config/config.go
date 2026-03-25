@@ -553,7 +553,7 @@ func GetTempDir() (string, error) {
 	tempDir := filepath.Join(projectRoot, TempDirName)
 
 	// Create tmp directory if it doesn't exist
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	if err := os.MkdirAll(tempDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 

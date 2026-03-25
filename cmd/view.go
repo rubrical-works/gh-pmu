@@ -811,7 +811,7 @@ func renderProgressBar(completed, total, width int) string {
 func writeBodyToFile(w io.Writer, number int, body string) error {
 	// Create tmp directory if it doesn't exist
 	tmpDir := "tmp"
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0750); err != nil {
 		return fmt.Errorf("failed to create tmp directory: %w", err)
 	}
 

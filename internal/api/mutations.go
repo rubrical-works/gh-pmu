@@ -1329,7 +1329,7 @@ func (c *Client) WriteFile(path, content string) error {
 
 // MkdirAll creates a directory and all parents
 func (c *Client) MkdirAll(path string) error {
-	return os.MkdirAll(path, 0755)
+	return os.MkdirAll(path, 0750)
 }
 
 // GitAdd stages files to git
