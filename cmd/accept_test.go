@@ -209,7 +209,7 @@ func TestAcceptCommand_SavesAcceptanceToJSON(t *testing.T) {
 	}
 
 	// Verify no YAML companion was created
-	yamlPath := filepath.Join(tmpDir, config.ConfigFileNameYAML)
+	yamlPath := filepath.Join(tmpDir, ".gh-pmu.yml")
 	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
 		t.Error("Expected no YAML companion to be created")
 	}

@@ -1,0 +1,72 @@
+{
+  "project": {
+    "name": "IDPF-gh-pmu-testing",
+    "number": 41,
+    "owner": "rubrical-works"
+  },
+  "repositories": [
+    "rubrical-works/gh-pmu-e2e-test"
+  ],
+  "defaults": {
+    "priority": "p2",
+    "status": "backlog"
+  },
+  "fields": {
+    "priority": {
+      "field": "Priority",
+      "values": {
+        "p0": "P0",
+        "p1": "P1",
+        "p2": "P2"
+      }
+    },
+    "status": {
+      "field": "Status",
+      "values": {
+        "backlog": "Backlog",
+        "ready": "Ready",
+        "in_progress": "In progress",
+        "in_review": "In review",
+        "done": "Done"
+      }
+    }
+  },
+  "triage": {
+    "estimate": {
+      "query": "is:issue is:open -has:estimate",
+      "apply": {},
+      "interactive": {
+        "estimate": true
+      }
+    }
+  },
+  "metadata": {
+    "project": {
+      "id": "PVT_kwHOAATLPs4BM2I6"
+    },
+    "fields": [
+      {
+        "name": "Status",
+        "id": "PVTSSF_lAHOAATLPs4BJq7azgVBkxM",
+        "data_type": "SINGLE_SELECT",
+        "options": [
+          {"name": "Backlog", "id": "f75ad846"},
+          {"name": "Ready", "id": "61e4505c"},
+          {"name": "In progress", "id": "47fc9ee4"},
+          {"name": "In review", "id": "df73e18b"},
+          {"name": "Done", "id": "98236657"}
+        ]
+      },
+      {
+        "name": "Priority",
+        "id": "PVTSSF_lAHOAATLPs4BJq7azgVBkxQ",
+        "data_type": "SINGLE_SELECT",
+        "options": [
+          {"name": "P0", "id": "79628723"},
+          {"name": "P1", "id": "0a877460"},
+          {"name": "P2", "id": "da944a9c"}
+        ]
+      }
+    ]
+  }
+}

@@ -88,7 +88,7 @@ func TestDetectRepository_InvalidRemote(t *testing.T) {
 	}
 }
 
-func TestWriteConfig_CreatesValidYAML(t *testing.T) {
+func TestWriteConfig_CreatesValidJSON(t *testing.T) {
 	// Create temp directory for test
 	tmpDir := t.TempDir()
 
@@ -104,17 +104,17 @@ func TestWriteConfig_CreatesValidYAML(t *testing.T) {
 	}
 
 	// Verify file was created
-	configPath := tmpDir + "/.gh-pmu.yml"
+	configPath := tmpDir + "/.gh-pmu.json"
 	content, err := readFile(configPath)
 	if err != nil {
 		t.Fatalf("Failed to read config file: %v", err)
 	}
 
-	// Check content contains expected values
-	if !bytes.Contains(content, []byte("owner: test-owner")) {
+	// Check content contains expected values (JSON format)
+	if !bytes.Contains(content, []byte(`"owner": "test-owner"`)) {
 		t.Error("Config should contain owner")
 	}
-	if !bytes.Contains(content, []byte("number: 5")) {
+	if !bytes.Contains(content, []byte(`"number": 5`)) {
 		t.Error("Config should contain project number")
 	}
 	if !bytes.Contains(content, []byte("test-owner/test-repo")) {
@@ -136,10 +136,10 @@ func TestWriteConfig_WithDefaults(t *testing.T) {
 		t.Fatalf("writeConfig failed: %v", err)
 	}
 
-	content, _ := readFile(tmpDir + "/.gh-pmu.yml")
+	content, _ := readFile(tmpDir + "/.gh-pmu.json")
 
 	// Should have default status field mapping
-	if !bytes.Contains(content, []byte("status:")) {
+	if !bytes.Contains(content, []byte(`"status"`)) {
 		t.Error("Config should have default status field")
 	}
 }
@@ -159,20 +159,20 @@ func TestWriteConfig_IncludesTriageAndLabels(t *testing.T) {
 		t.Fatalf("writeConfig failed: %v", err)
 	}
 
-	content, _ := readFile(tmpDir + "/.gh-pmu.yml")
+	content, _ := readFile(tmpDir + "/.gh-pmu.json")
 
 	// Should have project name
-	if !bytes.Contains(content, []byte("name: Test Project")) {
+	if !bytes.Contains(content, []byte(`"name": "Test Project"`)) {
 		t.Error("Config should have project name")
 	}
 
 	// Should have triage section
-	if !bytes.Contains(content, []byte("triage:")) {
+	if !bytes.Contains(content, []byte(`"triage"`)) {
 		t.Error("Config should have triage section")
 	}
 
 	// Should have estimate triage rule
-	if !bytes.Contains(content, []byte("estimate:")) {
+	if !bytes.Contains(content, []byte(`"estimate"`)) {
 		t.Error("Config should have estimate triage rule")
 	}
 }
@@ -270,10 +270,10 @@ func TestWriteConfigWithMetadata_IncludesFields(t *testing.T) {
 		t.Fatalf("writeConfigWithMetadata failed: %v", err)
 	}
 
-	content, _ := readFile(tmpDir + "/.gh-pmu.yml")
+	content, _ := readFile(tmpDir + "/.gh-pmu.json")
 
 	// Should contain metadata section with project ID
-	if !bytes.Contains(content, []byte("metadata:")) {
+	if !bytes.Contains(content, []byte(`"metadata"`)) {
 		t.Error("Config should have metadata section")
 	}
 	if !bytes.Contains(content, []byte("PVT_test123")) {
@@ -370,13 +370,13 @@ func TestWriteConfigWithMetadata_EmptyMetadata(t *testing.T) {
 		t.Fatalf("writeConfigWithMetadata failed with empty fields: %v", err)
 	}
 
-	content, err := readFile(tmpDir + "/.gh-pmu.yml")
+	content, err := readFile(tmpDir + "/.gh-pmu.json")
 	if err != nil {
 		t.Fatalf("Failed to read config file: %v", err)
 	}
 
 	// Should still have metadata section
-	if !bytes.Contains(content, []byte("metadata:")) {
+	if !bytes.Contains(content, []byte(`"metadata"`)) {
 		t.Error("Config should have metadata section even with empty fields")
 	}
 	if !bytes.Contains(content, []byte("PVT_empty")) {
@@ -416,7 +416,7 @@ func TestWriteConfigWithMetadata_FieldOptions(t *testing.T) {
 		t.Fatalf("writeConfigWithMetadata failed: %v", err)
 	}
 
-	content, _ := readFile(tmpDir + "/.gh-pmu.yml")
+	content, _ := readFile(tmpDir + "/.gh-pmu.json")
 
 	// Check all options are written
 	options := []string{"XS", "S", "M", "L", "XL"}
@@ -442,7 +442,7 @@ func TestWriteConfig_FilePermissions(t *testing.T) {
 	}
 
 	// Check file exists and is readable
-	info, err := os.Stat(tmpDir + "/.gh-pmu.yml")
+	info, err := os.Stat(tmpDir + "/.gh-pmu.json")
 	if err != nil {
 		t.Fatalf("Failed to stat config file: %v", err)
 	}
@@ -548,7 +548,7 @@ func TestWriteConfig_EmptyConfig(t *testing.T) {
 	}
 
 	// Verify file was created
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Error("Config file was not created")
 	}
@@ -578,7 +578,7 @@ func TestWriteConfig_OverwriteExisting(t *testing.T) {
 	}
 
 	// Read file and verify it has new content
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
@@ -607,11 +607,11 @@ func TestWriteConfig_IncludesVersion(t *testing.T) {
 		t.Fatalf("writeConfig failed: %v", err)
 	}
 
-	content, _ := readFile(tmpDir + "/.gh-pmu.yml")
+	content, _ := readFile(tmpDir + "/.gh-pmu.json")
 
 	// Version field should be present and match the source constant
 	expected := getVersion()
-	if !bytes.Contains(content, []byte("version: "+expected)) {
+	if !bytes.Contains(content, []byte(`"version": "`+expected+`"`)) {
 		t.Errorf("Config should contain version: %s, got:\n%s", expected, string(content))
 	}
 }
@@ -634,10 +634,10 @@ func TestWriteConfigWithMetadata_IncludesVersion(t *testing.T) {
 		t.Fatalf("writeConfigWithMetadata failed: %v", err)
 	}
 
-	content, _ := readFile(tmpDir + "/.gh-pmu.yml")
+	content, _ := readFile(tmpDir + "/.gh-pmu.json")
 
 	expected := getVersion()
-	if !bytes.Contains(content, []byte("version: "+expected)) {
+	if !bytes.Contains(content, []byte(`"version": "`+expected+`"`)) {
 		t.Errorf("Config should contain version: %s, got:\n%s", expected, string(content))
 	}
 }
@@ -725,13 +725,8 @@ func TestLoadExistingFramework_ValidConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Write a config file
-	configContent := `
-framework: IDPF
-project:
-  owner: test
-  number: 1
-`
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	configContent := `{"framework":"IDPF","project":{"owner":"test","number":1}}`
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
@@ -750,12 +745,8 @@ project:
 func TestLoadExistingFramework_NoFramework(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	configContent := `
-project:
-  owner: test
-  number: 1
-`
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	configContent := `{"project":{"owner":"test","number":1}}`
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
@@ -780,22 +771,18 @@ func TestLoadExistingFramework_FileNotFound(t *testing.T) {
 	}
 }
 
-func TestLoadExistingFramework_InvalidYAML(t *testing.T) {
+func TestLoadExistingFramework_InvalidJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	configContent := `
-not valid: yaml:
-  - bad indent
-    really bad
-`
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	configContent := `{not valid json`
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
 	_, err := loadExistingFramework(tmpDir)
 	if err == nil {
-		t.Error("Expected error for invalid YAML")
+		t.Error("Expected error for invalid JSON")
 	}
 }
 
@@ -1186,7 +1173,7 @@ func TestWriteConfigWithMetadata_IncludesParkingLot(t *testing.T) {
 		t.Fatalf("writeConfigWithMetadata failed: %v", err)
 	}
 
-	content, _ := readFile(tmpDir + "/.gh-pmu.yml")
+	content, _ := readFile(tmpDir + "/.gh-pmu.json")
 
 	// Should contain parking_lot alias
 	if !bytes.Contains(content, []byte("parking_lot:")) {

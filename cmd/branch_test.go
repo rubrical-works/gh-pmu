@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// setupBranchTestDir creates a temp directory with a .gh-pmu.yml config file
+// setupBranchTestDir creates a temp directory with a .gh-pmu.json config file
 // and changes to that directory. Returns cleanup function to restore original dir.
 func setupBranchTestDir(t *testing.T, cfg *config.Config) func() {
 	t.Helper()
@@ -29,7 +29,7 @@ func setupBranchTestDir(t *testing.T, cfg *config.Config) func() {
 	tempDir := t.TempDir()
 
 	// Save config to temp directory
-	configPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tempDir, ".gh-pmu.json")
 	if err := cfg.Save(configPath); err != nil {
 		t.Fatalf("Failed to save test config: %v", err)
 	}
@@ -3120,7 +3120,7 @@ func BenchmarkBranchClose_Optimized(b *testing.B) {
 
 	// Create temp dir for config (required by branch close)
 	tempDir := b.TempDir()
-	configPath := tempDir + "/.gh-pmu.yml"
+	configPath := tempDir + "/.gh-pmu.json"
 	_ = cfg.Save(configPath)
 	originalDir, _ := os.Getwd()
 	_ = os.Chdir(tempDir)

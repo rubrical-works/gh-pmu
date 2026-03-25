@@ -11,8 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"encoding/json"
+
 	"github.com/rubrical-works/gh-pmu/internal/testutil"
-	"gopkg.in/yaml.v3"
 )
 
 // TestRunInit_Integration_NonInteractiveWithPipedInput tests init with piped stdin
@@ -60,7 +61,7 @@ func TestRunInit_Integration_NonInteractiveWithPipedInput(t *testing.T) {
 	}
 
 	// Verify config file was created
-	configPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tempDir, ".gh-pmu.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Error("Config file was not created")
 	}
@@ -72,7 +73,7 @@ func TestRunInit_Integration_NonInteractiveWithPipedInput(t *testing.T) {
 	}
 
 	var config map[string]interface{}
-	if err := yaml.Unmarshal(configData, &config); err != nil {
+	if err := json.Unmarshal(configData, &config); err != nil {
 		t.Fatalf("Failed to parse config: %v", err)
 	}
 
@@ -189,14 +190,14 @@ func TestRunInit_Integration_FieldMetadataFetching(t *testing.T) {
 	}
 
 	// Read config and check metadata section
-	configPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tempDir, ".gh-pmu.json")
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
 
 	var config map[string]interface{}
-	if err := yaml.Unmarshal(configData, &config); err != nil {
+	if err := json.Unmarshal(configData, &config); err != nil {
 		t.Fatalf("Failed to parse config: %v", err)
 	}
 
@@ -260,14 +261,14 @@ func TestRunInit_Integration_ConfigFileCreation(t *testing.T) {
 	}
 
 	// Read and validate full config structure
-	configPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tempDir, ".gh-pmu.json")
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
 
 	var config map[string]interface{}
-	if err := yaml.Unmarshal(configData, &config); err != nil {
+	if err := json.Unmarshal(configData, &config); err != nil {
 		t.Fatalf("Failed to parse config: %v", err)
 	}
 
@@ -346,14 +347,8 @@ func TestRunInit_Integration_ExistingConfigHandling(t *testing.T) {
 	}
 
 	// Create an existing config file
-	existingConfig := `project:
-  name: existing
-  owner: test
-  number: 999
-repositories:
-  - test/repo
-`
-	existingPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	existingConfig := `{"project":{"name":"existing","owner":"test","number":999},"repositories":["test/repo"]}`
+	existingPath := filepath.Join(tempDir, ".gh-pmu.json")
 	if err := os.WriteFile(existingPath, []byte(existingConfig), 0644); err != nil {
 		t.Fatalf("Failed to write existing config: %v", err)
 	}
@@ -489,7 +484,7 @@ func TestRunInit_Integration_NonInteractiveMode(t *testing.T) {
 	}
 
 	// Verify config file was created
-	configPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tempDir, ".gh-pmu.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Error("Config file was not created")
 	}
@@ -501,7 +496,7 @@ func TestRunInit_Integration_NonInteractiveMode(t *testing.T) {
 	}
 
 	var config map[string]interface{}
-	if err := yaml.Unmarshal(configData, &config); err != nil {
+	if err := json.Unmarshal(configData, &config); err != nil {
 		t.Fatalf("Failed to parse config: %v", err)
 	}
 
@@ -556,7 +551,7 @@ func TestRunInit_Integration_NonInteractiveWithOwner(t *testing.T) {
 	}
 
 	// Verify config was created
-	configPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tempDir, ".gh-pmu.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Error("Config file was not created")
 	}
@@ -597,14 +592,14 @@ func TestRunInit_Integration_NonInteractiveFrameworkNone(t *testing.T) {
 	}
 
 	// Verify config was created with framework: none
-	configPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tempDir, ".gh-pmu.json")
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
 
 	var config map[string]interface{}
-	if err := yaml.Unmarshal(configData, &config); err != nil {
+	if err := json.Unmarshal(configData, &config); err != nil {
 		t.Fatalf("Failed to parse config: %v", err)
 	}
 
@@ -634,8 +629,8 @@ func TestRunInit_Integration_NonInteractiveOverwrite(t *testing.T) {
 	}
 
 	// Create existing config
-	existingConfig := "project:\n  name: existing\n  owner: test\n  number: 999\n"
-	configPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	existingConfig := `{"project":{"name":"existing","owner":"test","number":999}}`
+	configPath := filepath.Join(tempDir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(existingConfig), 0644); err != nil {
 		t.Fatalf("Failed to write existing config: %v", err)
 	}

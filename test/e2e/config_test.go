@@ -10,44 +10,42 @@ import (
 )
 
 // testConfig holds the configuration for E2E test project #41
-const testConfig = `project:
-    name: IDPF-gh-pmu-testing
-    number: 41
-    owner: rubrical-works
-framework: IDPF-Agile
-repositories:
-    - rubrical-works/gh-pmu-e2e-test
-defaults:
-    priority: p2
-    status: backlog
-fields:
-    priority:
-        field: Priority
-        values:
-            p0: P0
-            p1: P1
-            p2: P2
-    status:
-        field: Status
-        values:
-            backlog: Backlog
-            done: Done
-            in_progress: In progress
-            in_review: In review
-            ready: Ready
-    release:
-        field: Release
-`
+const testConfig = `{
+  "project": {
+    "name": "IDPF-gh-pmu-testing",
+    "number": 41,
+    "owner": "rubrical-works"
+  },
+  "framework": "IDPF-Agile",
+  "repositories": ["rubrical-works/gh-pmu-e2e-test"],
+  "defaults": {
+    "priority": "p2",
+    "status": "backlog"
+  },
+  "fields": {
+    "priority": {
+      "field": "Priority",
+      "values": {"p0": "P0", "p1": "P1", "p2": "P2"}
+    },
+    "status": {
+      "field": "Status",
+      "values": {"backlog": "Backlog", "done": "Done", "in_progress": "In progress", "in_review": "In review", "ready": "Ready"}
+    },
+    "release": {
+      "field": "Release"
+    }
+  }
+}`
 
 // TestConfig holds the paths for a test configuration
 type TestConfig struct {
 	// Dir is the temporary directory containing the config
 	Dir string
-	// ConfigPath is the full path to the .gh-pmu.yml file
+	// ConfigPath is the full path to the .gh-pmu.json file
 	ConfigPath string
 }
 
-// setupTestConfig creates a temporary directory with a .gh-pmu.yml file
+// setupTestConfig creates a temporary directory with a .gh-pmu.json file
 // configured for test project #41. The directory is automatically cleaned up
 // when the test completes. Also initializes a git repository for tests that
 // require git operations (like branch commands).
@@ -58,7 +56,7 @@ func setupTestConfig(t *testing.T) *TestConfig {
 	tmpDir := t.TempDir()
 
 	// Write config file
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	err := os.WriteFile(configPath, []byte(testConfig), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write test config: %v", err)

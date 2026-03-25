@@ -11,20 +11,14 @@ import (
 // REQ-029: Framework Detection
 // =============================================================================
 
-// AC-029-1: Given `.gh-pmu.yml` with `framework: IDPF-Agile`, Then framework detected as Agile
-func TestDetectFramework_FromGhPmuYml(t *testing.T) {
+// AC-029-1: Given `.gh-pmu.json` with `framework: IDPF-Agile`, Then framework detected as Agile
+func TestDetectFramework_FromGhPmuJson(t *testing.T) {
 	// ARRANGE
 	tempDir := t.TempDir()
 
-	// Create .gh-pmu.yml with framework field
-	ghPmuContent := `project:
-  owner: testowner
-  number: 1
-repositories:
-  - testowner/testrepo
-framework: IDPF-Agile
-`
-	err := os.WriteFile(filepath.Join(tempDir, ".gh-pmu.yml"), []byte(ghPmuContent), 0644)
+	// Create .gh-pmu.json with framework field
+	ghPmuContent := `{"project":{"owner":"testowner","number":1},"repositories":["testowner/testrepo"],"framework":"IDPF-Agile"}`
+	err := os.WriteFile(filepath.Join(tempDir, ".gh-pmu.json"), []byte(ghPmuContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
@@ -91,22 +85,16 @@ func TestDetectFramework_NoConfig_ReturnsEmpty(t *testing.T) {
 	}
 }
 
-// Test priority: .gh-pmu.yml takes precedence over framework-config.json
-func TestDetectFramework_GhPmuYmlTakesPrecedence(t *testing.T) {
+// Test priority: .gh-pmu.json takes precedence over framework-config.json
+func TestDetectFramework_GhPmuJsonTakesPrecedence(t *testing.T) {
 	// ARRANGE
 	tempDir := t.TempDir()
 
 	// Create both config files with different values
-	ghPmuContent := `project:
-  owner: testowner
-  number: 1
-repositories:
-  - testowner/testrepo
-framework: IDPF-Agile
-`
-	err := os.WriteFile(filepath.Join(tempDir, ".gh-pmu.yml"), []byte(ghPmuContent), 0644)
+	ghPmuContent := `{"project":{"owner":"testowner","number":1},"repositories":["testowner/testrepo"],"framework":"IDPF-Agile"}`
+	err := os.WriteFile(filepath.Join(tempDir, ".gh-pmu.json"), []byte(ghPmuContent), 0644)
 	if err != nil {
-		t.Fatalf("Failed to create .gh-pmu.yml: %v", err)
+		t.Fatalf("Failed to create .gh-pmu.json: %v", err)
 	}
 
 	frameworkConfigContent := `{
@@ -127,27 +115,22 @@ framework: IDPF-Agile
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	// .gh-pmu.yml should take precedence
+	// .gh-pmu.json should take precedence
 	if framework != "IDPF-Agile" {
-		t.Errorf("Expected framework 'IDPF-Agile' (from .gh-pmu.yml), got '%s'", framework)
+		t.Errorf("Expected framework 'IDPF-Agile' (from .gh-pmu.json), got '%s'", framework)
 	}
 }
 
-// Test .gh-pmu.yml without framework field falls back to framework-config.json
-func TestDetectFramework_GhPmuYmlWithoutFramework_FallsBackToFrameworkConfig(t *testing.T) {
+// Test .gh-pmu.json without framework field falls back to framework-config.json
+func TestDetectFramework_GhPmuJsonWithoutFramework_FallsBackToFrameworkConfig(t *testing.T) {
 	// ARRANGE
 	tempDir := t.TempDir()
 
-	// Create .gh-pmu.yml WITHOUT framework field
-	ghPmuContent := `project:
-  owner: testowner
-  number: 1
-repositories:
-  - testowner/testrepo
-`
-	err := os.WriteFile(filepath.Join(tempDir, ".gh-pmu.yml"), []byte(ghPmuContent), 0644)
+	// Create .gh-pmu.json WITHOUT framework field
+	ghPmuContent := `{"project":{"owner":"testowner","number":1},"repositories":["testowner/testrepo"]}`
+	err := os.WriteFile(filepath.Join(tempDir, ".gh-pmu.json"), []byte(ghPmuContent), 0644)
 	if err != nil {
-		t.Fatalf("Failed to create .gh-pmu.yml: %v", err)
+		t.Fatalf("Failed to create .gh-pmu.json: %v", err)
 	}
 
 	frameworkConfigContent := `{
