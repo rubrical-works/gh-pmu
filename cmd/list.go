@@ -519,8 +519,7 @@ func outputTable(cmd *cobra.Command, items []api.ProjectItem) error {
 		)
 	}
 
-	w.Flush()
-	return nil
+	return w.Flush()
 }
 
 // JSONOutput represents the JSON output structure
