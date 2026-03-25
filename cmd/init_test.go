@@ -458,6 +458,34 @@ func TestWriteConfig_FilePermissions(t *testing.T) {
 	}
 }
 
+// TestWriteConfig_DoesNotCreateYAML verifies init only writes .gh-pmu.json
+func TestWriteConfig_DoesNotCreateYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	protectRepoRoot.Store(false)
+	defer protectRepoRoot.Store(true)
+
+	cfg := &InitConfig{
+		Owner:        "test-owner",
+		ProjectNum:   1,
+		Repositories: []string{"test-owner/test-repo"},
+	}
+
+	err := writeConfig(tmpDir, cfg)
+	if err != nil {
+		t.Fatalf("writeConfig failed: %v", err)
+	}
+
+	// .gh-pmu.json should exist
+	if _, err := os.Stat(filepath.Join(tmpDir, ".gh-pmu.json")); err != nil {
+		t.Errorf("Expected .gh-pmu.json to exist: %v", err)
+	}
+
+	// .gh-pmu.yml should NOT exist
+	if _, err := os.Stat(filepath.Join(tmpDir, ".gh-pmu.yml")); err == nil {
+		t.Error("Expected .gh-pmu.yml to NOT be created, but it exists")
+	}
+}
+
 // ============================================================================
 // writeConfig Error Path Tests (IT-3.4)
 // ============================================================================
