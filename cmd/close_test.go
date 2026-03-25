@@ -417,6 +417,156 @@ func TestNewCloseCommand_RequiresArg(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// runCloseWithClient Tests
+// ============================================================================
+
+func TestRunCloseWithClient_BasicClose(t *testing.T) {
+	mock := newMockCloseClient()
+	cmd := newCloseCommand()
+
+	err := runCloseWithClient(cmd, mock, "test-org", "test-repo", 42, "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mock.closedIssueID != "issue-node-123" {
+		t.Errorf("expected closedIssueID 'issue-node-123', got %q", mock.closedIssueID)
+	}
+	if mock.closedReason != "" {
+		t.Errorf("expected empty reason, got %q", mock.closedReason)
+	}
+}
+
+func TestRunCloseWithClient_WithCompletedReason(t *testing.T) {
+	mock := newMockCloseClient()
+	cmd := newCloseCommand()
+
+	err := runCloseWithClient(cmd, mock, "test-org", "test-repo", 42, "completed", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mock.closedReason != "COMPLETED" {
+		t.Errorf("expected reason 'COMPLETED', got %q", mock.closedReason)
+	}
+}
+
+func TestRunCloseWithClient_WithNotPlannedReason(t *testing.T) {
+	mock := newMockCloseClient()
+	cmd := newCloseCommand()
+
+	err := runCloseWithClient(cmd, mock, "test-org", "test-repo", 42, "not planned", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mock.closedReason != "NOT_PLANNED" {
+		t.Errorf("expected reason 'NOT_PLANNED', got %q", mock.closedReason)
+	}
+}
+
+func TestRunCloseWithClient_WithComment(t *testing.T) {
+	mock := newMockCloseClient()
+	cmd := newCloseCommand()
+
+	err := runCloseWithClient(cmd, mock, "test-org", "test-repo", 42, "", "Fixed in v1.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mock.commentIssueID != "issue-node-123" {
+		t.Errorf("expected comment on issue-node-123, got %q", mock.commentIssueID)
+	}
+	if mock.commentBody != "Fixed in v1.0" {
+		t.Errorf("expected comment body 'Fixed in v1.0', got %q", mock.commentBody)
+	}
+	if mock.closedIssueID != "issue-node-123" {
+		t.Errorf("expected issue closed after comment")
+	}
+}
+
+func TestRunCloseWithClient_WithReasonAndComment(t *testing.T) {
+	mock := newMockCloseClient()
+	cmd := newCloseCommand()
+
+	err := runCloseWithClient(cmd, mock, "test-org", "test-repo", 42, "not planned", "Duplicate of #100")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mock.closedReason != "NOT_PLANNED" {
+		t.Errorf("expected reason 'NOT_PLANNED', got %q", mock.closedReason)
+	}
+	if mock.commentBody != "Duplicate of #100" {
+		t.Errorf("expected comment body, got %q", mock.commentBody)
+	}
+}
+
+func TestRunCloseWithClient_GetIssueError(t *testing.T) {
+	mock := newMockCloseClient()
+	mock.getIssueErr = errors.New("issue not found")
+	cmd := newCloseCommand()
+
+	err := runCloseWithClient(cmd, mock, "test-org", "test-repo", 999, "", "")
+	if err == nil {
+		t.Fatal("expected error when issue not found")
+	}
+	if !strings.Contains(err.Error(), "failed to get issue #999") {
+		t.Errorf("expected 'failed to get issue' error, got: %v", err)
+	}
+}
+
+func TestRunCloseWithClient_CloseError(t *testing.T) {
+	mock := newMockCloseClient()
+	mock.closeIssueErr = errors.New("mutation failed")
+	cmd := newCloseCommand()
+
+	err := runCloseWithClient(cmd, mock, "test-org", "test-repo", 42, "", "")
+	if err == nil {
+		t.Fatal("expected error when close fails")
+	}
+	if !strings.Contains(err.Error(), "failed to close issue #42") {
+		t.Errorf("expected 'failed to close issue' error, got: %v", err)
+	}
+}
+
+func TestRunCloseWithClient_CommentError(t *testing.T) {
+	mock := newMockCloseClient()
+	mock.addIssueCommentErr = errors.New("comment failed")
+	cmd := newCloseCommand()
+
+	err := runCloseWithClient(cmd, mock, "test-org", "test-repo", 42, "", "some comment")
+	if err == nil {
+		t.Fatal("expected error when comment fails")
+	}
+	if !strings.Contains(err.Error(), "failed to add closing comment") {
+		t.Errorf("expected 'failed to add closing comment' error, got: %v", err)
+	}
+	// Issue should NOT be closed if comment failed
+	if mock.closedIssueID != "" {
+		t.Error("issue should not be closed when comment fails")
+	}
+}
+
+// ============================================================================
+// reasonToGraphQL Tests
+// ============================================================================
+
+func TestReasonToGraphQL(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"completed", "COMPLETED"},
+		{"not planned", "NOT_PLANNED"},
+		{"", ""},
+		{"unknown", ""},
+	}
+
+	for _, tt := range tests {
+		result := reasonToGraphQL(tt.input)
+		if result != tt.expected {
+			t.Errorf("reasonToGraphQL(%q) = %q, want %q", tt.input, result, tt.expected)
+		}
+	}
+}
+
 func TestRunClose_InvalidIssueNumber(t *testing.T) {
 	cmd := newCloseCommand()
 	opts := &closeOptions{}
