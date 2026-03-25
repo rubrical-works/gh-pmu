@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -128,7 +129,7 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 		criticalChanges := compareCriticalFields(localContent, committedContent)
 		if len(criticalChanges) > 0 {
 			hasCriticalDrift = true
-			writeCriticalAlert(os.Stderr, criticalChanges)
+			writeCriticalAlert(cmd.ErrOrStderr(), criticalChanges)
 		}
 	}
 
@@ -237,7 +238,7 @@ func compareCriticalFields(local, reference []byte) []criticalFieldChange {
 }
 
 // writeCriticalAlert writes a boxed warning to the given writer for critical field changes.
-func writeCriticalAlert(w *os.File, changes []criticalFieldChange) {
+func writeCriticalAlert(w io.Writer, changes []criticalFieldChange) {
 	const width = 63
 	border := strings.Repeat("─", width)
 
