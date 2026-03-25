@@ -56,3 +56,12 @@
   | `golangci-lint` | Aggregated linter suite |
 
   All security scans run on every push and pull request via GitHub Actions.
+
+  ## Known Suppressions
+
+  The following gosec rules are excluded in the CI workflow (`.github/workflows/gosec.yml`). These are intentional design decisions, not security gaps.
+
+  | Rule | Description | Rationale |
+  |------|-------------|-----------|
+  | **G304** | File inclusion via variable | CLI tool reads user-supplied file paths by design (config files, templates, issue body files). Paths are validated before use. |
+  | **G204** | Subprocess launch with variable args | Remaining calls are `exec.Command("git", ...)` with a hardcoded binary name and controlled arguments. A CLI tool that wraps git must execute git commands. All `gh` subprocess calls have been replaced with direct API client calls. |
