@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-03-25
+
+### Added
+- `config verify` now includes unchanged top-level sections alongside changed ones when drift is detected (#783)
+
+### Changed
+- One-time migration: when `.gh-pmu.json` exists and `.gh-pmu.yml` is present, the legacy YAML config is automatically deleted and the JSON config version is updated to the current CLI version (#782)
+- `Save()` no longer writes a `.gh-pmu.yml` companion file — JSON is the sole config format
+- Upgraded IDPF framework to v0.70.0
+
 ## [1.3.2] - 2026-03-22
 
 ### Changed
