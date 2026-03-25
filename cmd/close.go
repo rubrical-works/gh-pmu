@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -18,6 +17,9 @@ type closeClient interface {
 	GetProject(owner string, number int) (*api.Project, error)
 	GetProjectItemIDForIssue(projectID, owner, repo string, number int) (string, error)
 	SetProjectItemField(projectID, itemID, fieldName, value string) error
+	GetIssue(owner, repo string, number int) (*api.Issue, error)
+	CloseIssue(issueID string, stateReason string) error
+	AddIssueComment(issueID, body string) (*api.Comment, error)
 }
 
 type closeOptions struct {
@@ -107,32 +109,85 @@ func runClose(cmd *cobra.Command, args []string, opts *closeOptions) error {
 		}
 	}
 
-	// Build gh issue close command
-	ghArgs := []string{"issue", "close", strconv.Itoa(issueNum)}
+	// Resolve repository
+	owner, repo, err := resolveCloseRepo(opts.repo)
+	if err != nil {
+		return err
+	}
 
-	if opts.repo != "" {
-		// Validate repo format
-		parts := strings.Split(opts.repo, "/")
+	// Create API client
+	client, err := api.NewClient()
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	return runCloseWithClient(cmd, client, owner, repo, issueNum, normalizedReason, opts.comment)
+}
+
+// resolveCloseRepo determines the owner/repo from the --repo flag or config.
+func resolveCloseRepo(repoOverride string) (string, string, error) {
+	if repoOverride != "" {
+		parts := strings.Split(repoOverride, "/")
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+			return "", "", fmt.Errorf("invalid --repo format: expected owner/repo, got %s", repoOverride)
 		}
-		ghArgs = append(ghArgs, "-R", opts.repo)
+		return parts[0], parts[1], nil
 	}
 
-	if normalizedReason != "" {
-		ghArgs = append(ghArgs, "--reason", normalizedReason)
+	// Fall back to config
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+	cfg, err := config.LoadFromDirectory(cwd)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to load configuration: %w", err)
+	}
+	if len(cfg.Repositories) == 0 {
+		return "", "", fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.json)")
+	}
+	parts := strings.Split(cfg.Repositories[0], "/")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
+	}
+	return parts[0], parts[1], nil
+}
+
+// reasonToGraphQL maps normalized close reasons to GitHub GraphQL enum values.
+func reasonToGraphQL(normalizedReason string) string {
+	switch normalizedReason {
+	case "not planned":
+		return "NOT_PLANNED"
+	case "completed":
+		return "COMPLETED"
+	default:
+		return ""
+	}
+}
+
+// runCloseWithClient is the testable implementation that uses the API client.
+func runCloseWithClient(cmd *cobra.Command, client closeClient, owner, repo string, issueNum int, normalizedReason, comment string) error {
+	// Look up issue to get its node ID
+	issue, err := client.GetIssue(owner, repo, issueNum)
+	if err != nil {
+		return fmt.Errorf("failed to get issue #%d: %w", issueNum, err)
 	}
 
-	if opts.comment != "" {
-		ghArgs = append(ghArgs, "--comment", opts.comment)
+	// Add comment first if provided (CloseIssue mutation doesn't support inline comments)
+	if comment != "" {
+		if _, err := client.AddIssueComment(issue.ID, comment); err != nil {
+			return fmt.Errorf("failed to add closing comment: %w", err)
+		}
 	}
 
-	// Execute gh issue close
-	ghCmd := exec.Command("gh", ghArgs...)
-	ghCmd.Stdout = os.Stdout
-	ghCmd.Stderr = os.Stderr
+	// Close the issue
+	graphqlReason := reasonToGraphQL(normalizedReason)
+	if err := client.CloseIssue(issue.ID, graphqlReason); err != nil {
+		return fmt.Errorf("failed to close issue #%d: %w", issueNum, err)
+	}
 
-	return ghCmd.Run()
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ Closed issue #%d\n", issueNum)
+	return nil
 }
 
 // updateStatusToDone moves the issue to "done" status in the project

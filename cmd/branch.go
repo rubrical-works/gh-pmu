@@ -138,7 +138,7 @@ type branchClient interface {
 	// GitAdd stages files to git
 	GitAdd(paths ...string) error
 	// CloseIssue closes an issue
-	CloseIssue(issueID string) error
+	CloseIssue(issueID string, stateReason string) error
 	// ReopenIssue reopens a closed issue
 	ReopenIssue(issueID string) error
 	// GitTag creates an annotated git tag
@@ -1070,7 +1070,7 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 	}
 
 	// Close the tracker issue
-	err = client.CloseIssue(targetBranch.ID)
+	err = client.CloseIssue(targetBranch.ID, "")
 	if err != nil {
 		return fmt.Errorf("failed to close tracker issue: %w", err)
 	}

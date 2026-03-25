@@ -389,7 +389,7 @@ func (m *mockBranchClient) GitAdd(paths ...string) error {
 	return nil
 }
 
-func (m *mockBranchClient) CloseIssue(issueID string) error {
+func (m *mockBranchClient) CloseIssue(issueID string, stateReason string) error {
 	m.closeIssueCalls = append(m.closeIssueCalls, closeIssueCall{
 		issueID: issueID,
 	})

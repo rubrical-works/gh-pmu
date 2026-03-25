@@ -101,7 +101,8 @@ type CreateIssueInput struct {
 
 // CloseIssueInput represents the input for closing an issue
 type CloseIssueInput struct {
-	IssueID graphql.ID `json:"issueId"`
+	IssueID     graphql.ID      `json:"issueId"`
+	StateReason *graphql.String `json:"stateReason,omitempty"`
 }
 
 // ReopenIssueInput represents the input for reopening an issue
@@ -1106,8 +1107,9 @@ func (c *Client) CreateIssueWithOptions(owner, repo, title, body string, labels,
 	}, nil
 }
 
-// CloseIssue closes an issue by its ID
-func (c *Client) CloseIssue(issueID string) error {
+// CloseIssue closes an issue by its ID. An optional stateReason can be
+// provided ("COMPLETED" or "NOT_PLANNED"); pass "" to use the GitHub default.
+func (c *Client) CloseIssue(issueID string, stateReason string) error {
 
 	var mutation struct {
 		CloseIssue struct {
@@ -1119,6 +1121,10 @@ func (c *Client) CloseIssue(issueID string) error {
 
 	input := CloseIssueInput{
 		IssueID: graphql.ID(issueID),
+	}
+	if stateReason != "" {
+		reason := graphql.String(stateReason)
+		input.StateReason = &reason
 	}
 
 	variables := map[string]interface{}{

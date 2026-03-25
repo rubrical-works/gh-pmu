@@ -1166,7 +1166,7 @@ func TestCloseIssue_Success(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
-	err := client.CloseIssue("issue-123")
+	err := client.CloseIssue("issue-123", "")
 
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -1181,7 +1181,7 @@ func TestCloseIssue_MutationError(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
-	err := client.CloseIssue("issue-id")
+	err := client.CloseIssue("issue-id", "")
 
 	if err == nil {
 		t.Fatal("Expected error when mutation fails")
