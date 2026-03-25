@@ -3453,3 +3453,78 @@ func TestParseParentIssueBatchResponse_EmptyInput(t *testing.T) {
 		t.Errorf("expected empty map, got %d entries", len(result))
 	}
 }
+
+// mockRawGraphQL implements RawGraphQLDoer for testing doRawGraphQL.
+type mockRawGraphQL struct {
+	response  []byte
+	err       error
+	lastQuery string
+	lastHdrs  map[string]string
+}
+
+func (m *mockRawGraphQL) DoRaw(query string, headers map[string]string) ([]byte, error) {
+	m.lastQuery = query
+	m.lastHdrs = headers
+	return m.response, m.err
+}
+
+func TestDoRawGraphQL_Success(t *testing.T) {
+	mock := &mockRawGraphQL{
+		response: []byte(`{"data":{"repository":{"issue":{"title":"Test"}}}}`),
+	}
+	client := &Client{rawGQL: mock}
+
+	output, err := client.doRawGraphQL("query { repository { issue { title } } }", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(output) != `{"data":{"repository":{"issue":{"title":"Test"}}}}` {
+		t.Errorf("unexpected output: %s", string(output))
+	}
+	if mock.lastQuery != "query { repository { issue { title } } }" {
+		t.Errorf("query not passed correctly: %s", mock.lastQuery)
+	}
+}
+
+func TestDoRawGraphQL_WithHeaders(t *testing.T) {
+	mock := &mockRawGraphQL{
+		response: []byte(`{"data":{}}`),
+	}
+	client := &Client{rawGQL: mock}
+
+	hdrs := map[string]string{"X-Github-Next": "sub_issues"}
+	_, err := client.doRawGraphQL("query { test }", hdrs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mock.lastHdrs["X-Github-Next"] != "sub_issues" {
+		t.Errorf("headers not passed: %v", mock.lastHdrs)
+	}
+}
+
+func TestDoRawGraphQL_Error(t *testing.T) {
+	mock := &mockRawGraphQL{
+		err: fmt.Errorf("network error"),
+	}
+	client := &Client{rawGQL: mock}
+
+	_, err := client.doRawGraphQL("query { test }", nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "network error") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDoRawGraphQL_NilClient(t *testing.T) {
+	client := &Client{rawGQL: nil}
+
+	_, err := client.doRawGraphQL("query { test }", nil)
+	if err == nil {
+		t.Fatal("expected error for nil rawGQL")
+	}
+	if !strings.Contains(err.Error(), "not initialized") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
