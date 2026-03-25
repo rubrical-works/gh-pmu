@@ -478,13 +478,7 @@ func TestSubCreateCommand_HasBodyFileFlag(t *testing.T) {
 
 func TestSubCreate_BodyAndBodyFileMutualExclusivity(t *testing.T) {
 	// Create temp config
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -527,13 +521,7 @@ repositories:
 
 func TestSubCreate_BodyFileNotFound(t *testing.T) {
 	// Create temp config
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()

@@ -465,9 +465,9 @@ func TestWriteConfig_DoesNotCreateYAML(t *testing.T) {
 	defer protectRepoRoot.Store(true)
 
 	cfg := &InitConfig{
-		Owner:        "test-owner",
-		ProjectNum:   1,
-		Repositories: []string{"test-owner/test-repo"},
+		ProjectOwner:  "test-owner",
+		ProjectNumber: 1,
+		Repositories:  []string{"test-owner/test-repo"},
 	}
 
 	err := writeConfig(tmpDir, cfg)
@@ -1203,9 +1203,9 @@ func TestWriteConfigWithMetadata_IncludesParkingLot(t *testing.T) {
 
 	content, _ := readFile(tmpDir + "/.gh-pmu.json")
 
-	// Should contain parking_lot alias
-	if !bytes.Contains(content, []byte("parking_lot:")) {
-		t.Error("Config should contain 'parking_lot:' alias")
+	// Should contain parking_lot alias (JSON key format)
+	if !bytes.Contains(content, []byte(`"parking_lot"`)) {
+		t.Error("Config should contain '\"parking_lot\"' alias")
 	}
 
 	// Should contain the original name with emoji
