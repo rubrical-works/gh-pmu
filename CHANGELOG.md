@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-03-25
+
+### Added
+- Gosec security scanning workflow with SARIF upload to GitHub Security tab (#787)
+- Critical config field drift detection in `config verify` — alerts when `project.owner`, `project.number`, or `repositories[0]` change from HEAD with a prominent boxed warning on stderr (#792)
+- Gosec badge in README
+
+### Changed
+- `gh pmu init` now writes only `.gh-pmu.json` — no longer creates `.gh-pmu.yml` (#791)
+- `DetectFramework()` and `loadExistingFramework()` read from `.gh-pmu.json` instead of `.gh-pmu.yml`
+- `FindConfigFile()` YAML fallback removed; `ConfigFileNameYAML` constant removed
+- All error messages now reference `.gh-pmu.json` instead of `.gh-pmu.yml`
+- `MigrateYAML()` retained as safety net for users upgrading from pre-v1.4.0
+
+### Fixed
+- Tightened file write permissions to `0600` and directory permissions to `0750` (gosec G306/G301/G302) (#787)
+- Handled previously ignored errors in `cmd/create.go` and `cmd/list.go` (gosec G104)
+- Excluded gosec G304 (file inclusion via variable) — expected for CLI tools that read user-supplied paths
+
 ## [1.4.0] - 2026-03-25
 
 ### Added
