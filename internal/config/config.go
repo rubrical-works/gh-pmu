@@ -91,11 +91,8 @@ type OptionMetadata struct {
 	ID   string `yaml:"id" json:"id"`
 }
 
-// ConfigFileName is the default (primary) configuration file name
+// ConfigFileName is the configuration file name
 const ConfigFileName = ".gh-pmu.json"
-
-// ConfigFileNameYAML is the legacy YAML configuration file name (fallback)
-const ConfigFileNameYAML = ".gh-pmu.yml"
 
 // Load reads and parses a configuration file from the given path.
 // Detects format (YAML or JSON) based on file extension.
@@ -159,32 +156,15 @@ func LoadFromDirectoryAndNormalize(dir string) (*Config, error) {
 
 // FindConfigFile searches for .gh-pmu.json starting from dir and walking up
 // the directory tree until found or filesystem root is reached.
-// Falls back to .gh-pmu.yml if no JSON file is found.
 func FindConfigFile(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// First pass: look for JSON (primary)
 	searchDir := dir
 	for {
 		configPath := filepath.Join(searchDir, ConfigFileName)
-		if _, err := os.Stat(configPath); err == nil {
-			return configPath, nil
-		}
-
-		parent := filepath.Dir(searchDir)
-		if parent == searchDir {
-			break
-		}
-		searchDir = parent
-	}
-
-	// Second pass: look for YAML fallback
-	searchDir = dir
-	for {
-		configPath := filepath.Join(searchDir, ConfigFileNameYAML)
 		if _, err := os.Stat(configPath); err == nil {
 			return configPath, nil
 		}
@@ -316,8 +296,9 @@ func (c *Config) Save(path string) error {
 // the JSON config, it deletes the YAML file, updates the version in the JSON
 // config, and saves. If no YAML file exists, this is a no-op.
 func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) error {
+	const legacyYAMLFile = ".gh-pmu.yml"
 	dir := filepath.Dir(jsonConfigPath)
-	yamlPath := filepath.Join(dir, ConfigFileNameYAML)
+	yamlPath := filepath.Join(dir, legacyYAMLFile)
 
 	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
 		return nil // No YAML file — nothing to do
@@ -325,9 +306,9 @@ func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) erro
 
 	// Delete the legacy YAML config
 	if err := os.Remove(yamlPath); err != nil {
-		return fmt.Errorf("failed to remove legacy config %s: %w", ConfigFileNameYAML, err)
+		return fmt.Errorf("failed to remove legacy config %s: %w", legacyYAMLFile, err)
 	}
-	fmt.Fprintf(w, "Removed legacy config %s\n", ConfigFileNameYAML)
+	fmt.Fprintf(w, "Removed legacy config %s\n", legacyYAMLFile)
 
 	// Update version in JSON config
 	cfg, err := Load(jsonConfigPath)
