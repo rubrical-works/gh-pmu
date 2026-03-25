@@ -17,7 +17,7 @@ func TestRunTriage_Integration_ListConfigs(t *testing.T) {
 
 	testutil.AssertExitCode(t, result, 0)
 
-	// Should show available configs from .gh-pmu.yml
+	// Should show available configs from .gh-pmu.json
 	testutil.AssertContains(t, result.Stdout, "Available triage configs")
 }
 

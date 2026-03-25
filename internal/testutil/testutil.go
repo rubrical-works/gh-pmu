@@ -39,7 +39,7 @@ func getTestConfigDir() string {
 			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 				// Found repo root, use testdata/integration config
 				testDir := filepath.Join(dir, "testdata", "integration")
-				if _, err := os.Stat(filepath.Join(testDir, ".gh-pmu.yml")); err == nil {
+				if _, err := os.Stat(filepath.Join(testDir, ".gh-pmu.json")); err == nil {
 					testConfigDir = testDir
 					return
 				}

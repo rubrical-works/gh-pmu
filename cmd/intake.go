@@ -93,7 +93,7 @@ func runIntake(cmd *cobra.Command, opts *intakeOptions) error {
 	}
 
 	if len(cfg.Repositories) == 0 {
-		return fmt.Errorf("no repositories configured in .gh-pmu.yml")
+		return fmt.Errorf("no repositories configured in .gh-pmu.json")
 	}
 
 	// Create API client

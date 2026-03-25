@@ -165,3 +165,172 @@ func runGit(t *testing.T, dir string, args ...string) {
 func containsStr(s, substr string) bool {
 	return bytes.Contains([]byte(s), []byte(substr))
 }
+
+func TestConfigVerify_CriticalFieldChange_SingleField(t *testing.T) {
+	dir := t.TempDir()
+	original := []byte(`{"project":{"owner":"test","number":1},"repositories":["test/repo"]}`)
+	configPath := filepath.Join(dir, ".gh-pmu.json")
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	runGit(t, dir, "init")
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "init")
+
+	// Change only project.number
+	modified := []byte(`{"project":{"owner":"test","number":42},"repositories":["test/repo"]}`)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewRootCommand()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"config", "verify", "--dir", dir})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Alert should be on stderr
+	errOutput := stderr.String()
+	if !containsStr(errOutput, "CRITICAL CONFIG CHANGE DETECTED") {
+		t.Errorf("Expected critical alert on stderr, got: %s", errOutput)
+	}
+	if !containsStr(errOutput, "project.number") {
+		t.Errorf("Expected 'project.number' in alert, got: %s", errOutput)
+	}
+	if !containsStr(errOutput, "1") || !containsStr(errOutput, "42") {
+		t.Errorf("Expected old (1) and new (42) values in alert, got: %s", errOutput)
+	}
+	// Should NOT mention owner or repositories since those didn't change
+	if containsStr(errOutput, "project.owner") {
+		t.Errorf("Should not mention project.owner when it didn't change")
+	}
+
+	// Stdout should still have the normal drift report
+	if !containsStr(stdout.String(), "Drift detected") {
+		t.Errorf("Expected drift report on stdout")
+	}
+}
+
+func TestConfigVerify_CriticalFieldChange_MultipleFields(t *testing.T) {
+	dir := t.TempDir()
+	original := []byte(`{"project":{"owner":"old-owner","number":1},"repositories":["old/repo"]}`)
+	configPath := filepath.Join(dir, ".gh-pmu.json")
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	runGit(t, dir, "init")
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "init")
+
+	modified := []byte(`{"project":{"owner":"new-owner","number":99},"repositories":["new/repo"]}`)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewRootCommand()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"config", "verify", "--dir", dir})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	errOutput := stderr.String()
+	if !containsStr(errOutput, "project.owner") {
+		t.Errorf("Expected 'project.owner' in alert")
+	}
+	if !containsStr(errOutput, "project.number") {
+		t.Errorf("Expected 'project.number' in alert")
+	}
+	if !containsStr(errOutput, "repositories[0]") {
+		t.Errorf("Expected 'repositories[0]' in alert")
+	}
+}
+
+func TestConfigVerify_NoCriticalChange_WithGeneralDrift(t *testing.T) {
+	dir := t.TempDir()
+	original := []byte(`{"project":{"owner":"test","number":1},"repositories":["test/repo"],"defaults":{"status":"backlog"}}`)
+	configPath := filepath.Join(dir, ".gh-pmu.json")
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	runGit(t, dir, "init")
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "init")
+
+	// Only change defaults (non-critical)
+	modified := []byte(`{"project":{"owner":"test","number":1},"repositories":["test/repo"],"defaults":{"status":"ready"}}`)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewRootCommand()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"config", "verify", "--dir", dir})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Should report general drift on stdout
+	if !containsStr(stdout.String(), "Drift detected") {
+		t.Errorf("Expected drift report on stdout")
+	}
+
+	// Should NOT have critical alert on stderr
+	if containsStr(stderr.String(), "CRITICAL CONFIG CHANGE DETECTED") {
+		t.Errorf("Should not show critical alert when only non-critical fields changed")
+	}
+}
+
+func TestConfigVerify_StrictMode_CriticalDrift_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	original := []byte(`{"project":{"owner":"test","number":1},"repositories":["test/repo"],"configIntegrity":"strict"}`)
+	configPath := filepath.Join(dir, ".gh-pmu.json")
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	runGit(t, dir, "init")
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "init")
+
+	modified := []byte(`{"project":{"owner":"changed","number":1},"repositories":["test/repo"],"configIntegrity":"strict"}`)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewRootCommand()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"config", "verify", "--dir", dir})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Expected error in strict mode with critical drift")
+	}
+
+	// Should also have the critical alert on stderr
+	if !containsStr(stderr.String(), "CRITICAL CONFIG CHANGE DETECTED") {
+		t.Errorf("Expected critical alert on stderr in strict mode")
+	}
+}

@@ -174,7 +174,7 @@ func runView(cmd *cobra.Command, args []string, opts *viewOptions) error {
 		}
 		if owner == "" || repo == "" {
 			if defaultOwner == "" || defaultRepo == "" {
-				return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.yml)")
+				return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.json)")
 			}
 			owner = defaultOwner
 			repo = defaultRepo
@@ -811,7 +811,7 @@ func renderProgressBar(completed, total, width int) string {
 func writeBodyToFile(w io.Writer, number int, body string) error {
 	// Create tmp directory if it doesn't exist
 	tmpDir := "tmp"
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0750); err != nil {
 		return fmt.Errorf("failed to create tmp directory: %w", err)
 	}
 
@@ -819,7 +819,7 @@ func writeBodyToFile(w io.Writer, number int, body string) error {
 	filename := fmt.Sprintf("issue-%d.md", number)
 	filePath := filepath.Join(tmpDir, filename)
 
-	if err := os.WriteFile(filePath, []byte(body), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(body), 0600); err != nil {
 		return fmt.Errorf("failed to write body file: %w", err)
 	}
 

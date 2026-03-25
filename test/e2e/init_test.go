@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"encoding/json"
 )
 
 // TestInitNonInteractiveMode tests the init command in non-interactive mode.
@@ -36,7 +36,7 @@ func TestInitNonInteractiveMode(t *testing.T) {
 		}
 
 		// Verify config file was created
-		configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+		configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
 			t.Error("Config file was not created")
 		}
@@ -48,7 +48,7 @@ func TestInitNonInteractiveMode(t *testing.T) {
 		}
 
 		var config map[string]interface{}
-		if err := yaml.Unmarshal(configData, &config); err != nil {
+		if err := json.Unmarshal(configData, &config); err != nil {
 			t.Fatalf("Failed to parse config: %v", err)
 		}
 
@@ -60,7 +60,7 @@ func TestInitNonInteractiveMode(t *testing.T) {
 			// Non-interactive mode copies from source project, so the new
 			// project number will differ from the source (41). Just verify
 			// a positive number was assigned.
-			if num, ok := project["number"].(int); !ok || num <= 0 {
+			if num, ok := project["number"].(float64); !ok || num <= 0 {
 				t.Errorf("Expected positive project number, got %v", project["number"])
 			}
 			if project["owner"] != "rubrical-works" {
@@ -112,14 +112,14 @@ func TestInitNonInteractiveFrameworkNone(t *testing.T) {
 	}
 
 	// Read and validate config
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
 
 	var config map[string]interface{}
-	if err := yaml.Unmarshal(configData, &config); err != nil {
+	if err := json.Unmarshal(configData, &config); err != nil {
 		t.Fatalf("Failed to parse config: %v", err)
 	}
 
@@ -154,7 +154,7 @@ func TestInitNonInteractiveWithOwner(t *testing.T) {
 	}
 
 	// Verify config was created
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Error("Config file was not created")
 	}
@@ -166,8 +166,8 @@ func TestInitNonInteractiveOverwrite(t *testing.T) {
 	initGitRepo(t, tmpDir)
 
 	// Create existing config
-	existingConfig := "project:\n  name: existing\n  owner: test\n  number: 999\n"
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	existingConfig := `{"project":{"name":"existing","owner":"test","number":999}}`
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(existingConfig), 0644); err != nil {
 		t.Fatalf("Failed to write existing config: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestInitNonInteractiveExistingConfigNoYes(t *testing.T) {
 	if err := os.WriteFile(jsonPath, []byte(`{"project":{"owner":"test"}}`), 0644); err != nil {
 		t.Fatalf("Failed to write existing JSON config: %v", err)
 	}
-	yamlPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	yamlPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if err := os.WriteFile(yamlPath, []byte("project:\n  owner: test\n"), 0644); err != nil {
 		t.Fatalf("Failed to write existing YAML config: %v", err)
 	}

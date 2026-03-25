@@ -109,26 +109,32 @@ func setupTestEnvironment(t *testing.T, handler *mockGraphQLHandler) (string, fu
 	}
 
 	// Write config file
-	configContent := `project:
-  owner: test-org
-  number: 1
-repositories:
-  - test-org/test-repo
-fields:
-  status:
-    field: Status
-    values:
-      backlog: Backlog
-      in_progress: In Progress
-      done: Done
-  priority:
-    field: Priority
-    values:
-      p0: P0
-      p1: P1
-      p2: P2
-`
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	configContent := `{
+  "project": {
+    "owner": "test-org",
+    "number": 1
+  },
+  "repositories": ["test-org/test-repo"],
+  "fields": {
+    "status": {
+      "field": "Status",
+      "values": {
+        "backlog": "Backlog",
+        "in_progress": "In Progress",
+        "done": "Done"
+      }
+    },
+    "priority": {
+      "field": "Priority",
+      "values": {
+        "p0": "P0",
+        "p1": "P1",
+        "p2": "P2"
+      }
+    }
+  }
+}`
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		os.RemoveAll(tmpDir)
 		t.Fatalf("failed to write config: %v", err)
@@ -247,8 +253,8 @@ func TestRunList_InvalidConfig(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Write invalid config (missing required fields)
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
-	_ = os.WriteFile(configPath, []byte("invalid: yaml: content:"), 0644)
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
+	_ = os.WriteFile(configPath, []byte(`{"invalid": "json": "content"}`), 0644)
 
 	server := httptest.NewServer(handler)
 	defer server.Close()

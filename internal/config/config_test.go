@@ -368,21 +368,11 @@ func TestGetFieldName_NoMapping_ReturnsOriginal(t *testing.T) {
 }
 
 func TestLoadFromDirectory_FindsConfigFile(t *testing.T) {
-	// ARRANGE: Directory containing valid config
-	dir := filepath.Join("..", "..", "testdata", "config")
-
-	// Create a temporary .gh-pmu.yml in testdata/config for this test
-	// (We'll use the valid.gh-pmu.yml by copying it)
+	// ARRANGE: Create a temporary .gh-pmu.json config file
 	testDir := t.TempDir()
-	srcPath := filepath.Join(dir, "valid.gh-pmu.yml")
-	dstPath := filepath.Join(testDir, ".gh-pmu.yml")
-
-	// Copy the file
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		t.Fatalf("Failed to read source file: %v", err)
-	}
-	if err := os.WriteFile(dstPath, data, 0644); err != nil {
+	configContent := `{"project":{"owner":"rubrical-works","number":13},"repositories":["rubrical-works/gh-pmu"]}`
+	dstPath := filepath.Join(testDir, ConfigFileName)
+	if err := os.WriteFile(dstPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
@@ -1813,7 +1803,7 @@ func TestSave_WritesJSONOnly(t *testing.T) {
 	}
 
 	// ASSERT: YAML companion NOT created
-	yamlPath := filepath.Join(tmpDir, ConfigFileNameYAML)
+	yamlPath := filepath.Join(tmpDir, ".gh-pmu.yml")
 	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
 		t.Error("Expected .gh-pmu.yml to NOT be created by Save()")
 	}
@@ -1852,26 +1842,6 @@ func TestSave_JSONContainsExpectedData(t *testing.T) {
 	}
 	if !strings.Contains(jsonStr, "IDPF-Agile") {
 		t.Error("JSON file should contain framework")
-	}
-}
-
-func TestFindConfigFile_FallsBackToYAML(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Only create YAML file, no JSON
-	yamlPath := filepath.Join(tmpDir, ".gh-pmu.yml")
-	if err := os.WriteFile(yamlPath, []byte("project:\n  owner: test\n  number: 1\n"), 0644); err != nil {
-		t.Fatalf("Failed to write YAML config: %v", err)
-	}
-
-	// ACT: FindConfigFile should find YAML as fallback
-	found, err := FindConfigFile(tmpDir)
-	if err != nil {
-		t.Fatalf("Expected FindConfigFile to find YAML fallback, got error: %v", err)
-	}
-
-	if !strings.HasSuffix(found, ".gh-pmu.yml") {
-		t.Errorf("Expected YAML path, got: %s", found)
 	}
 }
 
@@ -1979,7 +1949,7 @@ func TestMigrateYAML_BothFilesExist_DeletesYAMLAndUpdatesVersion(t *testing.T) {
 	// ARRANGE: Directory with both .gh-pmu.json and .gh-pmu.yml
 	testDir := t.TempDir()
 	jsonPath := filepath.Join(testDir, ConfigFileName)
-	yamlPath := filepath.Join(testDir, ConfigFileNameYAML)
+	yamlPath := filepath.Join(testDir, ".gh-pmu.yml")
 
 	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
 	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
@@ -2007,8 +1977,8 @@ func TestMigrateYAML_BothFilesExist_DeletesYAMLAndUpdatesVersion(t *testing.T) {
 
 	// ASSERT: Console message printed
 	output := buf.String()
-	if !strings.Contains(output, ConfigFileNameYAML) {
-		t.Errorf("Expected console message mentioning %s, got: %q", ConfigFileNameYAML, output)
+	if !strings.Contains(output, ".gh-pmu.yml") {
+		t.Errorf("Expected console message mentioning %s, got: %q", ".gh-pmu.yml", output)
 	}
 
 	// ASSERT: Version updated in JSON
@@ -2082,7 +2052,7 @@ func TestMigrateYAML_SaveNoLongerWritesYAML(t *testing.T) {
 	}
 
 	// ASSERT: YAML file NOT created
-	yamlPath := filepath.Join(testDir, ConfigFileNameYAML)
+	yamlPath := filepath.Join(testDir, ".gh-pmu.yml")
 	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
 		t.Error("Expected .gh-pmu.yml to NOT be created by Save(), but it exists")
 	}

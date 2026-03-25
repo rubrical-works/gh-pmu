@@ -178,7 +178,7 @@ func updateStatusToDoneWithDeps(issueNum int, repoOverride string, cfg *config.C
 		}
 		owner, repo = parts[0], parts[1]
 	} else {
-		return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.yml)")
+		return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.json)")
 	}
 
 	// Get project

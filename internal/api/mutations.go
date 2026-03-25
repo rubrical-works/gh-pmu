@@ -1324,12 +1324,12 @@ func (c *Client) GetProjectItemFieldValue(projectID, itemID, fieldName string) (
 
 // WriteFile writes content to a file path
 func (c *Client) WriteFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0644)
+	return os.WriteFile(path, []byte(content), 0600)
 }
 
 // MkdirAll creates a directory and all parents
 func (c *Client) MkdirAll(path string) error {
-	return os.MkdirAll(path, 0755)
+	return os.MkdirAll(path, 0750)
 }
 
 // GitAdd stages files to git

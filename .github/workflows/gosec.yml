@@ -24,7 +24,8 @@ jobs:
       - name: Run Gosec
         uses: securego/gosec@master
         with:
-          args: '-no-fail -fmt sarif -out gosec-results.sarif ./...'
+          # G304 excluded: CLI tool reads user-supplied file paths by design
+          args: '-no-fail -exclude=G304 -fmt sarif -out gosec-results.sarif ./...'
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3

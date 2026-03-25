@@ -548,7 +548,7 @@ func outputHistoryJSON(commits []CommitInfo) error {
 func outputMarkdown(commits []CommitInfo, targetPath, repoOwner, repoName string) error {
 	// Create History/ directory
 	historyDir := "History"
-	if err := os.MkdirAll(historyDir, 0755); err != nil {
+	if err := os.MkdirAll(historyDir, 0750); err != nil {
 		return fmt.Errorf("failed to create History directory: %w", err)
 	}
 
@@ -616,7 +616,7 @@ func outputMarkdown(commits []CommitInfo, targetPath, repoOwner, repoName string
 	}
 
 	// Write file
-	if err := os.WriteFile(fullPath, []byte(b.String()), 0644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(b.String()), 0600); err != nil {
 		return fmt.Errorf("failed to write history file: %w", err)
 	}
 

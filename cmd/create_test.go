@@ -446,12 +446,12 @@ func TestCreateCommand_LabelFlagIsArray(t *testing.T) {
 // runCreate Integration Tests (with temp config files)
 // ============================================================================
 
-// createTempConfig creates a temporary directory with a .gh-pmu.yml config file
+// createTempConfig creates a temporary directory with a .gh-pmu.json config file
 // and returns the directory path. Caller should defer os.RemoveAll(dir).
 func createTempConfig(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".gh-pmu.yml")
+	configPath := filepath.Join(dir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
 		t.Fatalf("Failed to write temp config: %v", err)
 	}
@@ -489,12 +489,7 @@ func TestRunCreate_NoConfigFile_ReturnsError(t *testing.T) {
 
 func TestRunCreate_InvalidConfig_ReturnsError(t *testing.T) {
 	// ARRANGE: Config missing required fields
-	config := `
-project:
-  owner: ""
-  number: 0
-repositories: []
-`
+	config := `{"project":{"owner":"","number":0},"repositories":[]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -524,12 +519,7 @@ repositories: []
 
 func TestRunCreate_NoRepositories_ReturnsError(t *testing.T) {
 	// ARRANGE: Config with no repositories
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories: []
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":[]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -561,13 +551,7 @@ repositories: []
 
 func TestRunCreate_InvalidRepositoryFormat_ReturnsError(t *testing.T) {
 	// ARRANGE: Config with invalid repository format (missing slash)
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "invalid-repo-no-slash"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["invalid-repo-no-slash"]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -597,13 +581,7 @@ repositories:
 
 func TestRunCreate_NoTitle_ReturnsInteractiveModeError(t *testing.T) {
 	// ARRANGE: Valid config but no title provided
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -634,13 +612,7 @@ repositories:
 func TestRunCreate_ValidConfigWithTitle_AttemptsAPICall(t *testing.T) {
 	// ARRANGE: Valid config with title provided
 	// This test verifies that we get past config validation and into API calls
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -674,27 +646,7 @@ repositories:
 
 func TestRunCreate_WithAllFlags_ParsesFlagsCorrectly(t *testing.T) {
 	// ARRANGE: Valid config with all flags
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-fields:
-  status:
-    field: Status
-    values:
-      todo: "Todo"
-      in_progress: "In Progress"
-  priority:
-    field: Priority
-    values:
-      p1: "P1"
-      p2: "P2"
-defaults:
-  labels:
-    - "auto-label"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"],"fields":{"status":{"field":"Status","values":{"todo":"Todo","in_progress":"In Progress"}},"priority":{"field":"Priority","values":{"p1":"P1","p2":"P2"}}},"defaults":{"labels":["auto-label"]}}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -735,19 +687,7 @@ defaults:
 
 func TestRunCreate_ConfigWithDefaults_MergesLabels(t *testing.T) {
 	// ARRANGE: Config with default labels
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-defaults:
-  labels:
-    - "enhancement"
-    - "auto-created"
-  status: "todo"
-  priority: "p2"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"],"defaults":{"labels":["enhancement","auto-created"],"status":"todo","priority":"p2"}}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -951,13 +891,7 @@ about: Create a report
 
 func TestRunCreate_BodyAndBodyFileMutuallyExclusive(t *testing.T) {
 	// ARRANGE: Valid config
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1003,13 +937,7 @@ repositories:
 
 func TestRunCreate_TemplateWithBodyFlagError(t *testing.T) {
 	// ARRANGE: Valid config
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1044,13 +972,7 @@ repositories:
 
 func TestRunCreate_BodyFileReadsContent(t *testing.T) {
 	// ARRANGE: Valid config with body file
-	config := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, config)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1401,13 +1323,7 @@ func TestDecodeBase64Content_MultilineContent(t *testing.T) {
 
 func TestRunCreateFromFile_YAMLParsing(t *testing.T) {
 	// ARRANGE: Create config
-	configContent := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, configContent)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1455,13 +1371,7 @@ priority: "p1"
 
 func TestRunCreateFromFile_JSONParsing(t *testing.T) {
 	// ARRANGE: Create config
-	configContent := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, configContent)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1507,13 +1417,7 @@ repositories:
 
 func TestRunCreateFromFile_MissingTitleError(t *testing.T) {
 	// ARRANGE: Create config
-	configContent := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, configContent)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1554,13 +1458,7 @@ labels:
 
 func TestRunCreateFromFile_CLIFlagOverrides(t *testing.T) {
 	// ARRANGE: Create config
-	configContent := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, configContent)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1612,13 +1510,7 @@ priority: "p2"
 
 func TestRunCreateFromFile_FileNotFound(t *testing.T) {
 	// ARRANGE: Create config
-	configContent := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, configContent)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1648,13 +1540,7 @@ repositories:
 
 func TestRunCreateFromFile_InvalidYAML(t *testing.T) {
 	// ARRANGE: Create config
-	configContent := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, configContent)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1696,13 +1582,7 @@ body: this is invalid yaml because
 
 func TestRunCreateFromFile_InvalidJSON(t *testing.T) {
 	// ARRANGE: Create config
-	configContent := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, configContent)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()
@@ -1742,16 +1622,7 @@ repositories:
 
 func TestRunCreateFromFile_LabelsFromFileAndCLI(t *testing.T) {
 	// ARRANGE: Create config with default labels
-	configContent := `
-project:
-  owner: "test-owner"
-  number: 1
-repositories:
-  - "owner/repo"
-defaults:
-  labels:
-    - "default-label"
-`
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"],"defaults":{"labels":["default-label"]}}`
 	dir := createTempConfig(t, configContent)
 	originalDir, _ := os.Getwd()
 	defer func() { _ = os.Chdir(originalDir) }()

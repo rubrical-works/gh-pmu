@@ -556,11 +556,13 @@ func openEditorForBody(initialContent string) (string, error) {
 	// Write initial content
 	if initialContent != "" {
 		if _, err := tmpfile.WriteString(initialContent); err != nil {
-			tmpfile.Close()
+			_ = tmpfile.Close() // close before returning error
 			return "", fmt.Errorf("failed to write initial content: %w", err)
 		}
 	}
-	tmpfile.Close()
+	if err := tmpfile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close temp file: %w", err)
+	}
 
 	// Open editor
 	cmd := exec.Command(editor, tmpfile.Name())

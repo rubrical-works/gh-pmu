@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// setupFieldTestDir creates a temp directory with a .gh-pmu.yml config file
+// setupFieldTestDir creates a temp directory with a .gh-pmu.json config file
 // and changes to that directory. Returns cleanup function to restore original dir.
 func setupFieldTestDir(t *testing.T, cfg *config.Config) func() {
 	t.Helper()
@@ -27,7 +27,7 @@ func setupFieldTestDir(t *testing.T, cfg *config.Config) func() {
 	tempDir := t.TempDir()
 
 	// Save config to temp directory
-	configPath := filepath.Join(tempDir, ".gh-pmu.yml")
+	configPath := filepath.Join(tempDir, ".gh-pmu.json")
 	if err := cfg.Save(configPath); err != nil {
 		t.Fatalf("Failed to save test config: %v", err)
 	}

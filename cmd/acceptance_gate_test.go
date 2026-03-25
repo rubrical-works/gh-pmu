@@ -2,22 +2,22 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/rubrical-works/gh-pmu/internal/config"
-	"gopkg.in/yaml.v3"
 )
 
 func writeTestConfig(t *testing.T, dir string, cfg *config.Config) string {
 	t.Helper()
-	data, err := yaml.Marshal(cfg)
+	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		t.Fatalf("Failed to marshal config: %v", err)
 	}
-	configPath := filepath.Join(dir, ".gh-pmu.yml")
+	configPath := filepath.Join(dir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}

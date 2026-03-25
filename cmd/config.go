@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,6 +123,16 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 		}
 	}
 
+	// Critical field check against HEAD
+	var hasCriticalDrift bool
+	if committedContent != nil {
+		criticalChanges := compareCriticalFields(localContent, committedContent)
+		if len(criticalChanges) > 0 {
+			hasCriticalDrift = true
+			writeCriticalAlert(cmd.ErrOrStderr(), criticalChanges)
+		}
+	}
+
 	// Remote comparison
 	if opts.remote {
 		remoteContent, err := gitShowFile(configDir, "origin/main:"+configName)
@@ -145,16 +156,114 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 						}
 					}
 				}
+
+				// Critical field check against remote
+				remoteCritical := compareCriticalFields(localContent, remoteContent)
+				if len(remoteCritical) > 0 {
+					hasCriticalDrift = true
+					writeCriticalAlert(os.Stderr, remoteCritical)
+				}
 			}
 		}
 	}
 
 	// Strict mode check
-	if result.Drifted && isStrictMode(localContent) {
+	if (result.Drifted || hasCriticalDrift) && isStrictMode(localContent) {
 		return fmt.Errorf("config integrity check failed (strict mode) — resolve drift before continuing")
 	}
 
 	return nil
+}
+
+// criticalFieldChange represents a change to a critical config field.
+type criticalFieldChange struct {
+	Field    string
+	OldValue string
+	NewValue string
+}
+
+// compareCriticalFields compares identity fields between local and reference configs.
+// Returns nil if no critical fields changed.
+func compareCriticalFields(local, reference []byte) []criticalFieldChange {
+	type configShape struct {
+		Project struct {
+			Owner  string `json:"owner"`
+			Number int    `json:"number"`
+		} `json:"project"`
+		Repositories []string `json:"repositories"`
+	}
+
+	var localCfg, refCfg configShape
+	if err := json.Unmarshal(local, &localCfg); err != nil {
+		return nil
+	}
+	if err := json.Unmarshal(reference, &refCfg); err != nil {
+		return nil
+	}
+
+	var changes []criticalFieldChange
+
+	if localCfg.Project.Owner != refCfg.Project.Owner {
+		changes = append(changes, criticalFieldChange{
+			Field:    "project.owner",
+			OldValue: refCfg.Project.Owner,
+			NewValue: localCfg.Project.Owner,
+		})
+	}
+	if localCfg.Project.Number != refCfg.Project.Number {
+		changes = append(changes, criticalFieldChange{
+			Field:    "project.number",
+			OldValue: fmt.Sprintf("%d", refCfg.Project.Number),
+			NewValue: fmt.Sprintf("%d", localCfg.Project.Number),
+		})
+	}
+
+	localRepo := ""
+	if len(localCfg.Repositories) > 0 {
+		localRepo = localCfg.Repositories[0]
+	}
+	refRepo := ""
+	if len(refCfg.Repositories) > 0 {
+		refRepo = refCfg.Repositories[0]
+	}
+	if localRepo != refRepo {
+		changes = append(changes, criticalFieldChange{
+			Field:    "repositories[0]",
+			OldValue: refRepo,
+			NewValue: localRepo,
+		})
+	}
+
+	return changes
+}
+
+// writeCriticalAlert writes a boxed warning to the given writer for critical field changes.
+func writeCriticalAlert(w io.Writer, changes []criticalFieldChange) {
+	const width = 63
+	border := strings.Repeat("─", width)
+
+	fmt.Fprintf(w, "\n┌─%s─┐\n", border)
+	fmt.Fprintf(w, "│  ⚠ CRITICAL CONFIG CHANGE DETECTED%s│\n", strings.Repeat(" ", width-35))
+	fmt.Fprintf(w, "├─%s─┤\n", border)
+	fmt.Fprintf(w, "│%s│\n", strings.Repeat(" ", width+2))
+	fmt.Fprintf(w, "│  The following identity fields have changed from HEAD:%s│\n", strings.Repeat(" ", width-55))
+	fmt.Fprintf(w, "│%s│\n", strings.Repeat(" ", width+2))
+
+	for _, c := range changes {
+		line := fmt.Sprintf("    %s:  %s  →  %s", c.Field, c.OldValue, c.NewValue)
+		padding := width + 2 - len([]rune(line))
+		if padding < 1 {
+			padding = 1
+		}
+		fmt.Fprintf(w, "│%s%s│\n", line, strings.Repeat(" ", padding))
+	}
+
+	fmt.Fprintf(w, "│%s│\n", strings.Repeat(" ", width+2))
+	fmt.Fprintf(w, "│  All gh pmu commands will now target the NEW values.%s│\n", strings.Repeat(" ", width-53))
+	fmt.Fprintf(w, "│  If this is unintentional, restore with:%s│\n", strings.Repeat(" ", width-41))
+	fmt.Fprintf(w, "│    git checkout -- .gh-pmu.json%s│\n", strings.Repeat(" ", width-31))
+	fmt.Fprintf(w, "│%s│\n", strings.Repeat(" ", width+2))
+	fmt.Fprintf(w, "└─%s─┘\n", border)
 }
 
 // gitShowFile runs git show to read a file from a given ref.

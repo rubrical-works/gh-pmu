@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the .gh-pmu.yml configuration file
+// Config represents the .gh-pmu.json configuration file
 type Config struct {
 	Version      string            `yaml:"version,omitempty" json:"version,omitempty"`
 	Project      Project           `yaml:"project" json:"project"`
@@ -91,11 +91,8 @@ type OptionMetadata struct {
 	ID   string `yaml:"id" json:"id"`
 }
 
-// ConfigFileName is the default (primary) configuration file name
+// ConfigFileName is the configuration file name
 const ConfigFileName = ".gh-pmu.json"
-
-// ConfigFileNameYAML is the legacy YAML configuration file name (fallback)
-const ConfigFileNameYAML = ".gh-pmu.yml"
 
 // Load reads and parses a configuration file from the given path.
 // Detects format (YAML or JSON) based on file extension.
@@ -159,32 +156,15 @@ func LoadFromDirectoryAndNormalize(dir string) (*Config, error) {
 
 // FindConfigFile searches for .gh-pmu.json starting from dir and walking up
 // the directory tree until found or filesystem root is reached.
-// Falls back to .gh-pmu.yml if no JSON file is found.
 func FindConfigFile(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// First pass: look for JSON (primary)
 	searchDir := dir
 	for {
 		configPath := filepath.Join(searchDir, ConfigFileName)
-		if _, err := os.Stat(configPath); err == nil {
-			return configPath, nil
-		}
-
-		parent := filepath.Dir(searchDir)
-		if parent == searchDir {
-			break
-		}
-		searchDir = parent
-	}
-
-	// Second pass: look for YAML fallback
-	searchDir = dir
-	for {
-		configPath := filepath.Join(searchDir, ConfigFileNameYAML)
 		if _, err := os.Stat(configPath); err == nil {
 			return configPath, nil
 		}
@@ -305,7 +285,7 @@ func (c *Config) Save(path string) error {
 	jsonData = append(jsonData, '\n')
 
 	jsonPath := filepath.Join(dir, ConfigFileName)
-	if err := os.WriteFile(jsonPath, jsonData, 0644); err != nil {
+	if err := os.WriteFile(jsonPath, jsonData, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -316,8 +296,9 @@ func (c *Config) Save(path string) error {
 // the JSON config, it deletes the YAML file, updates the version in the JSON
 // config, and saves. If no YAML file exists, this is a no-op.
 func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) error {
+	const legacyYAMLFile = ".gh-pmu.yml"
 	dir := filepath.Dir(jsonConfigPath)
-	yamlPath := filepath.Join(dir, ConfigFileNameYAML)
+	yamlPath := filepath.Join(dir, legacyYAMLFile)
 
 	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
 		return nil // No YAML file — nothing to do
@@ -325,9 +306,9 @@ func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) erro
 
 	// Delete the legacy YAML config
 	if err := os.Remove(yamlPath); err != nil {
-		return fmt.Errorf("failed to remove legacy config %s: %w", ConfigFileNameYAML, err)
+		return fmt.Errorf("failed to remove legacy config %s: %w", legacyYAMLFile, err)
 	}
-	fmt.Fprintf(w, "Removed legacy config %s\n", ConfigFileNameYAML)
+	fmt.Fprintf(w, "Removed legacy config %s\n", legacyYAMLFile)
 
 	// Update version in JSON config
 	cfg, err := Load(jsonConfigPath)
@@ -526,7 +507,7 @@ func (c *Config) GetCoverageSkipPatterns() []string {
 // TempDirName is the name of the temporary directory within the project root
 const TempDirName = "tmp"
 
-// GetProjectRoot returns the directory containing .gh-pmu.yml.
+// GetProjectRoot returns the directory containing .gh-pmu.json.
 // It searches from the current working directory up the directory tree.
 func GetProjectRoot() (string, error) {
 	cwd, err := os.Getwd()
@@ -553,7 +534,7 @@ func GetTempDir() (string, error) {
 	tempDir := filepath.Join(projectRoot, TempDirName)
 
 	// Create tmp directory if it doesn't exist
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	if err := os.MkdirAll(tempDir, 0750); err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
@@ -607,7 +588,7 @@ func ensureGitignore(projectRoot string) error {
 	content += TempDirName + "/\n"
 
 	// Write (single handle, then close)
-	file, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open .gitignore: %w", err)
 	}
