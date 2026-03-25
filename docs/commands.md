@@ -188,9 +188,6 @@ gh pmu create --title "Add caching" --body-file description.md
 # Use issue template
 gh pmu create --title "Bug report" --template bug
 
-# Open in browser after creation
-gh pmu create --title "New feature" --web
-
 # With labels
 gh pmu create --title "Security fix" --label bug --label security
 ```
@@ -209,7 +206,6 @@ gh pmu create --title "Security fix" --label bug --label security
 | `--body-file` / `-F` | Read body text from file |
 | `--body-stdin` | Read body text from standard input |
 | `--template` / `-T` | Use issue template from `.github/ISSUE_TEMPLATE/` |
-| `--web` / `-w` | Open browser after creating issue |
 
 **Output:**
 ```

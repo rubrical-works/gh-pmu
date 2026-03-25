@@ -5,16 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync/atomic"
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
 	"github.com/rubrical-works/gh-pmu/internal/defaults"
-	"github.com/rubrical-works/gh-pmu/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -293,39 +290,7 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 	return nil
 }
 
-// parseGitRemote extracts owner/repo from a GitHub remote URL.
-// Supports both HTTPS and SSH formats.
-// Returns empty string if not a valid GitHub remote.
-func parseGitRemote(remote string) string {
-	if remote == "" {
-		return ""
-	}
 
-	// HTTPS format: https://github.com/owner/repo.git or https://github.com/owner/repo
-	httpsRegex := regexp.MustCompile(`^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?$`)
-	if matches := httpsRegex.FindStringSubmatch(remote); matches != nil {
-		return matches[1] + "/" + matches[2]
-	}
-
-	// SSH format: git@github.com:owner/repo.git or git@github.com:owner/repo
-	sshRegex := regexp.MustCompile(`^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$`)
-	if matches := sshRegex.FindStringSubmatch(remote); matches != nil {
-		return matches[1] + "/" + matches[2]
-	}
-
-	return ""
-}
-
-// detectRepository attempts to get the repository from git remote.
-func detectRepository() string {
-	// Try to get the origin remote URL
-	cmd := exec.Command("git", "remote", "get-url", "origin")
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return parseGitRemote(strings.TrimSpace(string(output)))
-}
 
 // existingConfigRaw is used for JSON unmarshaling to get framework
 type existingConfigRaw struct {
@@ -728,131 +693,4 @@ func findFieldByName(fields []api.ProjectField, name string) *api.ProjectField {
 	return nil
 }
 
-// autoCreateProject creates a new project from the IDPF Kanban template.
-// It copies from template project #30, links the repository, and sets default repo.
-func autoCreateProject(cmd *cobra.Command, client *api.Client, u *ui.UI, owner, repo string) (*api.Project, error) {
-	// Template project: rubrical-works #30 (IDPF Kanban template)
-	const templateOwner = "rubrical-works"
-	const templateNumber = 30
 
-	fmt.Fprintln(cmd.OutOrStdout())
-	u.Info("Creating project from IDPF Kanban template...")
-
-	// Get owner ID for the new project
-	spinner := ui.NewSpinner(cmd.OutOrStdout(), "Getting owner information...")
-	spinner.Start()
-	ownerID, err := client.GetOwnerID(owner)
-	spinner.Stop()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get owner ID: %w", err)
-	}
-
-	// Get template project
-	spinner = ui.NewSpinner(cmd.OutOrStdout(), "Fetching template project...")
-	spinner.Start()
-	templateProject, err := client.GetProject(templateOwner, templateNumber)
-	spinner.Stop()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get template project: %w", err)
-	}
-
-	// Derive project title from repository name
-	_, repoName := splitRepository(repo)
-	projectTitle := deriveProjectTitle(repoName)
-
-	// Copy project from template
-	spinner = ui.NewSpinner(cmd.OutOrStdout(), fmt.Sprintf("Creating project '%s'...", projectTitle))
-	spinner.Start()
-	newProject, err := client.CopyProjectFromTemplate(ownerID, templateProject.ID, projectTitle)
-	spinner.Stop()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create project: %w", err)
-	}
-	u.Success(fmt.Sprintf("Created project: %s (#%d)", newProject.Title, newProject.Number))
-
-	// Link repository to project
-	repoOwner, repoName := splitRepository(repo)
-	spinner = ui.NewSpinner(cmd.OutOrStdout(), "Linking repository...")
-	spinner.Start()
-	repoID, err := client.GetRepositoryID(repoOwner, repoName)
-	if err != nil {
-		spinner.Stop()
-		u.Warning(fmt.Sprintf("Could not get repository ID: %v", err))
-	} else {
-		err = client.LinkProjectToRepository(newProject.ID, repoID)
-		spinner.Stop()
-		if err != nil {
-			u.Warning(fmt.Sprintf("Could not link repository: %v", err))
-		} else {
-			u.Success("Repository linked to project")
-		}
-	}
-
-	fmt.Fprintln(cmd.OutOrStdout())
-	u.Info(fmt.Sprintf("Project URL: %s", newProject.URL))
-
-	return newProject, nil
-}
-
-// runIntakeForInit runs a simplified intake to add existing issues to the newly created project.
-// Returns the count of issues added.
-func runIntakeForInit(cmd *cobra.Command, client *api.Client, project *api.Project, repo string, u *ui.UI) (int, error) {
-	repoOwner, repoName := splitRepository(repo)
-	if repoOwner == "" || repoName == "" {
-		return 0, fmt.Errorf("invalid repository format: %s", repo)
-	}
-
-	// Search for open issues in the repository
-	filters := api.SearchFilters{
-		State:  "open",
-		Labels: []string{},
-	}
-
-	spinner := ui.NewSpinner(cmd.OutOrStdout(), fmt.Sprintf("Searching for issues in %s...", repo))
-	spinner.Start()
-	issues, err := client.SearchRepositoryIssues(repoOwner, repoName, filters, 100)
-	spinner.Stop()
-
-	if err != nil {
-		return 0, fmt.Errorf("failed to search issues: %w", err)
-	}
-
-	if len(issues) == 0 {
-		return 0, nil
-	}
-
-	// Get existing items in project to avoid duplicates
-	spinner = ui.NewSpinner(cmd.OutOrStdout(), "Checking existing project items...")
-	spinner.Start()
-	existingItems, err := client.GetProjectItems(project.ID, nil)
-	spinner.Stop()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get project items: %w", err)
-	}
-
-	// Build set of existing issue IDs
-	existingIDs := make(map[string]bool)
-	for _, item := range existingItems {
-		if item.Issue != nil && item.Issue.ID != "" {
-			existingIDs[item.Issue.ID] = true
-		}
-	}
-
-	// Add untracked issues to project
-	addedCount := 0
-	for _, issue := range issues {
-		// Skip if already in project
-		if existingIDs[issue.ID] {
-			continue
-		}
-
-		_, err := client.AddIssueToProject(project.ID, issue.ID)
-		if err != nil {
-			u.Warning(fmt.Sprintf("Could not add issue #%d: %v", issue.Number, err))
-			continue
-		}
-		addedCount++
-	}
-
-	return addedCount, nil
-}

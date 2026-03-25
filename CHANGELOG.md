@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-03-25
+
+### Changed
+- Removed all interactive/stdin prompts — all commands now require `--yes` or `--force` for non-interactive use
+- Removed `--web` flag and `OpenInBrowser` from `create` command
+- Removed `--editor` flag and `openEditorForBody` from `create` command
+- Removed `--interactive` flag from `triage` command
+- Replaced `exec.Command` gh subprocess calls with go-gh REST/GraphQL clients in `create`, `close`, `mutations`, and `history` commands
+- Excluded gosec G204 for git subprocess calls and documented gosec suppressions
+- Removed dead code from `init` command (`detectRepository`, `autoCreateProject`, `runIntakeForInit`)
+
+### Fixed
+- Guard `uintptr`-to-`int` conversion in `getTerminalWidth` (gosec G115)
+
+### Added
+- Unit tests for `close.go` GraphQL mutation paths
+- Unit tests for `history.go` REST client (`getCommitComments`)
+- Unit tests for `doRawGraphQL` client construction
+
 ## [1.4.1] - 2026-03-25
 
 ### Added
