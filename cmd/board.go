@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -402,9 +403,22 @@ func groupBoardItemsByStatus(items []api.BoardItem, columns []statusColumn) map[
 	return grouped
 }
 
+// safeFdToInt converts a uintptr file descriptor to int safely.
+// Returns (0, false) if the value would overflow int.
+func safeFdToInt(fd uintptr) (int, bool) {
+	if fd > uintptr(math.MaxInt) {
+		return 0, false
+	}
+	return int(fd), true
+}
+
 // getTerminalWidth returns the terminal width or a default
 func getTerminalWidth() int {
-	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+	fd, ok := safeFdToInt(os.Stdout.Fd())
+	if !ok {
+		return 120 // default width; fd overflows int
+	}
+	width, _, err := term.GetSize(fd)
 	if err != nil || width <= 0 {
 		return 120 // default width
 	}
