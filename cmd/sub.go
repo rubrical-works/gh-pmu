@@ -111,7 +111,7 @@ func runSubAdd(cmd *cobra.Command, args []string, opts *subAddOptions) error {
 	// Apply defaults if not specified in reference
 	if parentOwner == "" || parentRepo == "" {
 		if defaultOwner == "" || defaultRepo == "" {
-			return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.yml)")
+			return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.json)")
 		}
 		parentOwner = defaultOwner
 		parentRepo = defaultRepo
@@ -119,7 +119,7 @@ func runSubAdd(cmd *cobra.Command, args []string, opts *subAddOptions) error {
 
 	if childOwner == "" || childRepo == "" {
 		if defaultOwner == "" || defaultRepo == "" {
-			return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.yml)")
+			return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.json)")
 		}
 		childOwner = defaultOwner
 		childRepo = defaultRepo
@@ -509,7 +509,7 @@ func runSubList(cmd *cobra.Command, args []string, opts *subListOptions) error {
 	// Apply defaults if not specified in reference
 	if issueOwner == "" || issueRepo == "" {
 		if defaultOwner == "" || defaultRepo == "" {
-			return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.yml)")
+			return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.json)")
 		}
 		issueOwner = defaultOwner
 		issueRepo = defaultRepo

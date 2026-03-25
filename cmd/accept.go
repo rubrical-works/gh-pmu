@@ -28,7 +28,7 @@ func newAcceptCommand() *cobra.Command {
 		Long: `Accept the Praxis Management Utility (gh-pmu) terms and conditions for this repository.
 
 Terms must be accepted before using gh-pmu commands. Acceptance is
-recorded in .gh-pmu.yml and covers all repository collaborators.
+recorded in .gh-pmu.json and covers all repository collaborators.
 
 Use --yes to accept non-interactively (e.g., from Claude Code).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -54,7 +54,7 @@ func runAccept(cmd *cobra.Command, opts *acceptOptions) error {
 
 	configPath, err := config.FindConfigFile(dir)
 	if err != nil {
-		return fmt.Errorf("no .gh-pmu.yml found: %w", err)
+		return fmt.Errorf("no .gh-pmu.json found: %w", err)
 	}
 
 	cfg, err := config.Load(configPath)

@@ -174,7 +174,7 @@ func runView(cmd *cobra.Command, args []string, opts *viewOptions) error {
 		}
 		if owner == "" || repo == "" {
 			if defaultOwner == "" || defaultRepo == "" {
-				return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.yml)")
+				return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.json)")
 			}
 			owner = defaultOwner
 			repo = defaultRepo

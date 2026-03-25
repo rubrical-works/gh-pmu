@@ -184,6 +184,6 @@ func printTermsAndHint(cmd *cobra.Command) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, defaults.Terms())
 	fmt.Fprintln(w, "Run 'gh pmu accept --yes' for non-interactive acceptance.")
-	fmt.Fprintln(w, "Acceptance persists in .gh-pmu.yml (one-time per repo).")
+	fmt.Fprintln(w, "Acceptance persists in .gh-pmu.json (one-time per repo).")
 	fmt.Fprintln(w)
 }

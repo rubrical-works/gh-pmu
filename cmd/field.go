@@ -209,7 +209,7 @@ func runFieldCreateWithDeps(cmd *cobra.Command, fieldName string, opts *fieldCre
 	// Update checksum after saving config
 	_ = integrity.UpdateChecksumForConfig(configPath)
 
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Updated .gh-pmu.yml metadata\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ Updated .gh-pmu.json metadata\n")
 
 	return nil
 }

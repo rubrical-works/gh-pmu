@@ -863,7 +863,7 @@ type InitConfig struct {
 	Framework     string
 }
 
-// ConfigFile represents the .gh-pmu.yml file structure.
+// ConfigFile represents the .gh-pmu.json file structure.
 type ConfigFile struct {
 	Version      string                  `yaml:"version,omitempty" json:"version,omitempty"`
 	Project      ProjectConfig           `yaml:"project" json:"project"`
@@ -975,7 +975,7 @@ func validateProject(client ProjectValidator, owner string, number int) error {
 	return err
 }
 
-// writeConfig writes the configuration to a .gh-pmu.yml file.
+// writeConfig writes the configuration to a .gh-pmu.json file.
 func writeConfig(dir string, cfg *InitConfig) error {
 	// Safety check: prevent accidental writes to repo root during tests
 	if protectRepoRoot.Load() && isRepoRoot(dir) {

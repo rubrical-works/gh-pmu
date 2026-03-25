@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the .gh-pmu.yml configuration file
+// Config represents the .gh-pmu.json configuration file
 type Config struct {
 	Version      string            `yaml:"version,omitempty" json:"version,omitempty"`
 	Project      Project           `yaml:"project" json:"project"`
@@ -507,7 +507,7 @@ func (c *Config) GetCoverageSkipPatterns() []string {
 // TempDirName is the name of the temporary directory within the project root
 const TempDirName = "tmp"
 
-// GetProjectRoot returns the directory containing .gh-pmu.yml.
+// GetProjectRoot returns the directory containing .gh-pmu.json.
 // It searches from the current working directory up the directory tree.
 func GetProjectRoot() (string, error) {
 	cwd, err := os.Getwd()

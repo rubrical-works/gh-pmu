@@ -42,7 +42,7 @@ func newTriageCommand() *cobra.Command {
 		Short: "Bulk process issues matching triage rules",
 		Long: `Run triage rules to bulk update issues matching certain criteria.
 
-Triage configurations are defined in .gh-pmu.yml under the 'triage' key.
+Triage configurations are defined in .gh-pmu.json under the 'triage' key.
 Each triage config has a query to match issues and rules to apply.`,
 		Aliases: []string{"tr"},
 		Example: `  # List available triage configs
@@ -220,7 +220,7 @@ func listTriageConfigs(cmd *cobra.Command, cfg *config.Config, jsonOutput bool) 
 			encoder.SetIndent("", "  ")
 			return encoder.Encode(map[string]interface{}{"configs": []interface{}{}})
 		}
-		cmd.Println("No triage configurations defined in .gh-pmu.yml")
+		cmd.Println("No triage configurations defined in .gh-pmu.json")
 		return nil
 	}
 
