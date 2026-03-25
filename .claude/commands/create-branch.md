@@ -35,7 +35,7 @@ git status --porcelain
 <!-- USER-EXTENSION-START: pre-create -->
 ### Verify Config
 ```bash
-git status --porcelain .gh-pmu.yml
+git status --porcelain .gh-pmu.json
 ```
 **If `success` is false, STOP.**
 <!-- USER-EXTENSION-END: pre-create -->

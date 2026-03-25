@@ -150,7 +150,7 @@ The script outputs JSON: `{"success": true/false, "message": "...", "data": {"co
 
 Coverage metrics include total percentage and threshold comparison.
 
-**Configuration** (`.gh-pmu.yml`):
+**Configuration** (`.gh-pmu.json`):
 ```yaml
 release:
   coverage:
