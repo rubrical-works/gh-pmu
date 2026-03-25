@@ -2,8 +2,7 @@ package ui
 
 import (
 	"bytes"
-	"runtime"
-	"strings"
+"strings"
 	"testing"
 	"time"
 )
@@ -468,25 +467,6 @@ func TestNewSpinner(t *testing.T) {
 
 		if s.message != "" {
 			t.Errorf("Expected empty message, got %q", s.message)
-		}
-	})
-}
-
-func TestOpenInBrowser(t *testing.T) {
-	t.Run("function exists and is callable", func(t *testing.T) {
-		// We can't actually test browser opening in unit tests,
-		// but we can verify the function handles different OS cases correctly
-		// by checking it doesn't panic with a URL
-		_ = OpenInBrowser // Verify function exists
-	})
-
-	t.Run("handles platform detection", func(t *testing.T) {
-		// Verify our platform detection covers the current OS
-		switch runtime.GOOS {
-		case "darwin", "windows", "linux", "freebsd":
-			// These are expected platforms
-		default:
-			t.Logf("Running on unexpected OS: %s (will use xdg-open fallback)", runtime.GOOS)
 		}
 	})
 }

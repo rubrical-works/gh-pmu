@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,7 +29,7 @@ func newAcceptCommand() *cobra.Command {
 Terms must be accepted before using gh-pmu commands. Acceptance is
 recorded in .gh-pmu.json and covers all repository collaborators.
 
-Use --yes to accept non-interactively (e.g., from Claude Code).`,
+The --yes flag is required to confirm acceptance.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAccept(cmd, opts)
 		},
@@ -74,15 +73,7 @@ func runAccept(cmd *cobra.Command, opts *acceptOptions) error {
 	fmt.Fprintln(out)
 
 	if !opts.yes {
-		// Interactive prompt
-		fmt.Fprintf(out, "Do you accept these terms? (y/n): ")
-		reader := bufio.NewReader(os.Stdin)
-		response, _ := reader.ReadString('\n')
-		response = strings.TrimSpace(strings.ToLower(response))
-
-		if response != "y" && response != "yes" {
-			return fmt.Errorf("terms declined — gh-pmu commands are unavailable until terms are accepted")
-		}
+		return fmt.Errorf("--yes flag is required to accept terms")
 	}
 
 	// Record acceptance

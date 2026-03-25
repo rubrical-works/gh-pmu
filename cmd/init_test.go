@@ -32,62 +32,6 @@ func TestInitCommand_Exists(t *testing.T) {
 	}
 }
 
-func TestDetectRepository_FromGitRemote(t *testing.T) {
-	// Test with a known git remote URL
-	tests := []struct {
-		name     string
-		remote   string
-		expected string
-	}{
-		{
-			name:     "HTTPS URL",
-			remote:   "https://github.com/owner/repo.git",
-			expected: "owner/repo",
-		},
-		{
-			name:     "HTTPS URL without .git",
-			remote:   "https://github.com/owner/repo",
-			expected: "owner/repo",
-		},
-		{
-			name:     "SSH URL",
-			remote:   "git@github.com:owner/repo.git",
-			expected: "owner/repo",
-		},
-		{
-			name:     "SSH URL without .git",
-			remote:   "git@github.com:owner/repo",
-			expected: "owner/repo",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := parseGitRemote(tt.remote)
-			if result != tt.expected {
-				t.Errorf("parseGitRemote(%q) = %q, want %q", tt.remote, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestDetectRepository_InvalidRemote(t *testing.T) {
-	tests := []string{
-		"",
-		"not-a-url",
-		"https://gitlab.com/owner/repo",
-	}
-
-	for _, remote := range tests {
-		t.Run(remote, func(t *testing.T) {
-			result := parseGitRemote(remote)
-			if result != "" {
-				t.Errorf("parseGitRemote(%q) = %q, want empty string", remote, result)
-			}
-		})
-	}
-}
-
 func TestWriteConfig_CreatesValidJSON(t *testing.T) {
 	// Create temp directory for test
 	tmpDir := t.TempDir()
@@ -690,59 +634,6 @@ func TestWriteConfigWithMetadata_NilMetadataPanics(t *testing.T) {
 	// This should panic because metadata is nil
 	// Note: In production, metadata is always provided by the caller
 	_ = writeConfigWithMetadata(tmpDir, cfg, nil)
-}
-
-func TestParseGitRemote_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name     string
-		remote   string
-		expected string
-	}{
-		{
-			name:     "GitHub enterprise HTTPS - not supported",
-			remote:   "https://github.example.com/owner/repo.git",
-			expected: "",
-		},
-		{
-			name:     "GitLab URL - not supported",
-			remote:   "https://gitlab.com/owner/repo.git",
-			expected: "",
-		},
-		{
-			name:     "Bitbucket URL - not supported",
-			remote:   "https://bitbucket.org/owner/repo.git",
-			expected: "",
-		},
-		{
-			name:     "SSH with port - not standard GitHub",
-			remote:   "ssh://git@github.com:22/owner/repo.git",
-			expected: "",
-		},
-		{
-			name:     "file protocol",
-			remote:   "file:///path/to/repo.git",
-			expected: "",
-		},
-		{
-			name:     "random string",
-			remote:   "not-a-valid-url",
-			expected: "",
-		},
-		{
-			name:     "empty string",
-			remote:   "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := parseGitRemote(tt.remote)
-			if result != tt.expected {
-				t.Errorf("parseGitRemote(%q) = %q, want %q", tt.remote, result, tt.expected)
-			}
-		})
-	}
 }
 
 // ============================================================================

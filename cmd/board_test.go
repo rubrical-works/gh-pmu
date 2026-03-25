@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -1009,5 +1010,31 @@ func TestRunBoardWithDeps_RepoFlagWithNoConfigRepo(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "No Config Repo Issue") {
 		t.Error("expected No Config Repo Issue in output")
+	}
+}
+
+func TestSafeFdToInt(t *testing.T) {
+	tests := []struct {
+		name string
+		fd   uintptr
+		want int
+		ok   bool
+	}{
+		{"zero", 0, 0, true},
+		{"normal fd", 1, 1, true},
+		{"typical fd", 42, 42, true},
+		{"max safe value", uintptr(math.MaxInt), math.MaxInt, true},
+		{"overflow", uintptr(math.MaxInt) + 1, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := safeFdToInt(tt.fd)
+			if ok != tt.ok {
+				t.Errorf("safeFdToInt(%d) ok = %v, want %v", tt.fd, ok, tt.ok)
+			}
+			if ok && got != tt.want {
+				t.Errorf("safeFdToInt(%d) = %d, want %d", tt.fd, got, tt.want)
+			}
+		})
 	}
 }

@@ -25,7 +25,8 @@ jobs:
         uses: securego/gosec@master
         with:
           # G304 excluded: CLI tool reads user-supplied file paths by design
-          args: '-no-fail -exclude=G304 -fmt sarif -out gosec-results.sarif ./...'
+          # G204 excluded: remaining calls are git subprocess with hardcoded binary name
+          args: '-no-fail -exclude=G304,G204 -fmt sarif -out gosec-results.sarif ./...'
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3

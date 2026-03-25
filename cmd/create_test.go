@@ -579,7 +579,7 @@ func TestRunCreate_InvalidRepositoryFormat_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestRunCreate_NoTitle_ReturnsInteractiveModeError(t *testing.T) {
+func TestRunCreate_NoTitle_ReturnsError(t *testing.T) {
 	// ARRANGE: Valid config but no title provided
 	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, config)
@@ -738,7 +738,7 @@ func TestCreateCommand_HasBodyFileFlag(t *testing.T) {
 	}
 }
 
-func TestCreateCommand_HasEditorFlag(t *testing.T) {
+func TestCreateCommand_EditorFlagRemoved(t *testing.T) {
 	cmd := NewRootCommand()
 	createCmd, _, err := cmd.Find([]string{"create"})
 	if err != nil {
@@ -746,14 +746,8 @@ func TestCreateCommand_HasEditorFlag(t *testing.T) {
 	}
 
 	flag := createCmd.Flags().Lookup("editor")
-	if flag == nil {
-		t.Fatal("Expected --editor flag to exist")
-	}
-	if flag.Shorthand != "e" {
-		t.Errorf("Expected shorthand 'e', got '%s'", flag.Shorthand)
-	}
-	if flag.Value.Type() != "bool" {
-		t.Errorf("Expected --editor to be bool, got %s", flag.Value.Type())
+	if flag != nil {
+		t.Error("--editor flag should have been removed")
 	}
 }
 
@@ -770,25 +764,6 @@ func TestCreateCommand_HasTemplateFlag(t *testing.T) {
 	}
 	if flag.Shorthand != "T" {
 		t.Errorf("Expected shorthand 'T', got '%s'", flag.Shorthand)
-	}
-}
-
-func TestCreateCommand_HasWebFlag(t *testing.T) {
-	cmd := NewRootCommand()
-	createCmd, _, err := cmd.Find([]string{"create"})
-	if err != nil {
-		t.Fatalf("create command not found: %v", err)
-	}
-
-	flag := createCmd.Flags().Lookup("web")
-	if flag == nil {
-		t.Fatal("Expected --web flag to exist")
-	}
-	if flag.Shorthand != "w" {
-		t.Errorf("Expected shorthand 'w', got '%s'", flag.Shorthand)
-	}
-	if flag.Value.Type() != "bool" {
-		t.Errorf("Expected --web to be bool, got %s", flag.Value.Type())
 	}
 }
 
@@ -2081,5 +2056,51 @@ func TestRunCreateWithDeps_BodyStdinAndBodyFileMutuallyExclusive(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cannot use --body-file and --body-stdin together") {
 		t.Errorf("expected mutual exclusivity error, got: %v", err)
+	}
+}
+
+func TestLoadIssueTemplate_LocalFile(t *testing.T) {
+	// Create a temp dir with a local template
+	dir := t.TempDir()
+	templateDir := filepath.Join(dir, ".github", "ISSUE_TEMPLATE")
+	if err := os.MkdirAll(templateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	templateContent := "---\nname: Bug\n---\nPlease describe the bug."
+	if err := os.WriteFile(filepath.Join(templateDir, "bug.md"), []byte(templateContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Change to temp dir so local paths resolve
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := loadIssueTemplate("owner", "repo", "bug")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if content != "Please describe the bug." {
+		t.Errorf("unexpected content: %q", content)
+	}
+}
+
+func TestLoadIssueTemplate_NotFoundReturnsError(t *testing.T) {
+	// In a dir without templates, the function should try REST and fail
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadIssueTemplate("nonexistent-owner", "nonexistent-repo", "nonexistent-template")
+	if err == nil {
+		t.Fatal("expected error for nonexistent template")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
 	}
 }

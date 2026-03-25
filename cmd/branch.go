@@ -138,7 +138,7 @@ type branchClient interface {
 	// GitAdd stages files to git
 	GitAdd(paths ...string) error
 	// CloseIssue closes an issue
-	CloseIssue(issueID string) error
+	CloseIssue(issueID string, stateReason string) error
 	// ReopenIssue reopens a closed issue
 	ReopenIssue(issueID string) error
 	// GitTag creates an annotated git tag
@@ -1010,14 +1010,7 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 		}
 
 		if !opts.yes {
-			fmt.Fprint(cmd.OutOrStdout(), "Proceed? (y/n): ")
-			var response string
-			_, _ = fmt.Scanln(&response)
-			response = strings.ToLower(strings.TrimSpace(response))
-			if response != "y" && response != "yes" {
-				fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
-				return nil
-			}
+			return fmt.Errorf("use --yes to confirm branch close")
 		}
 		fmt.Fprintln(cmd.OutOrStdout())
 
@@ -1057,16 +1050,7 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 			fmt.Fprintln(cmd.OutOrStdout())
 		}
 	} else if !opts.yes {
-		// Confirm even without incomplete issues
-		fmt.Fprint(cmd.OutOrStdout(), "Proceed? (y/n): ")
-		var response string
-		_, _ = fmt.Scanln(&response)
-		response = strings.ToLower(strings.TrimSpace(response))
-		if response != "y" && response != "yes" {
-			fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
-			return nil
-		}
-		fmt.Fprintln(cmd.OutOrStdout())
+		return fmt.Errorf("use --yes to confirm branch close")
 	}
 
 	// Remove 'assigned' label from all open branch issues
@@ -1086,7 +1070,7 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 	}
 
 	// Close the tracker issue
-	err = client.CloseIssue(targetBranch.ID)
+	err = client.CloseIssue(targetBranch.ID, "")
 	if err != nil {
 		return fmt.Errorf("failed to close tracker issue: %w", err)
 	}

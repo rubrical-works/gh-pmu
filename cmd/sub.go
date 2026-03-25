@@ -9,8 +9,7 @@ import (
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
-	"github.com/rubrical-works/gh-pmu/internal/ui"
-	"github.com/spf13/cobra"
+"github.com/spf13/cobra"
 )
 
 func newSubCommand() *cobra.Command {
@@ -408,7 +407,6 @@ type subListOptions struct {
 	json     bool
 	state    string
 	limit    int
-	web      bool
 	relation string
 	repo     string
 }
@@ -436,7 +434,6 @@ Examples:
   gh pmu sub list 10 --json       # Output as JSON
   gh pmu sub list 10 -s open      # Show only open sub-issues
   gh pmu sub list 10 -n 5         # Limit to 5 results
-  gh pmu sub list 10 --web        # Open parent issue in browser
   gh pmu sub list 10 --relation parent    # Show parent issue
   gh pmu sub list 10 --relation siblings  # Show sibling issues
   gh pmu sub list 10 --relation all       # Show parent, siblings, and children
@@ -450,8 +447,7 @@ Examples:
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output in JSON format")
 	cmd.Flags().StringVarP(&opts.state, "state", "s", "all", "Filter by state: open, closed, all")
 	cmd.Flags().IntVarP(&opts.limit, "limit", "n", 0, "Maximum number of items to display (0 for no limit)")
-	cmd.Flags().BoolVarP(&opts.web, "web", "w", false, "Open issue in browser")
-	cmd.Flags().StringVar(&opts.relation, "relation", "children", "Relation to show: children, parent, siblings, all")
+cmd.Flags().StringVar(&opts.relation, "relation", "children", "Relation to show: children, parent, siblings, all")
 	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Repository for the issue (owner/repo format)")
 
 	return cmd
@@ -525,11 +521,6 @@ func runSubList(cmd *cobra.Command, args []string, opts *subListOptions) error {
 	issue, err := client.GetIssue(issueOwner, issueRepo, issueNumber)
 	if err != nil {
 		return fmt.Errorf("failed to get issue #%d: %w", issueNumber, err)
-	}
-
-	// Handle --web flag: open issue in browser
-	if opts.web {
-		return ui.OpenInBrowser(issue.URL)
 	}
 
 	// Build the result based on relation

@@ -6,7 +6,7 @@ Comprehensive testing strategy for gh-pmu.
 
 | Package | Target | Current | Notes |
 |---------|--------|---------|-------|
-| Overall | 68-70% | 68.5% | Practical maximum due to interactive functions |
+| Overall | 68-70% | 68.5% | Coverage target for CLI commands |
 | `internal/api` | 60%+ | 59.4% | GraphQL mocking is complex |
 | `internal/config` | 75%+ | 74.4% | Core configuration parsing |
 | `internal/framework` | 85%+ | 88.9% | Framework detection logic |
@@ -61,10 +61,6 @@ func TestRunList_LoadsConfig(t *testing.T) {
 Functions that require visual verification or user interaction:
 
 ```bash
-# Interactive commands
-gh pmu init                      # Test prompts and project selection
-gh pmu create --editor           # Test editor integration
-
 # Visual output
 gh pmu board                     # Verify kanban layout
 gh pmu history                   # Verify terminal UI
@@ -115,15 +111,13 @@ gh pmu list --status in_progress # Verify table formatting
 
 ## Manual Testing Checklist
 
-Before releases, verify these interactive features:
+Before releases, verify these features:
 
 ### Initialization
-- [ ] `gh pmu init` - Creates config with prompts
-- [ ] `gh pmu init` (existing config) - Asks to overwrite
+- [ ] `gh pmu init --non-interactive` - Creates config with flags
 - [ ] Auto-detects repository from git remote
 
 ### Issue Management
-- [ ] `gh pmu create --editor` - Opens editor, saves body
 - [ ] `gh pmu create --template bug` - Loads issue template
 - [ ] `gh pmu move 123 --status done` - Updates and closes
 
@@ -212,8 +206,8 @@ The `-short` flag skips tests that require `gh` authentication, enabling tests t
 ## Related Issues
 
 - #414 - Coverage improvement from 63.2% to 68.5%
-- #415 - Refactor interactive CLI functions for testability
 - #416 - Refactor external process calls for testability
+- #797 - Remove all interactive features (CLI-only mode)
 
 ## See Also
 

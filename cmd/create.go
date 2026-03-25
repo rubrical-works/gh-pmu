@@ -6,15 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
+	ghapi "github.com/cli/go-gh/v2/pkg/api"
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
-	"github.com/rubrical-works/gh-pmu/internal/ui"
-	"github.com/spf13/cobra"
+"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,9 +32,7 @@ type createOptions struct {
 	body      string
 	bodyFile  string
 	bodyStdin bool
-	editor    bool
 	template  string
-	web       bool
 	status    string
 	priority  string
 	release   string
@@ -55,9 +51,6 @@ func newCreateCommand() *cobra.Command {
 		Short: "Create an issue with project metadata",
 		Long: `Create a new issue and add it to the configured project.
 
-When --title is provided, creates the issue non-interactively.
-Otherwise, opens an editor for composing the issue.
-
 The issue is automatically added to the configured project and
 any specified field values (status, priority) are set.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -69,10 +62,8 @@ any specified field values (status, priority) are set.`,
 	cmd.Flags().StringVarP(&opts.body, "body", "b", "", "Issue body")
 	cmd.Flags().StringVarP(&opts.bodyFile, "body-file", "F", "", "Read body text from file (use \"-\" to read from standard input)")
 	cmd.Flags().BoolVar(&opts.bodyStdin, "body-stdin", false, "Read body text from standard input")
-	cmd.Flags().BoolVarP(&opts.editor, "editor", "e", false, "Open editor to write the body")
 	cmd.Flags().StringVarP(&opts.template, "template", "T", "", "Template name to use as starting body text")
-	cmd.Flags().BoolVarP(&opts.web, "web", "w", false, "Open the browser after creating the issue")
-	cmd.Flags().StringVarP(&opts.status, "status", "s", "", "Set project status field (e.g., backlog, in_progress)")
+cmd.Flags().StringVarP(&opts.status, "status", "s", "", "Set project status field (e.g., backlog, in_progress)")
 	cmd.Flags().StringVarP(&opts.priority, "priority", "p", "", "Set project priority field (e.g., p0, p1, p2)")
 	cmd.Flags().StringVar(&opts.release, "branch", "", "Set branch field (use 'current' for active branch)")
 	cmd.Flags().StringVarP(&opts.release, "release", "r", "", "[DEPRECATED] Use --branch instead")
@@ -246,15 +237,6 @@ func runCreateWithDeps(cmd *cobra.Command, opts *createOptions, cfg *config.Conf
 		body = content
 	}
 
-	// Process --editor: open editor for body
-	if opts.editor {
-		content, err := openEditorForBody(body)
-		if err != nil {
-			return fmt.Errorf("failed to open editor: %w", err)
-		}
-		body = content
-	}
-
 	if title == "" {
 		return fmt.Errorf("--title is required")
 	}
@@ -347,13 +329,6 @@ func runCreateWithDeps(cmd *cobra.Command, opts *createOptions, cfg *config.Conf
 	// Output the result
 	fmt.Printf("Created issue #%d: %s\n", issue.Number, issue.Title)
 	fmt.Printf("%s\n", issue.URL)
-
-	// Process --web: open browser
-	if opts.web {
-		if err := ui.OpenInBrowser(issue.URL); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to open browser: %v\n", err)
-		}
-	}
 
 	return nil
 }
@@ -530,59 +505,6 @@ func readBodyFile(path string) (string, error) {
 	return string(content), nil
 }
 
-// openEditorForBody opens the user's preferred editor and returns the edited content
-func openEditorForBody(initialContent string) (string, error) {
-	// Get editor from environment
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = os.Getenv("VISUAL")
-	}
-	if editor == "" {
-		// Platform-specific defaults
-		if runtime.GOOS == "windows" {
-			editor = "notepad"
-		} else {
-			editor = "vi"
-		}
-	}
-
-	// Create a temporary file in project tmp directory
-	tmpfile, err := config.CreateTempFile("gh-pmu-issue-*.md")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer os.Remove(tmpfile.Name())
-
-	// Write initial content
-	if initialContent != "" {
-		if _, err := tmpfile.WriteString(initialContent); err != nil {
-			_ = tmpfile.Close() // close before returning error
-			return "", fmt.Errorf("failed to write initial content: %w", err)
-		}
-	}
-	if err := tmpfile.Close(); err != nil {
-		return "", fmt.Errorf("failed to close temp file: %w", err)
-	}
-
-	// Open editor
-	cmd := exec.Command(editor, tmpfile.Name())
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("editor exited with error: %w", err)
-	}
-
-	// Read the edited content
-	content, err := os.ReadFile(tmpfile.Name())
-	if err != nil {
-		return "", fmt.Errorf("failed to read edited content: %w", err)
-	}
-
-	return string(content), nil
-}
-
 // loadIssueTemplate loads an issue template from the repository
 func loadIssueTemplate(owner, repo, templateName string) (string, error) {
 	// First, try to find it locally in .github/ISSUE_TEMPLATE/
@@ -599,18 +521,23 @@ func loadIssueTemplate(owner, repo, templateName string) (string, error) {
 		}
 	}
 
-	// Fall back to fetching from GitHub
-	cmd := exec.Command("gh", "api",
-		fmt.Sprintf("/repos/%s/%s/contents/.github/ISSUE_TEMPLATE/%s.md", owner, repo, templateName),
-		"--jq", ".content",
-	)
-	output, err := cmd.Output()
+	// Fall back to fetching from GitHub via go-gh REST client
+	restClient, err := ghapi.DefaultRESTClient()
+	if err != nil {
+		return "", fmt.Errorf("template '%s' not found (failed to create REST client: %w)", templateName, err)
+	}
+
+	var fileContent struct {
+		Content string `json:"content"`
+	}
+	endpoint := fmt.Sprintf("repos/%s/%s/contents/.github/ISSUE_TEMPLATE/%s.md", owner, repo, templateName)
+	err = restClient.Get(endpoint, &fileContent)
 	if err != nil {
 		return "", fmt.Errorf("template '%s' not found", templateName)
 	}
 
 	// Decode base64 content
-	decoded, err := decodeBase64Content(strings.TrimSpace(string(output)))
+	decoded, err := decodeBase64Content(strings.TrimSpace(fileContent.Content))
 	if err != nil {
 		return "", fmt.Errorf("failed to decode template: %w", err)
 	}

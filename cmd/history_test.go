@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -913,5 +914,94 @@ func TestParseCommitLog_EmptyInput(t *testing.T) {
 	commits := parseCommitLog("")
 	if len(commits) != 0 {
 		t.Errorf("Expected 0 commits, got %d", len(commits))
+	}
+}
+
+// ============================================================================
+// fetchCommitComments Tests
+// ============================================================================
+
+// mockRESTClient implements commitCommentFetcher for testing
+type mockRESTClient struct {
+	response interface{}
+	err      error
+	calledPath string
+}
+
+func (m *mockRESTClient) Get(path string, response interface{}) error {
+	m.calledPath = path
+	if m.err != nil {
+		return m.err
+	}
+	// Marshal then unmarshal to simulate REST client behavior
+	data, _ := json.Marshal(m.response)
+	return json.Unmarshal(data, response)
+}
+
+func TestFetchCommitComments_Success(t *testing.T) {
+	mock := &mockRESTClient{
+		response: []commitCommentAPI{
+			{
+				User:      struct{ Login string `json:"login"` }{Login: "alice"},
+				Body:      "Looks good",
+				CreatedAt: "2026-03-25T10:00:00Z",
+			},
+			{
+				User:      struct{ Login string `json:"login"` }{Login: "bob"},
+				Body:      "LGTM",
+				CreatedAt: "2026-03-25T11:00:00Z",
+			},
+		},
+	}
+
+	comments := fetchCommitComments(mock, "abc123", "test-org", "test-repo")
+
+	if mock.calledPath != "repos/test-org/test-repo/commits/abc123/comments" {
+		t.Errorf("unexpected endpoint: %s", mock.calledPath)
+	}
+	if len(comments) != 2 {
+		t.Fatalf("expected 2 comments, got %d", len(comments))
+	}
+	if comments[0].Author != "alice" {
+		t.Errorf("expected author 'alice', got %q", comments[0].Author)
+	}
+	if comments[0].Body != "Looks good" {
+		t.Errorf("expected body 'Looks good', got %q", comments[0].Body)
+	}
+	if comments[1].Author != "bob" {
+		t.Errorf("expected author 'bob', got %q", comments[1].Author)
+	}
+}
+
+func TestFetchCommitComments_APIError(t *testing.T) {
+	mock := &mockRESTClient{
+		err: fmt.Errorf("API error"),
+	}
+
+	comments := fetchCommitComments(mock, "abc123", "test-org", "test-repo")
+
+	if comments != nil {
+		t.Errorf("expected nil on API error, got %v", comments)
+	}
+}
+
+func TestFetchCommitComments_EmptyResponse(t *testing.T) {
+	mock := &mockRESTClient{
+		response: []commitCommentAPI{},
+	}
+
+	comments := fetchCommitComments(mock, "abc123", "test-org", "test-repo")
+
+	if len(comments) != 0 {
+		t.Errorf("expected 0 comments, got %d", len(comments))
+	}
+}
+
+func TestGetCommitComments_EmptyOwnerOrRepo(t *testing.T) {
+	if comments := getCommitComments("abc123", "", "test-repo"); comments != nil {
+		t.Error("expected nil for empty owner")
+	}
+	if comments := getCommitComments("abc123", "test-org", ""); comments != nil {
+		t.Error("expected nil for empty repo")
 	}
 }

@@ -11,8 +11,7 @@ import (
 	"testing"
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
-	"github.com/rubrical-works/gh-pmu/internal/ui"
-	"github.com/spf13/cobra"
+"github.com/spf13/cobra"
 )
 
 // mockViewClient implements viewClient for testing
@@ -320,24 +319,6 @@ func TestViewCommand_HasJSONFlag(t *testing.T) {
 	flag := viewCmd.Flags().Lookup("json")
 	if flag == nil {
 		t.Fatal("Expected --json flag to exist")
-	}
-}
-
-func TestViewCommand_HasWebFlag(t *testing.T) {
-	cmd := NewRootCommand()
-	viewCmd, _, err := cmd.Find([]string{"view"})
-	if err != nil {
-		t.Fatalf("view command not found: %v", err)
-	}
-
-	flag := viewCmd.Flags().Lookup("web")
-	if flag == nil {
-		t.Fatal("Expected --web flag to exist")
-	}
-
-	// Check shorthand
-	if flag.Shorthand != "w" {
-		t.Errorf("Expected --web shorthand to be 'w', got %s", flag.Shorthand)
 	}
 }
 
@@ -905,12 +886,6 @@ func TestOutputViewJSON_SubIssueProgress(t *testing.T) {
 	}
 }
 
-func TestOpenInBrowser(t *testing.T) {
-	// Test that function exists and handles URL parameter
-	// We can't actually test browser opening in unit tests
-	_ = ui.OpenInBrowser
-}
-
 func TestOutputViewTable_WithComments(t *testing.T) {
 	buf := new(bytes.Buffer)
 	cmd := createViewTestCmd(buf)
@@ -1394,20 +1369,7 @@ func TestRunViewWithDeps_JSONWithBodyStdoutError(t *testing.T) {
 	}
 }
 
-func TestRunViewWithDeps_JSONWithWebError(t *testing.T) {
-	mock := newMockViewClient()
-	cmd := newViewCommand()
 
-	opts := &viewOptions{jsonFields: "title", web: true}
-	err := runViewWithDeps(cmd, opts, mock, "owner", "repo", 42)
-
-	if err == nil {
-		t.Fatal("expected error for --json with --web")
-	}
-	if !strings.Contains(err.Error(), "cannot use --json with --web") {
-		t.Errorf("expected mutual exclusivity error, got: %v", err)
-	}
-}
 
 func TestRunViewWithDeps_JSONWithCommentsError(t *testing.T) {
 	mock := newMockViewClient()
@@ -1924,24 +1886,6 @@ func TestRunViewMulti_BodyFileError(t *testing.T) {
 	err := runViewMulti(cmd, opts, mock, refs, nil)
 	if err == nil {
 		t.Fatal("expected error for --body-file with multiple issues")
-	}
-	if !strings.Contains(err.Error(), "only supported for single issue") {
-		t.Errorf("unexpected error message: %v", err)
-	}
-}
-
-func TestRunViewMulti_WebError(t *testing.T) {
-	mock := newMultiMockViewClient()
-	cmd := &cobra.Command{}
-	opts := &viewOptions{web: true}
-	refs := []viewIssueRef{
-		{owner: "o", repo: "r", number: 42},
-		{owner: "o", repo: "r", number: 43},
-	}
-
-	err := runViewMulti(cmd, opts, mock, refs, nil)
-	if err == nil {
-		t.Fatal("expected error for --web with multiple issues")
 	}
 	if !strings.Contains(err.Error(), "only supported for single issue") {
 		t.Errorf("unexpected error message: %v", err)

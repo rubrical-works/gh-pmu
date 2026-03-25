@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	ghapi "github.com/cli/go-gh/v2/pkg/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -748,30 +749,40 @@ func getCommitBody(hash string) string {
 	return strings.TrimSpace(strings.Join(cleanLines, "\n"))
 }
 
-// getCommitComments fetches GitHub comments on a commit via gh api
+// commitCommentAPI represents a single commit comment from the GitHub REST API.
+type commitCommentAPI struct {
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"created_at"`
+}
+
+// commitCommentFetcher abstracts the REST API call for testability.
+type commitCommentFetcher interface {
+	Get(path string, response interface{}) error
+}
+
+// getCommitComments fetches GitHub comments on a commit via go-gh REST client.
 func getCommitComments(hash, owner, repo string) []CommitComment {
 	if owner == "" || repo == "" {
 		return nil
 	}
 
-	// Use gh api to fetch commit comments
-	endpoint := fmt.Sprintf("repos/%s/%s/commits/%s/comments", owner, repo, hash)
-	cmd := exec.Command("gh", "api", endpoint)
-	output, err := cmd.Output()
+	restClient, err := ghapi.DefaultRESTClient()
 	if err != nil {
 		return nil
 	}
 
-	// Parse JSON response
-	var apiComments []struct {
-		User struct {
-			Login string `json:"login"`
-		} `json:"user"`
-		Body      string `json:"body"`
-		CreatedAt string `json:"created_at"`
-	}
+	return fetchCommitComments(restClient, hash, owner, repo)
+}
 
-	if err := json.Unmarshal(output, &apiComments); err != nil {
+// fetchCommitComments is the testable implementation that uses a commitCommentFetcher.
+func fetchCommitComments(client commitCommentFetcher, hash, owner, repo string) []CommitComment {
+	endpoint := fmt.Sprintf("repos/%s/%s/commits/%s/comments", owner, repo, hash)
+
+	var apiComments []commitCommentAPI
+	if err := client.Get(endpoint, &apiComments); err != nil {
 		return nil
 	}
 

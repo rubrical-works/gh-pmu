@@ -70,8 +70,6 @@ triage:
     apply:
       labels:
         - needs-attention
-    interactive:
-      status: true
 
   # Rule: High priority bugs
   critical-bugs:
@@ -94,22 +92,6 @@ gh pmu triage stale --dry-run
 gh pmu triage stale --apply
 ```
 
-**Interactive mode:**
-```bash
-gh pmu triage stale --interactive
-```
-
-Prompts for each issue:
-```
-#32 Old feature request (last updated: 2024-01-15)
-
-? Select status:
-  > Backlog
-    Ready
-    In progress
-    Close (not planned)
-```
-
 ### Rule Configuration
 
 | Field | Description |
@@ -117,7 +99,6 @@ Prompts for each issue:
 | `query` | GitHub search query to find issues |
 | `apply.labels` | Labels to add automatically |
 | `apply.fields` | Project fields to set |
-| `interactive` | Fields to prompt for |
 
 **Query examples:**
 ```yaml
@@ -235,8 +216,8 @@ gh pmu intake --dry-run
 # Add new issues
 gh pmu intake --apply
 
-# Review stale issues interactively
-gh pmu triage stale --interactive
+# Apply stale issue rules
+gh pmu triage stale --apply
 
 # Check critical bugs
 gh pmu triage critical-bugs --apply
@@ -279,9 +260,9 @@ gh pmu move 102 --priority p1 --status ready
    - Configure defaults in `.gh-pmu.yml`
    - New issues land in the right place
 
-4. **Use interactive for decisions**
-   - Let humans decide on ambiguous cases
-   - `--interactive` for status/priority choices
+4. **Use dry-run before applying**
+   - Preview changes with `--dry-run` before committing
+   - Use `--apply` to execute after review
 
 5. **Split early**
    - Convert checklists to sub-issues for better tracking

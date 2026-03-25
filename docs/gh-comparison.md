@@ -49,7 +49,6 @@ Flags available in `gh pmu` that don't exist in base `gh`:
 | `create` | `--priority` | Set project priority on create |
 | `create` | `--microsprint` | Assign to microsprint (use 'current') |
 | `create` | `--from-file` | Create issue from YAML/JSON file |
-| `create` | `--interactive` | Prompt for all fields |
 | `close` | `--update-status` | Move to 'done' status before closing |
 | `move` | `--recursive` | Cascade changes to sub-issues |
 | `move` | `--dry-run` | Preview changes without applying |

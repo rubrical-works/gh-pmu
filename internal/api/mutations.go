@@ -14,6 +14,19 @@ import (
 	"github.com/rubrical-works/gh-pmu/internal/defaults"
 )
 
+// buildGraphQLRequestBody wraps a GraphQL query string in the JSON request format
+// required by `gh api graphql --input -`.
+func buildGraphQLRequestBody(query string) (string, error) {
+	requestBody := map[string]interface{}{
+		"query": query,
+	}
+	bodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal GraphQL request body: %w", err)
+	}
+	return string(bodyBytes), nil
+}
+
 // CreateIssue creates a new issue in a repository
 func (c *Client) CreateIssue(owner, repo, title, body string, labels []string) (*Issue, error) {
 
@@ -88,7 +101,8 @@ type CreateIssueInput struct {
 
 // CloseIssueInput represents the input for closing an issue
 type CloseIssueInput struct {
-	IssueID graphql.ID `json:"issueId"`
+	IssueID     graphql.ID      `json:"issueId"`
+	StateReason *graphql.String `json:"stateReason,omitempty"`
 }
 
 // ReopenIssueInput represents the input for reopening an issue
@@ -827,19 +841,9 @@ func (c *Client) getLabelIDs(owner, repo string, labelNames []string) (map[strin
 	query := fmt.Sprintf(`query { repository(owner: %q, name: %q) { %s } }`,
 		owner, repo, strings.Join(queryParts, " "))
 
-	// Execute via gh api graphql using stdin to avoid Windows command-line length limits
-	requestBody, err := buildGraphQLRequestBody(query)
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQL(query, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build batch label request: %w", err)
-	}
-	cmd := exec.Command("gh", "api", "graphql", "--input", "-")
-	cmd.Stdin = strings.NewReader(requestBody)
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("failed to execute batch label query: %s", string(exitErr.Stderr))
-		}
 		return nil, fmt.Errorf("failed to execute batch label query: %w", err)
 	}
 
@@ -1103,8 +1107,9 @@ func (c *Client) CreateIssueWithOptions(owner, repo, title, body string, labels,
 	}, nil
 }
 
-// CloseIssue closes an issue by its ID
-func (c *Client) CloseIssue(issueID string) error {
+// CloseIssue closes an issue by its ID. An optional stateReason can be
+// provided ("COMPLETED" or "NOT_PLANNED"); pass "" to use the GitHub default.
+func (c *Client) CloseIssue(issueID string, stateReason string) error {
 
 	var mutation struct {
 		CloseIssue struct {
@@ -1116,6 +1121,10 @@ func (c *Client) CloseIssue(issueID string) error {
 
 	input := CloseIssueInput{
 		IssueID: graphql.ID(issueID),
+	}
+	if stateReason != "" {
+		reason := graphql.String(stateReason)
+		input.StateReason = &reason
 	}
 
 	variables := map[string]interface{}{
@@ -1804,16 +1813,9 @@ func (c *Client) executeBatchMutation(projectID string, updates []FieldUpdate) (
 		return nil, err
 	}
 
-	// Execute via gh api graphql
-	cmd := exec.Command("gh", "api", "graphql", "--input", "-")
-
-	cmd.Stdin = strings.NewReader(requestBody)
-
-	output, err := cmd.Output()
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQLBody([]byte(requestBody), nil)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("batch mutation failed: %s", string(exitErr.Stderr))
-		}
 		return nil, fmt.Errorf("batch mutation failed: %w", err)
 	}
 

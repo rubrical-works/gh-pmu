@@ -436,15 +436,7 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 			fmt.Fprintln(cmd.OutOrStdout())
 
 			if !opts.yes && !opts.force {
-				fmt.Fprintf(cmd.OutOrStdout(), "Proceed anyway? [y/N]: ")
-				var response string
-				_, _ = fmt.Scanln(&response)
-				response = strings.ToLower(strings.TrimSpace(response))
-				if response != "y" && response != "yes" {
-					fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
-					return nil
-				}
-				fmt.Fprintln(cmd.OutOrStdout())
+				return fmt.Errorf("use --yes or --force to confirm")
 			}
 		}
 	}
@@ -495,14 +487,7 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 		}
 
 		if !opts.yes {
-			fmt.Fprintf(w, "\nProceed with updating %d issues? [y/N]: ", len(issuesToUpdate))
-			var response string
-			_, _ = fmt.Scanln(&response)
-			response = strings.ToLower(strings.TrimSpace(response))
-			if response != "y" && response != "yes" {
-				fmt.Fprintln(w, "Aborted.")
-				return nil
-			}
+			return fmt.Errorf("use --yes to confirm bulk update of %d issues", len(issuesToUpdate))
 		}
 		fmt.Fprintln(w)
 	}
