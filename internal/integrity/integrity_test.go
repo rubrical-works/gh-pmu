@@ -267,6 +267,79 @@ func TestUpdateChecksumForConfig_CreatesChecksumFile(t *testing.T) {
 	}
 }
 
+func TestCompareConfigs_WithDrift_ReportsUnchangedSections(t *testing.T) {
+	// ARRANGE: Local differs in one top-level key, others unchanged
+	local := []byte(`{
+		"version": "1.4.0",
+		"project": {"owner": "test", "number": 1},
+		"repositories": ["test/repo"],
+		"defaults": {"priority": "p2"}
+	}`)
+	committed := []byte(`{
+		"version": "1.1.0",
+		"project": {"owner": "test", "number": 1},
+		"repositories": ["test/repo"],
+		"defaults": {"priority": "p2"}
+	}`)
+
+	// ACT
+	result, err := CompareContent(local, committed)
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if !result.Drifted {
+		t.Fatal("Expected drift")
+	}
+
+	// Changed should mention version
+	foundVersion := false
+	for _, c := range result.Changes {
+		if c == "Changed: version" {
+			foundVersion = true
+		}
+	}
+	if !foundVersion {
+		t.Errorf("Expected 'Changed: version' in changes, got: %v", result.Changes)
+	}
+
+	// Unchanged should include project, repositories, defaults
+	unchangedMap := make(map[string]bool)
+	for _, u := range result.Unchanged {
+		unchangedMap[u] = true
+	}
+	for _, expected := range []string{"project", "repositories", "defaults"} {
+		if !unchangedMap[expected] {
+			t.Errorf("Expected %q in unchanged list, got: %v", expected, result.Unchanged)
+		}
+	}
+
+	// version should NOT be in unchanged
+	if unchangedMap["version"] {
+		t.Error("version should not be in unchanged list")
+	}
+}
+
+func TestCompareConfigs_NoDrift_EmptyUnchanged(t *testing.T) {
+	// ARRANGE: Identical content
+	content := []byte(`{"project":{"owner":"test","number":1}}`)
+
+	// ACT
+	result, err := CompareContent(content, content)
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if result.Drifted {
+		t.Error("Expected no drift")
+	}
+	if len(result.Unchanged) != 0 {
+		t.Errorf("Expected empty unchanged list when no drift, got: %v", result.Unchanged)
+	}
+}
+
 func TestCompareConfigs_EmptyCommitted_ReportsNewFile(t *testing.T) {
 	// ARRANGE: No committed version
 	local := []byte(`{"project":{"owner":"test","number":1}}`)

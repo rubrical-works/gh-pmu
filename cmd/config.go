@@ -110,8 +110,15 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 		fmt.Fprintf(out, "\nNo drift detected — local config matches HEAD.\n")
 	} else {
 		fmt.Fprintf(out, "\nDrift detected — local config differs from HEAD:\n")
+		fmt.Fprintf(out, "  Changed:\n")
 		for _, change := range result.Changes {
-			fmt.Fprintf(out, "  • %s\n", change)
+			fmt.Fprintf(out, "    • %s\n", change)
+		}
+		if len(result.Unchanged) > 0 {
+			fmt.Fprintf(out, "  Unchanged:\n")
+			for _, section := range result.Unchanged {
+				fmt.Fprintf(out, "    - %s\n", section)
+			}
 		}
 	}
 
@@ -127,8 +134,15 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 					fmt.Fprintf(out, "\nRemote: local config matches origin/main.\n")
 				} else {
 					fmt.Fprintf(out, "\nRemote: local config differs from origin/main:\n")
+					fmt.Fprintf(out, "  Changed:\n")
 					for _, change := range remoteResult.Changes {
-						fmt.Fprintf(out, "  • %s\n", change)
+						fmt.Fprintf(out, "    • %s\n", change)
+					}
+					if len(remoteResult.Unchanged) > 0 {
+						fmt.Fprintf(out, "  Unchanged:\n")
+						for _, section := range remoteResult.Unchanged {
+							fmt.Fprintf(out, "    - %s\n", section)
+						}
 					}
 				}
 			}

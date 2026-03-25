@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/rubrical-works/gh-pmu/internal/config"
-	"gopkg.in/yaml.v3"
 )
 
 func TestAcceptCommand_WritesAcceptanceToConfig(t *testing.T) {
@@ -21,8 +21,8 @@ func TestAcceptCommand_WritesAcceptanceToConfig(t *testing.T) {
 		},
 		Repositories: []string{"test-owner/test-repo"},
 	}
-	data, _ := yaml.Marshal(&cfg)
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	data, _ := json.MarshalIndent(&cfg, "", "  ")
+	configPath := filepath.Join(tmpDir, config.ConfigFileName)
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
@@ -77,8 +77,8 @@ func TestAcceptCommand_ShowsTermsText(t *testing.T) {
 		},
 		Repositories: []string{"test-owner/test-repo"},
 	}
-	data, _ := yaml.Marshal(&cfg)
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	data, _ := json.MarshalIndent(&cfg, "", "  ")
+	configPath := filepath.Join(tmpDir, config.ConfigFileName)
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
@@ -108,8 +108,8 @@ func TestAcceptCommand_ShowsSharedAcceptanceNotice(t *testing.T) {
 		},
 		Repositories: []string{"test-owner/test-repo"},
 	}
-	data, _ := yaml.Marshal(&cfg)
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	data, _ := json.MarshalIndent(&cfg, "", "  ")
+	configPath := filepath.Join(tmpDir, config.ConfigFileName)
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
@@ -152,8 +152,8 @@ func TestAcceptCommand_RecordsVersion(t *testing.T) {
 		},
 		Repositories: []string{"test-owner/test-repo"},
 	}
-	data, _ := yaml.Marshal(&cfg)
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	data, _ := json.MarshalIndent(&cfg, "", "  ")
+	configPath := filepath.Join(tmpDir, config.ConfigFileName)
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestAcceptCommand_RecordsVersion(t *testing.T) {
 	}
 }
 
-func TestAcceptCommand_ProducesJSONCompanion(t *testing.T) {
+func TestAcceptCommand_SavesAcceptanceToJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := config.Config{
 		Project: config.Project{
@@ -183,8 +183,8 @@ func TestAcceptCommand_ProducesJSONCompanion(t *testing.T) {
 		},
 		Repositories: []string{"test-owner/test-repo"},
 	}
-	data, _ := yaml.Marshal(&cfg)
-	configPath := filepath.Join(tmpDir, ".gh-pmu.yml")
+	data, _ := json.MarshalIndent(&cfg, "", "  ")
+	configPath := filepath.Join(tmpDir, config.ConfigFileName)
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
@@ -199,18 +199,18 @@ func TestAcceptCommand_ProducesJSONCompanion(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	// Verify JSON companion was created
-	jsonPath := filepath.Join(tmpDir, config.ConfigFileName)
-	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
-		t.Fatal("Expected JSON companion to be created by accept command")
-	}
-
-	// Verify JSON contains acceptance
-	jsonCfg, err := config.Load(jsonPath)
+	// Verify JSON config was updated with acceptance
+	jsonCfg, err := config.Load(configPath)
 	if err != nil {
-		t.Fatalf("Failed to load JSON companion: %v", err)
+		t.Fatalf("Failed to load JSON config: %v", err)
 	}
 	if jsonCfg.Acceptance == nil || !jsonCfg.Acceptance.Accepted {
-		t.Error("Expected JSON companion to contain acceptance")
+		t.Error("Expected JSON config to contain acceptance")
+	}
+
+	// Verify no YAML companion was created
+	yamlPath := filepath.Join(tmpDir, config.ConfigFileNameYAML)
+	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
+		t.Error("Expected no YAML companion to be created")
 	}
 }

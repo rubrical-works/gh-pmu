@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -23,8 +24,9 @@ type ThrottleState struct {
 
 // ComparisonResult holds the result of comparing local vs committed config.
 type ComparisonResult struct {
-	Drifted bool
-	Changes []string
+	Drifted   bool
+	Changes   []string
+	Unchanged []string
 }
 
 // ComputeChecksum returns the SHA-256 hex digest of the file at path.
@@ -127,33 +129,63 @@ func CompareContent(local, committed []byte) (*ComparisonResult, error) {
 	}
 
 	// Parse both as JSON to find specific differences
-	changes := diffJSON(local, committed)
+	changes, unchanged := diffJSON(local, committed)
 
 	return &ComparisonResult{
-		Drifted: true,
-		Changes: changes,
+		Drifted:   true,
+		Changes:   changes,
+		Unchanged: unchanged,
 	}, nil
 }
 
-// diffJSON compares two JSON documents and returns human-readable change descriptions.
-func diffJSON(local, committed []byte) []string {
+// diffJSON compares two JSON documents and returns change descriptions and unchanged top-level keys.
+func diffJSON(local, committed []byte) (changes []string, unchanged []string) {
 	var localMap, committedMap map[string]interface{}
 
 	if err := json.Unmarshal(local, &localMap); err != nil {
-		return []string{"Local config is not valid JSON"}
+		return []string{"Local config is not valid JSON"}, nil
 	}
 	if err := json.Unmarshal(committed, &committedMap); err != nil {
-		return []string{"Committed config is not valid JSON"}
+		return []string{"Committed config is not valid JSON"}, nil
 	}
 
-	var changes []string
 	diffMaps("", localMap, committedMap, &changes)
 
 	if len(changes) == 0 {
 		changes = append(changes, "Content differs (whitespace or formatting change)")
 	}
 
-	return changes
+	// Identify unchanged top-level keys
+	changedTopLevel := make(map[string]bool)
+	for _, c := range changes {
+		// Extract top-level key from "Changed: key.sub" or "Added: key" etc.
+		parts := strings.SplitN(c, ": ", 2)
+		if len(parts) == 2 {
+			topKey := strings.SplitN(parts[1], ".", 2)[0]
+			changedTopLevel[topKey] = true
+		}
+	}
+
+	// Collect all top-level keys from both maps
+	allKeys := make(map[string]bool)
+	for k := range localMap {
+		allKeys[k] = true
+	}
+	for k := range committedMap {
+		allKeys[k] = true
+	}
+
+	// Keys present in both but not in changed set are unchanged
+	for k := range allKeys {
+		if !changedTopLevel[k] {
+			unchanged = append(unchanged, k)
+		}
+	}
+
+	// Sort for deterministic output
+	sort.Strings(unchanged)
+
+	return changes, unchanged
 }
 
 // diffMaps recursively compares two maps and appends change descriptions.

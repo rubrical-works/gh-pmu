@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -293,12 +294,10 @@ func (c *Config) ApplyEnvOverrides() {
 	}
 }
 
-// Save writes the configuration back to the given path and its JSON companion.
-// The JSON companion file is derived by replacing the extension with .json.
+// Save writes the configuration to the JSON config file.
 func (c *Config) Save(path string) error {
 	dir := filepath.Dir(path)
 
-	// Write JSON (primary format)
 	jsonData, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON config: %w", err)
@@ -310,15 +309,34 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	// Write YAML companion
-	yamlData, err := yaml.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("failed to marshal YAML config: %w", err)
+	return nil
+}
+
+// MigrateYAML performs a one-time migration: if .gh-pmu.yml exists alongside
+// the JSON config, it deletes the YAML file, updates the version in the JSON
+// config, and saves. If no YAML file exists, this is a no-op.
+func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) error {
+	dir := filepath.Dir(jsonConfigPath)
+	yamlPath := filepath.Join(dir, ConfigFileNameYAML)
+
+	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
+		return nil // No YAML file — nothing to do
 	}
 
-	yamlPath := filepath.Join(dir, ConfigFileNameYAML)
-	if err := os.WriteFile(yamlPath, yamlData, 0644); err != nil {
-		return fmt.Errorf("failed to write YAML config file: %w", err)
+	// Delete the legacy YAML config
+	if err := os.Remove(yamlPath); err != nil {
+		return fmt.Errorf("failed to remove legacy config %s: %w", ConfigFileNameYAML, err)
+	}
+	fmt.Fprintf(w, "Removed legacy config %s\n", ConfigFileNameYAML)
+
+	// Update version in JSON config
+	cfg, err := Load(jsonConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config for version update: %w", err)
+	}
+	cfg.Version = currentVersion
+	if err := cfg.Save(jsonConfigPath); err != nil {
+		return fmt.Errorf("failed to save updated config: %w", err)
 	}
 
 	return nil

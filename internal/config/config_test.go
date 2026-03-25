@@ -1789,7 +1789,7 @@ func TestRealConfigFileNotCorrupted(t *testing.T) {
 	}
 }
 
-func TestSave_WritesBothJSONAndYAML(t *testing.T) {
+func TestSave_WritesJSONOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	jsonPath := filepath.Join(tmpDir, ConfigFileName)
 
@@ -1807,17 +1807,19 @@ func TestSave_WritesBothJSONAndYAML(t *testing.T) {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	// ASSERT: Both files exist
-	yamlPath := filepath.Join(tmpDir, ConfigFileNameYAML)
+	// ASSERT: JSON file exists
 	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
 		t.Error("Expected .gh-pmu.json to exist")
 	}
-	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
-		t.Error("Expected .gh-pmu.yml to exist")
+
+	// ASSERT: YAML companion NOT created
+	yamlPath := filepath.Join(tmpDir, ConfigFileNameYAML)
+	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
+		t.Error("Expected .gh-pmu.yml to NOT be created by Save()")
 	}
 }
 
-func TestSave_BothFormatsContainExpectedData(t *testing.T) {
+func TestSave_JSONContainsExpectedData(t *testing.T) {
 	tmpDir := t.TempDir()
 	jsonPath := filepath.Join(tmpDir, ConfigFileName)
 
@@ -1835,7 +1837,7 @@ func TestSave_BothFormatsContainExpectedData(t *testing.T) {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	// ASSERT: JSON primary contains expected fields
+	// ASSERT: JSON contains expected fields
 	jsonData, err := os.ReadFile(jsonPath)
 	if err != nil {
 		t.Fatalf("Failed to read JSON file: %v", err)
@@ -1850,18 +1852,6 @@ func TestSave_BothFormatsContainExpectedData(t *testing.T) {
 	}
 	if !strings.Contains(jsonStr, "IDPF-Agile") {
 		t.Error("JSON file should contain framework")
-	}
-
-	// ASSERT: YAML companion contains expected fields
-	yamlPath := filepath.Join(tmpDir, ConfigFileNameYAML)
-	yamlData, err := os.ReadFile(yamlPath)
-	if err != nil {
-		t.Fatalf("Failed to read YAML file: %v", err)
-	}
-
-	yamlStr := string(yamlData)
-	if !strings.Contains(yamlStr, "test-owner") {
-		t.Error("YAML file should contain project owner")
 	}
 }
 
@@ -1982,5 +1972,118 @@ func TestEnsureGitignore_AppendsToExistingFile(t *testing.T) {
 	// Should still have the original content
 	if !strings.Contains(string(content), "node_modules/") {
 		t.Errorf("Expected .gitignore to still contain 'node_modules/', got: %s", string(content))
+	}
+}
+
+func TestMigrateYAML_BothFilesExist_DeletesYAMLAndUpdatesVersion(t *testing.T) {
+	// ARRANGE: Directory with both .gh-pmu.json and .gh-pmu.yml
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+	yamlPath := filepath.Join(testDir, ConfigFileNameYAML)
+
+	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("Failed to write JSON config: %v", err)
+	}
+	yamlContent := "version: 1.1.0\nproject:\n  owner: test-owner\n  number: 1\nrepositories:\n  - test-owner/test-repo\n"
+	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write YAML config: %v", err)
+	}
+
+	var buf strings.Builder
+
+	// ACT: Run migration
+	err := MigrateYAML(jsonPath, "1.4.0", &buf)
+
+	// ASSERT: No error
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// ASSERT: YAML file deleted
+	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
+		t.Error("Expected .gh-pmu.yml to be deleted, but it still exists")
+	}
+
+	// ASSERT: Console message printed
+	output := buf.String()
+	if !strings.Contains(output, ConfigFileNameYAML) {
+		t.Errorf("Expected console message mentioning %s, got: %q", ConfigFileNameYAML, output)
+	}
+
+	// ASSERT: Version updated in JSON
+	cfg, err := Load(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to load config after migration: %v", err)
+	}
+	if cfg.Version != "1.4.0" {
+		t.Errorf("Expected version '1.4.0', got '%s'", cfg.Version)
+	}
+
+	// ASSERT: JSON file still valid and has original data
+	if cfg.Project.Owner != "test-owner" {
+		t.Errorf("Expected owner 'test-owner', got '%s'", cfg.Project.Owner)
+	}
+}
+
+func TestMigrateYAML_OnlyJSONExists_NoOp(t *testing.T) {
+	// ARRANGE: Directory with only .gh-pmu.json
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+
+	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("Failed to write JSON config: %v", err)
+	}
+
+	var buf strings.Builder
+
+	// ACT: Run migration
+	err := MigrateYAML(jsonPath, "1.4.0", &buf)
+
+	// ASSERT: No error, no output
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("Expected no output for no-op migration, got: %q", buf.String())
+	}
+
+	// ASSERT: Version NOT updated (migration didn't trigger)
+	cfg, err := Load(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+	if cfg.Version != "1.1.0" {
+		t.Errorf("Expected version to remain '1.1.0', got '%s'", cfg.Version)
+	}
+}
+
+func TestMigrateYAML_SaveNoLongerWritesYAML(t *testing.T) {
+	// ARRANGE: Save a config and verify no YAML companion is created
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+
+	cfg := &Config{
+		Version:      "1.4.0",
+		Project:      Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"test-owner/test-repo"},
+	}
+
+	// ACT: Save config
+	err := cfg.Save(jsonPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// ASSERT: JSON file exists
+	if _, err := os.Stat(jsonPath); err != nil {
+		t.Fatalf("Expected JSON config to exist: %v", err)
+	}
+
+	// ASSERT: YAML file NOT created
+	yamlPath := filepath.Join(testDir, ConfigFileNameYAML)
+	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
+		t.Error("Expected .gh-pmu.yml to NOT be created by Save(), but it exists")
 	}
 }

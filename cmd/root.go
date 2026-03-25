@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/rubrical-works/gh-pmu/internal/config"
 	"github.com/rubrical-works/gh-pmu/internal/defaults"
@@ -48,6 +49,7 @@ This extension combines and replaces:
 Use 'gh pmu <command> --help' for more information about a command.`,
 		Version: getVersion(),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			runYAMLMigration(cmd)
 			if err := checkAcceptance(cmd); err != nil {
 				return err
 			}
@@ -83,6 +85,29 @@ Use 'gh pmu <command> --help' for more information about a command.`,
 
 func Execute() error {
 	return NewRootCommand().Execute()
+}
+
+// runYAMLMigration performs a one-time migration to remove the legacy .gh-pmu.yml
+// file when .gh-pmu.json exists, and updates the config version.
+func runYAMLMigration(cmd *cobra.Command) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	jsonPath, err := config.FindConfigFile(cwd)
+	if err != nil {
+		return
+	}
+
+	// Only migrate if we found a JSON config (not a YAML fallback)
+	if filepath.Ext(jsonPath) != ".json" {
+		return
+	}
+
+	if err := config.MigrateYAML(jsonPath, getVersion(), cmd.ErrOrStderr()); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: YAML migration failed: %v\n", err)
+	}
 }
 
 // checkAcceptance verifies terms have been accepted before running commands.

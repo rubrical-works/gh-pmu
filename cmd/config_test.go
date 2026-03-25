@@ -99,6 +99,17 @@ func TestConfigVerify_DriftedConfig_ReportsChanges(t *testing.T) {
 	if !containsStr(output, "project.owner") {
 		t.Errorf("Expected change detail mentioning 'project.owner', got: %s", output)
 	}
+	// Verify unchanged sections are shown
+	if !containsStr(output, "Unchanged:") {
+		t.Errorf("Expected 'Unchanged:' section in drift report, got: %s", output)
+	}
+	if !containsStr(output, "repositories") {
+		t.Errorf("Expected 'repositories' in unchanged list, got: %s", output)
+	}
+	// Verify changed/unchanged visual distinction
+	if !containsStr(output, "Changed:") {
+		t.Errorf("Expected 'Changed:' header in drift report, got: %s", output)
+	}
 }
 
 func TestConfigVerify_StrictMode_ErrorsOnDrift(t *testing.T) {
