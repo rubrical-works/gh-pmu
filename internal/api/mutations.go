@@ -840,19 +840,9 @@ func (c *Client) getLabelIDs(owner, repo string, labelNames []string) (map[strin
 	query := fmt.Sprintf(`query { repository(owner: %q, name: %q) { %s } }`,
 		owner, repo, strings.Join(queryParts, " "))
 
-	// Execute via gh api graphql using stdin to avoid Windows command-line length limits
-	requestBody, err := buildGraphQLRequestBody(query)
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQL(query, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build batch label request: %w", err)
-	}
-	cmd := exec.Command("gh", "api", "graphql", "--input", "-")
-	cmd.Stdin = strings.NewReader(requestBody)
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("failed to execute batch label query: %s", string(exitErr.Stderr))
-		}
 		return nil, fmt.Errorf("failed to execute batch label query: %w", err)
 	}
 
@@ -1817,16 +1807,9 @@ func (c *Client) executeBatchMutation(projectID string, updates []FieldUpdate) (
 		return nil, err
 	}
 
-	// Execute via gh api graphql
-	cmd := exec.Command("gh", "api", "graphql", "--input", "-")
-
-	cmd.Stdin = strings.NewReader(requestBody)
-
-	output, err := cmd.Output()
+	// Execute via go-gh HTTP client
+	output, err := c.doRawGraphQLBody([]byte(requestBody), nil)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("batch mutation failed: %s", string(exitErr.Stderr))
-		}
 		return nil, fmt.Errorf("batch mutation failed: %w", err)
 	}
 

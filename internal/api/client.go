@@ -56,6 +56,7 @@ type GraphQLClient interface {
 // This is used for dynamic/batch queries with aliased fields that don't fit typed clients.
 type RawGraphQLDoer interface {
 	DoRaw(query string, headers map[string]string) ([]byte, error)
+	DoRawBody(body []byte, headers map[string]string) ([]byte, error)
 }
 
 // Client wraps the GitHub GraphQL API client with project management features
@@ -173,7 +174,12 @@ func (h *httpRawGraphQL) DoRaw(query string, headers map[string]string) ([]byte,
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal GraphQL request: %w", err)
 	}
+	return h.DoRawBody(body, headers)
+}
 
+// DoRawBody sends a pre-built JSON request body to the GraphQL endpoint.
+// Use this for mutations with variables where the body is already constructed.
+func (h *httpRawGraphQL) DoRawBody(body []byte, headers map[string]string) ([]byte, error) {
 	host := h.host
 	if host == "" {
 		host = "github.com"

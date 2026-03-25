@@ -3468,6 +3468,12 @@ func (m *mockRawGraphQL) DoRaw(query string, headers map[string]string) ([]byte,
 	return m.response, m.err
 }
 
+func (m *mockRawGraphQL) DoRawBody(body []byte, headers map[string]string) ([]byte, error) {
+	m.lastQuery = string(body)
+	m.lastHdrs = headers
+	return m.response, m.err
+}
+
 func TestDoRawGraphQL_Success(t *testing.T) {
 	mock := &mockRawGraphQL{
 		response: []byte(`{"data":{"repository":{"issue":{"title":"Test"}}}}`),
@@ -3526,5 +3532,33 @@ func TestDoRawGraphQL_NilClient(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not initialized") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDoRawGraphQLBody_Success(t *testing.T) {
+	mock := &mockRawGraphQL{
+		response: []byte(`{"data":{"u0":{"projectV2Item":{"id":"item-1"}}}}`),
+	}
+	client := &Client{rawGQL: mock}
+
+	body := []byte(`{"query":"mutation { u0: updateProjectV2ItemFieldValue(...) }","variables":{}}`)
+	output, err := client.doRawGraphQLBody(body, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(output) != `{"data":{"u0":{"projectV2Item":{"id":"item-1"}}}}` {
+		t.Errorf("unexpected output: %s", string(output))
+	}
+	if mock.lastQuery != string(body) {
+		t.Errorf("body not passed correctly")
+	}
+}
+
+func TestDoRawGraphQLBody_NilClient(t *testing.T) {
+	client := &Client{rawGQL: nil}
+
+	_, err := client.doRawGraphQLBody([]byte(`{}`), nil)
+	if err == nil {
+		t.Fatal("expected error for nil rawGQL")
 	}
 }

@@ -861,6 +861,15 @@ func (c *Client) doRawGraphQL(query string, extraHeaders map[string]string) ([]b
 	return c.rawGQL.DoRaw(query, extraHeaders)
 }
 
+// doRawGraphQLBody sends a pre-built JSON request body via the go-gh HTTP client.
+// Use for mutations with variables where the body is already marshalled.
+func (c *Client) doRawGraphQLBody(body []byte, extraHeaders map[string]string) ([]byte, error) {
+	if c.rawGQL == nil {
+		return nil, fmt.Errorf("raw GraphQL client not initialized")
+	}
+	return c.rawGQL.DoRawBody(body, extraHeaders)
+}
+
 // GetProjectItemsByIssues fetches project items for specific issues using a targeted query.
 // This is more efficient than GetProjectItems when you know which issues you need,
 // as it only fetches the specified issues rather than the entire project.
