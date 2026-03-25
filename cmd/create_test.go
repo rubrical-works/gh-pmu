@@ -579,7 +579,7 @@ func TestRunCreate_InvalidRepositoryFormat_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestRunCreate_NoTitle_ReturnsInteractiveModeError(t *testing.T) {
+func TestRunCreate_NoTitle_ReturnsError(t *testing.T) {
 	// ARRANGE: Valid config but no title provided
 	config := `{"project":{"owner":"test-owner","number":1},"repositories":["owner/repo"]}`
 	dir := createTempConfig(t, config)
@@ -738,7 +738,7 @@ func TestCreateCommand_HasBodyFileFlag(t *testing.T) {
 	}
 }
 
-func TestCreateCommand_HasEditorFlag(t *testing.T) {
+func TestCreateCommand_EditorFlagRemoved(t *testing.T) {
 	cmd := NewRootCommand()
 	createCmd, _, err := cmd.Find([]string{"create"})
 	if err != nil {
@@ -746,14 +746,8 @@ func TestCreateCommand_HasEditorFlag(t *testing.T) {
 	}
 
 	flag := createCmd.Flags().Lookup("editor")
-	if flag == nil {
-		t.Fatal("Expected --editor flag to exist")
-	}
-	if flag.Shorthand != "e" {
-		t.Errorf("Expected shorthand 'e', got '%s'", flag.Shorthand)
-	}
-	if flag.Value.Type() != "bool" {
-		t.Errorf("Expected --editor to be bool, got %s", flag.Value.Type())
+	if flag != nil {
+		t.Error("--editor flag should have been removed")
 	}
 }
 
