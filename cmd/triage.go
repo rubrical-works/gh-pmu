@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,13 +13,12 @@ import (
 )
 
 type triageOptions struct {
-	dryRun      bool
-	interactive bool
-	json        bool
-	list        bool
-	repo        string
-	query       string
-	apply       string
+	dryRun bool
+	json   bool
+	list   bool
+	repo   string
+	query  string
+	apply  string
 }
 
 // triageClient defines the interface for API methods used by triage functions.
@@ -54,9 +52,6 @@ Each triage config has a query to match issues and rules to apply.`,
   # Run a triage rule
   gh pmu triage tracked
 
-  # Run interactively (prompt for each issue)
-  gh pmu triage tracked --interactive
-
   # Target a specific repository
   gh pmu triage tracked --repo owner/repo
 
@@ -71,7 +66,6 @@ Each triage config has a query to match issues and rules to apply.`,
 	}
 
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show what would be changed without making changes")
-	cmd.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Prompt before processing each issue")
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output in JSON format")
 	cmd.Flags().BoolVarP(&opts.list, "list", "l", false, "List available triage configurations")
 	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Target specific repository (owner/repo format)")
@@ -103,11 +97,11 @@ func runTriage(cmd *cobra.Command, args []string, opts *triageOptions) error {
 		return err
 	}
 
-	return runTriageWithDeps(cmd, args, opts, cfg, client, os.Stdin)
+	return runTriageWithDeps(cmd, args, opts, cfg, client)
 }
 
 // runTriageWithDeps is the testable implementation of runTriage
-func runTriageWithDeps(cmd *cobra.Command, args []string, opts *triageOptions, cfg *config.Config, client triageClient, stdin *os.File) error {
+func runTriageWithDeps(cmd *cobra.Command, args []string, opts *triageOptions, cfg *config.Config, client triageClient) error {
 	// List mode
 	if opts.list {
 		return listTriageConfigs(cmd, cfg, opts.json)
@@ -115,7 +109,7 @@ func runTriageWithDeps(cmd *cobra.Command, args []string, opts *triageOptions, c
 
 	// Ad-hoc mode with --query flag
 	if opts.query != "" {
-		return runAdHocTriage(cmd, opts, cfg, client, stdin)
+		return runAdHocTriage(cmd, opts, cfg, client)
 	}
 
 	// Require config name
@@ -163,25 +157,8 @@ func runTriageWithDeps(cmd *cobra.Command, args []string, opts *triageOptions, c
 
 	// Process issues
 	var processed, skipped, failed int
-	reader := bufio.NewReader(stdin)
 
 	for _, issue := range matchingIssues {
-		// Interactive mode - prompt for each issue
-		if opts.interactive {
-			cmd.Printf("\nProcess #%d: %s? [y/n/q] ", issue.Number, issue.Title)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-
-			if response == "q" {
-				cmd.Println("Aborted.")
-				break
-			}
-			if response != "y" && response != "yes" {
-				skipped++
-				continue
-			}
-		}
-
 		// Apply triage rules
 		err := applyTriageRules(client, cfg, project, &issue, &triageCfg)
 		if err != nil {
@@ -191,9 +168,7 @@ func runTriageWithDeps(cmd *cobra.Command, args []string, opts *triageOptions, c
 		}
 
 		processed++
-		if !opts.interactive {
-			cmd.Printf("Processed #%d: %s\n", issue.Number, issue.Title)
-		}
+		cmd.Printf("Processed #%d: %s\n", issue.Number, issue.Title)
 	}
 
 	// Summary
@@ -274,9 +249,6 @@ func describeActions(tc *config.Triage) string {
 	}
 
 	if len(actions) == 0 {
-		if tc.Interactive.Status || tc.Interactive.Estimate {
-			return "interactive only"
-		}
 		return "none"
 	}
 
@@ -295,12 +267,6 @@ func describeTriageActions(cmd *cobra.Command, cfg *config.Config, tc *config.Tr
 		cmd.Printf("  • Set %s: %s\n", field, resolved)
 	}
 
-	if tc.Interactive.Status {
-		cmd.Println("  • Prompt for status (interactive)")
-	}
-	if tc.Interactive.Estimate {
-		cmd.Println("  • Prompt for estimate (interactive)")
-	}
 }
 
 // triageQueryFilters holds parsed query components for triage searches
@@ -594,7 +560,7 @@ func outputTriageJSON(cmd *cobra.Command, issues []api.Issue, status, configName
 }
 
 // runAdHocTriage runs a triage operation using --query and --apply flags instead of a config file entry
-func runAdHocTriage(cmd *cobra.Command, opts *triageOptions, cfg *config.Config, client triageClient, stdin *os.File) error {
+func runAdHocTriage(cmd *cobra.Command, opts *triageOptions, cfg *config.Config, client triageClient) error {
 	// Get project
 	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
 	if err != nil {
@@ -638,25 +604,8 @@ func runAdHocTriage(cmd *cobra.Command, opts *triageOptions, cfg *config.Config,
 
 	// Process issues
 	var processed, skipped, failed int
-	reader := bufio.NewReader(stdin)
 
 	for _, issue := range matchingIssues {
-		// Interactive mode - prompt for each issue
-		if opts.interactive {
-			cmd.Printf("\nProcess #%d: %s? [y/n/q] ", issue.Number, issue.Title)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-
-			if response == "q" {
-				cmd.Println("Aborted.")
-				break
-			}
-			if response != "y" && response != "yes" {
-				skipped++
-				continue
-			}
-		}
-
 		// Apply ad-hoc rules
 		err := applyAdHocTriageRules(client, cfg, project, &issue, applyFields)
 		if err != nil {
@@ -666,9 +615,7 @@ func runAdHocTriage(cmd *cobra.Command, opts *triageOptions, cfg *config.Config,
 		}
 
 		processed++
-		if !opts.interactive {
-			cmd.Printf("Processed #%d: %s\n", issue.Number, issue.Title)
-		}
+		cmd.Printf("Processed #%d: %s\n", issue.Number, issue.Title)
 	}
 
 	// Summary

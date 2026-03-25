@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -92,10 +91,10 @@ func TestTriageCommand(t *testing.T) {
 			t.Error("expected --dry-run flag")
 		}
 
-		// Check --interactive flag
+		// Verify --interactive flag was removed
 		interactiveFlag := cmd.Flags().Lookup("interactive")
-		if interactiveFlag == nil {
-			t.Error("expected --interactive flag")
+		if interactiveFlag != nil {
+			t.Error("--interactive flag should have been removed")
 		}
 
 		// Check --json flag
@@ -156,9 +155,6 @@ func TestTriageOptions(t *testing.T) {
 
 		if opts.dryRun {
 			t.Error("dryRun should be false by default")
-		}
-		if opts.interactive {
-			t.Error("interactive should be false by default")
 		}
 		if opts.json {
 			t.Error("json should be false by default")
@@ -362,16 +358,6 @@ func TestDescribeActions(t *testing.T) {
 			expect: "labels: triaged; priority: p1",
 		},
 		{
-			name: "interactive only",
-			triage: config.Triage{
-				Interactive: config.TriageInteractive{
-					Status:   true,
-					Estimate: true,
-				},
-			},
-			expect: "interactive only",
-		},
-		{
 			name:   "empty - no actions",
 			triage: config.Triage{},
 			expect: "none",
@@ -419,17 +405,6 @@ func TestDescribeTriageActions(t *testing.T) {
 			},
 			contains: []string{"Set priority:"},
 		},
-		{
-			name: "shows interactive prompts",
-			cfg:  &config.Config{},
-			triage: config.Triage{
-				Interactive: config.TriageInteractive{
-					Status:   true,
-					Estimate: true,
-				},
-			},
-			contains: []string{"Prompt for status", "Prompt for estimate"},
-		},
 	}
 
 	for _, tt := range tests {
@@ -462,9 +437,6 @@ func TestListTriageConfigs(t *testing.T) {
 				},
 				"estimate": {
 					Query: "is:open -has:estimate",
-					Interactive: config.TriageInteractive{
-						Estimate: true,
-					},
 				},
 			},
 		}
@@ -1018,7 +990,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 		cmd := newTriageCommand()
 		cmd.SetOut(buf)
 
-		err := runTriageWithDeps(cmd, []string{}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{}, opts, cfg, mock)
 		if err != nil {
 			t.Fatalf("runTriageWithDeps() error = %v", err)
 		}
@@ -1031,7 +1003,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 
 		cmd := newTriageCommand()
 
-		err := runTriageWithDeps(cmd, []string{}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{}, opts, cfg, mock)
 		if err == nil {
 			t.Error("expected error when config name is missing")
 		}
@@ -1047,7 +1019,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 
 		cmd := newTriageCommand()
 
-		err := runTriageWithDeps(cmd, []string{"unknown-config"}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{"unknown-config"}, opts, cfg, mock)
 		if err == nil {
 			t.Error("expected error for unknown config")
 		}
@@ -1065,7 +1037,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 
 		cmd := newTriageCommand()
 
-		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock)
 		if err == nil {
 			t.Error("expected error when GetProject fails")
 		}
@@ -1088,7 +1060,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 		cmd := newTriageCommand()
 		cmd.SetOut(buf)
 
-		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock)
 		if err != nil {
 			t.Fatalf("runTriageWithDeps() error = %v", err)
 		}
@@ -1116,7 +1088,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 
 		cmd := newTriageCommand()
 
-		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock)
 		if err != nil {
 			t.Fatalf("runTriageWithDeps() error = %v", err)
 		}
@@ -1134,7 +1106,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 		cmd := newTriageCommand()
 		cmd.SetOut(buf)
 
-		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock)
 		if err != nil {
 			t.Fatalf("runTriageWithDeps() error = %v", err)
 		}
@@ -1155,7 +1127,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 
 		cmd := newTriageCommand()
 
-		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock)
 		if err != nil {
 			t.Fatalf("runTriageWithDeps() error = %v", err)
 		}
@@ -1176,7 +1148,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 		cmd := newTriageCommand()
 		cmd.SetOut(buf)
 
-		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock)
 		if err != nil {
 			t.Fatalf("runTriageWithDeps() error = %v", err)
 		}
@@ -1216,7 +1188,7 @@ func TestRunTriageWithDeps(t *testing.T) {
 		cmd.SetOut(buf)
 		cmd.SetErr(errBuf)
 
-		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock)
 		if err != nil {
 			t.Fatalf("runTriageWithDeps() should not return error, got: %v", err)
 		}
@@ -1240,144 +1212,9 @@ func TestRunTriageWithDeps(t *testing.T) {
 
 		cmd := newTriageCommand()
 
-		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, nil)
+		err := runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock)
 		if err != nil {
 			t.Fatalf("runTriageWithDeps() error = %v", err)
-		}
-	})
-
-	t.Run("interactive mode with yes response", func(t *testing.T) {
-		cfg := makeConfig()
-		mock := &mockTriageClient{
-			project:            &api.Project{ID: "proj-1"},
-			addToProjectItemID: "item-123",
-			issues: []api.Issue{
-				{ID: "issue-1", Number: 1, Title: "Test Issue", State: "OPEN", Labels: []api.Label{}},
-			},
-		}
-		opts := &triageOptions{interactive: true}
-
-		// Create a temp file with "y\n" as input
-		tmpFile, err := os.CreateTemp("", "stdin")
-		if err != nil {
-			t.Fatalf("failed to create temp file: %v", err)
-		}
-		defer os.Remove(tmpFile.Name())
-
-		_, err = tmpFile.WriteString("y\n")
-		if err != nil {
-			t.Fatalf("failed to write to temp file: %v", err)
-		}
-		_, err = tmpFile.Seek(0, 0)
-		if err != nil {
-			t.Fatalf("failed to seek temp file: %v", err)
-		}
-
-		buf := new(bytes.Buffer)
-		cmd := newTriageCommand()
-		cmd.SetOut(buf)
-
-		err = runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, tmpFile)
-		if err != nil {
-			t.Fatalf("runTriageWithDeps() error = %v", err)
-		}
-
-		// Should have processed the issue
-		if !mock.addToProjectCalled {
-			t.Error("expected AddIssueToProject to be called")
-		}
-
-		output := buf.String()
-		if !strings.Contains(output, "1 processed") {
-			t.Errorf("expected '1 processed' in summary, got:\n%s", output)
-		}
-	})
-
-	t.Run("interactive mode with no response skips issue", func(t *testing.T) {
-		cfg := makeConfig()
-		mock := &mockTriageClient{
-			project: &api.Project{ID: "proj-1"},
-			issues: []api.Issue{
-				{ID: "issue-1", Number: 1, Title: "Test Issue", State: "OPEN", Labels: []api.Label{}},
-			},
-		}
-		opts := &triageOptions{interactive: true}
-
-		// Create a temp file with "n\n" as input
-		tmpFile, err := os.CreateTemp("", "stdin")
-		if err != nil {
-			t.Fatalf("failed to create temp file: %v", err)
-		}
-		defer os.Remove(tmpFile.Name())
-
-		_, err = tmpFile.WriteString("n\n")
-		if err != nil {
-			t.Fatalf("failed to write to temp file: %v", err)
-		}
-		_, err = tmpFile.Seek(0, 0)
-		if err != nil {
-			t.Fatalf("failed to seek temp file: %v", err)
-		}
-
-		buf := new(bytes.Buffer)
-		cmd := newTriageCommand()
-		cmd.SetOut(buf)
-
-		err = runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, tmpFile)
-		if err != nil {
-			t.Fatalf("runTriageWithDeps() error = %v", err)
-		}
-
-		// Should NOT have processed the issue
-		if mock.addToProjectCalled {
-			t.Error("expected AddIssueToProject NOT to be called")
-		}
-
-		output := buf.String()
-		if !strings.Contains(output, "1 skipped") {
-			t.Errorf("expected '1 skipped' in summary, got:\n%s", output)
-		}
-	})
-
-	t.Run("interactive mode with quit response aborts", func(t *testing.T) {
-		cfg := makeConfig()
-		mock := &mockTriageClient{
-			project: &api.Project{ID: "proj-1"},
-			issues: []api.Issue{
-				{ID: "issue-1", Number: 1, Title: "Test Issue 1", State: "OPEN", Labels: []api.Label{}},
-				{ID: "issue-2", Number: 2, Title: "Test Issue 2", State: "OPEN", Labels: []api.Label{}},
-			},
-		}
-		opts := &triageOptions{interactive: true}
-
-		// Create a temp file with "q\n" as input
-		tmpFile, err := os.CreateTemp("", "stdin")
-		if err != nil {
-			t.Fatalf("failed to create temp file: %v", err)
-		}
-		defer os.Remove(tmpFile.Name())
-
-		_, err = tmpFile.WriteString("q\n")
-		if err != nil {
-			t.Fatalf("failed to write to temp file: %v", err)
-		}
-		_, err = tmpFile.Seek(0, 0)
-		if err != nil {
-			t.Fatalf("failed to seek temp file: %v", err)
-		}
-
-		buf := new(bytes.Buffer)
-		cmd := newTriageCommand()
-		cmd.SetOut(buf)
-
-		err = runTriageWithDeps(cmd, []string{"tracked"}, opts, cfg, mock, tmpFile)
-		if err != nil {
-			t.Fatalf("runTriageWithDeps() error = %v", err)
-		}
-
-		output := buf.String()
-		if !strings.Contains(output, "Aborted") {
-			t.Errorf("expected 'Aborted' message, got:\n%s", output)
 		}
 	})
 }
