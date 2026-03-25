@@ -3,6 +3,7 @@
 [![CI](https://github.com/rubrical-works/gh-pmu/actions/workflows/ci.yml/badge.svg)](https://github.com/rubrical-works/gh-pmu/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/rubrical-works/gh-pmu)](https://goreportcard.com/report/github.com/rubrical-works/gh-pmu)
 [![Release](https://img.shields.io/github/v/release/rubrical-works/gh-pmu)](https://github.com/rubrical-works/gh-pmu/releases/latest)
+[![Gosec](https://github.com/rubrical-works/gh-pmu/actions/workflows/gosec.yml/badge.svg)](https://github.com/rubrical-works/gh-pmu/actions/workflows/gosec.yml)
 [![License](https://img.shields.io/github/license/rubrical-works/gh-pmu)](LICENSE)
 
 **P**raxis **M**anagement **U**tility — a GitHub CLI extension for project workflows, sub-issue hierarchies, and batch operations.
