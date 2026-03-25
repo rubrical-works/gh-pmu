@@ -60,7 +60,7 @@ func TestInitNonInteractiveMode(t *testing.T) {
 			// Non-interactive mode copies from source project, so the new
 			// project number will differ from the source (41). Just verify
 			// a positive number was assigned.
-			if num, ok := project["number"].(int); !ok || num <= 0 {
+			if num, ok := project["number"].(float64); !ok || num <= 0 {
 				t.Errorf("Expected positive project number, got %v", project["number"])
 			}
 			if project["owner"] != "rubrical-works" {
