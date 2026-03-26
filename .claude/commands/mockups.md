@@ -1,5 +1,5 @@
 ---
-version: "v0.72.0"
+version: "v0.73.0"
 description: Create text-based or diagrammatic screen mockups (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -119,6 +119,7 @@ If a supported framework is detected (exit code 0), add "Framework-native compon
 
 `AskUserQuestion`:
 - "Framework-native components ({framework})" → `Components/` (only shown when framework detected)
+- "Interactive HTML mockups" → `Screens/` as `.html` files
 - "ASCII/text mockups" → `AsciiScreens/`
 - "Interactive UI mockups (drawio.svg)" → `Screens/`
 - "Both ASCII + drawio.svg" → both subdirectories
@@ -135,7 +136,7 @@ If a supported framework is detected (exit code 0), add "Framework-native compon
 | Framework not chosen | Charter tech stack is TBD/placeholder | `.drawio.svg` |
 | Static/content site | Astro/Eleventy/Hugo without component framework | `.drawio.svg` |
 
-When fallback applies, "Framework-native components" is not shown — Q3 presents three options only.
+When fallback applies, "Framework-native components" is not shown — Q3 presents the standard options only.
 
 **Q4: How should screen content be sourced?** `AskUserQuestion`:
 - "From existing screen specs" (replaces `--from-spec`)
@@ -188,6 +189,52 @@ If `Mockups/{Name}/Specs/` has specs, show them as available sources.
 
 **Diagram-based mockup** (written to `Mockups/{Name}/Screens/{Screen-Name}-mockup.drawio.svg`):
 Use `.drawio.svg` format with editable `mxGraphModel` structure per the `drawio-generation` skill.
+
+**Interactive HTML mockup** (written to `Mockups/{Name}/Screens/{Screen-Name}-mockup.html`):
+Self-contained HTML file using Tailwind CSS via CDN. Structure:
+1. **Header badge:** Fixed mockup label with issue reference (e.g., `MOCKUP — Issue #NN`)
+2. **Visual states:** Show all relevant states — before/after, collapsed/expanded, enabled/disabled; label each with a colored chip (State 1, State 2, etc.)
+3. **Interactive elements:** Use `onclick` handlers for demo behavior where helpful
+4. **Implementation notes section:** Component names/file paths to modify, line references, CSS cleanup guidance, test selector impact, post-success behavior
+5. **Fonts:** Use project fonts where known, otherwise `Plus Jakarta Sans` for UI text and `JetBrains Mono` for code/monospace
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{Screen Name} Mockup (#NN)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen flex flex-col items-center gap-8 py-8 bg-slate-50">
+
+<!-- Mockup badge -->
+<div class="fixed top-2 right-3 z-50 text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded"
+     style="background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.3);color:#dc2626;">
+  MOCKUP — Issue #NN
+</div>
+
+<!-- State 1: {Description} -->
+<div>
+  <div class="flex items-center gap-2 mb-2">
+    <span class="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">State 1</span>
+    <span class="text-xs text-slate-400">{state description}</span>
+  </div>
+  <!-- UI content here -->
+</div>
+
+<!-- Implementation Notes -->
+<div class="bg-slate-50 rounded-lg border border-slate-200 p-4 text-sm text-slate-500 space-y-2">
+  <p class="font-semibold text-slate-600">Implementation Notes — Issue #NN</p>
+  <ul class="list-disc pl-4 space-y-1.5">
+    <li><strong>{Change}:</strong> {specific guidance with file paths and line references}</li>
+    <li><strong>Test selectors:</strong> {impact on data-testid attributes}</li>
+  </ul>
+</div>
+
+</body>
+</html>
+```
 
 ### Step 3: Collision Protection and Write
 
@@ -272,11 +319,18 @@ Mockup complete.
   Related: /catalog-screens to create or update screen specs.
 ```
 
-### Step 8: Commit Offer and STOP
+### Step 8: Satisfaction Check, Commit Offer, and STOP
 
-If any files were created or modified, offer to stage and commit.
+If any files were created or modified:
 
-`AskUserQuestion`: "Stage and commit mockup changes?" — **Yes** / **No**
+**Step 8a: Satisfaction Check**
+`AskUserQuestion`: "Are the mockups satisfactory?"
+- **Yes, looks good** — Proceed to commit offer
+- **No, make changes** — Return to conversation for revisions. After revisions, return to Step 8a.
+- **No, discard** — Report "Mockups left uncommitted." → **STOP**
+
+**Step 8b: Commit Offer**
+Only reached when user confirms satisfaction. `AskUserQuestion`: "Stage and commit mockup changes?" — **Yes** / **No**
 
 **If Yes:**
 ```bash
