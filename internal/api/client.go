@@ -201,7 +201,7 @@ func (h *httpRawGraphQL) DoRawBody(body []byte, headers map[string]string) ([]by
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024)) // 10MB limit
 	if err != nil {
 		return nil, fmt.Errorf("failed to read GraphQL response: %w", err)
 	}
