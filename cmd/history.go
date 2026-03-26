@@ -545,6 +545,20 @@ func outputHistoryJSON(commits []CommitInfo) error {
 	return encoder.Encode(commits)
 }
 
+// escapeMarkdown escapes markdown special characters for use in table cells.
+var mdReplacer = strings.NewReplacer(
+	`|`, `\|`,
+	`[`, `\[`,
+	`]`, `\]`,
+	`*`, `\*`,
+	`_`, `\_`,
+	"`", "\\`",
+)
+
+func escapeMarkdown(s string) string {
+	return mdReplacer.Replace(s)
+}
+
 // outputMarkdown writes history to a markdown file in History/ directory
 func outputMarkdown(commits []CommitInfo, targetPath, repoOwner, repoName string) error {
 	// Create History/ directory
@@ -603,15 +617,12 @@ func outputMarkdown(commits []CommitInfo, targetPath, repoOwner, repoName string
 			issuesStr = strings.Join(issueLinks, ", ")
 		}
 
-		// Escape pipe characters in subject
-		subject := strings.ReplaceAll(commit.Subject, "|", "\\|")
-
 		b.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s | %s | %s |\n",
-			commit.Hash,
+			escapeMarkdown(commit.Hash),
 			commit.Date.Format("2006-01-02"),
-			commit.Author,
-			commit.ChangeType,
-			subject,
+			escapeMarkdown(commit.Author),
+			escapeMarkdown(commit.ChangeType),
+			escapeMarkdown(commit.Subject),
 			issuesStr,
 		))
 	}
