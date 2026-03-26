@@ -1,7 +1,7 @@
 ---
-version: "v0.70.0"
+version: "v0.72.0"
 description: Start working on issues with validation and auto-TODO (project)
-argument-hint: "#issue [#issue...] [--assign] [--nonstop] | all in <status>"
+argument-hint: "#issue [#issue...] [--assign] [--nonstop] [--wait] | all in <status>"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- EXTENSIBLE -->
@@ -22,6 +22,7 @@ Start working on one or more issues. Validates existence, branch assignment, and
 | `all in <status>` | | All issues in given status |
 | `--assign` | No | Auto-assign to current branch |
 | `--nonstop` | No | Epic/branch: skip per-sub-issue STOP |
+| `--wait` | No | Wait for pending CI to pass before starting work |
 ---
 ## Execution Instructions
 Generate todos from steps + extensions. Track progress. Post-compaction: re-read spec.
@@ -35,19 +36,29 @@ If not epic or branch tracker, clear todos.
 
 ### Step 1: Context Gathering (Preamble Script)
 Run `node .claude/scripts/shared/work-preamble.js` with `--issue N`, `--issues "N,N,N"`, or `--status <status>`. Append `--assign` for auto-assign.
-Parse JSON: `ok: false` -> report errors, STOP. Extract `context`, `gates`, `autoTodo`, `warnings`.
+Parse JSON: `ok: false` → report errors, STOP. Extract `context`, `gates`, `autoTodo`, `warnings`.
 **--assign errors:** `ALREADY_ASSIGNED`, `WORKSTREAM_CONFLICT`.
 
 <!-- USER-EXTENSION-START: post-work-start -->
 <!-- USER-EXTENSION-END: post-work-start -->
 
+### Step 1a: CI Wait (--wait flag)
+**Trigger:** `context.wait` is `true`.
+```bash
+node .claude/scripts/shared/wait-for-ci.js --branch $(git branch --show-current) --timeout 300
+```
+- Exit 0 (pass): continue
+- Exit 1 (fail): STOP
+- Exit 2 (timeout): STOP
+- Exit 3 (no runs): continue silently
+If `context.wait` not set, skip.
 ### Step 1b: Epic Complexity Assessment
 **Trigger:** `context.type` is `"epic"` and `--nonstop` set.
-Run `node .claude/scripts/shared/epic-complexity.js $ISSUE`. `"functional"` -> `strictTDD = true`. Signals: `.claude/metadata/epic-complexity-signals.json`.
+Run `node .claude/scripts/shared/epic-complexity.js $ISSUE`. `"functional"` → `strictTDD = true`. Signals: `.claude/metadata/epic-complexity-signals.json`.
 ### Step 2: Framework Methodology Dispatch
 Load core file from `framework-config.json`. Missing: warn, continue.
 ### Step 3: Work the Issue
-Per AC: mark in_progress, TDD cycle (RED->GREEN->REFACTOR), run tests, mark completed, commit (`Refs #$ISSUE`).
+Per AC: mark in_progress, TDD cycle (RED→GREEN→REFACTOR), run tests, mark completed, commit (`Refs #$ISSUE`).
 **GATE: Do NOT start next AC until commit made.**
 **Sub-Agent Review Gate:** After Agent tool, `git diff --name-only`. Read changed files, verify match. Mandatory when `strictTDD`. Not satisfied by summaries/tests alone.
 If no auto-TODO: single unit. Post-compaction: resume from first incomplete AC.
@@ -59,7 +70,7 @@ Re-read `.claude/scripts/shared/lib/doc-templates.json` from disk. Create if war
 
 ### Step 4: Verify Acceptance Criteria (with QA Extraction)
 **Re-read files before evaluating each AC.** Do NOT evaluate from memory.
-Can verify -> `[x]`. Cannot verify -> check QA extraction (4a), STOP, present options.
+Can verify → `[x]`. Cannot verify → QA extraction (4a).
 Update issue body via `gh pmu view/edit` with temp file.
 #### Step 4a: QA Extraction — Automatic Sub-Issue Creation
 Re-read `.claude/scripts/shared/lib/qa-config.json`. Match unverifiable ACs against keywords. For each match, **automatically** (no user confirmation):
@@ -78,19 +89,18 @@ Compute files changed during this issue's work:
 ```bash
 git log --name-status --grep="Refs #$ISSUE" --pretty=format:"" | sort -u | grep -v "^$"
 ```
-Categorize: `A` = Added, `M` = Modified, `D` = Deleted. Append "Files Changed" section to issue body (non-destructively). Omit empty categories. Skip if no commits found.
-
+Categorize: `A` = Added, `M` = Modified, `D` = Deleted. Separate test files from source files using `.claude/scripts/shared/lib/classify-changed-files.js`. Append "Files Changed" section to issue body (non-destructively). Omit empty categories/sub-categories. Skip if no commits found.
 ### Step 5: Move to in_review
 ```bash
 gh pmu move $ISSUE --status in_review
 ```
 ### Step 6: STOP Boundary
 ```
-Issue #$ISSUE: $TITLE -- In Review
+Issue #$ISSUE: $TITLE — In Review
 Say "done" or run /done #$ISSUE to close.
 ```
 **STOP.** Do NOT close.
-**CRITICAL -- Autonomous Epic/Branch processing:** Ascending numeric order (or custom Processing Order). Skip done/in_review.
+**CRITICAL — Autonomous Epic/Branch processing:** Ascending numeric order (or custom Processing Order). Skip done/in_review.
 **Default:** Per-sub-issue STOP.
 **`--nonstop`:** No STOP between sub-issues. One commit per AC. Commits local. Failure halts with resume instructions.
 **Post-compaction:** Check `gh pmu sub list`, resume from first incomplete.

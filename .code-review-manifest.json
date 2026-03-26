@@ -1,353 +1,477 @@
 {
   "version": 1,
-  "lastRun": "2026-03-12",
+  "lastRun": "2026-03-26",
   "charter": {
     "contentHash": "sha256:1bbd503b423c1cd2818c0de3cec6a8938874270845e99f48bb6b03ae19b5ba89"
   },
   "files": {
     "main.go": {
-      "contentHash": "sha256:b401bf4532af01f832c97ca2188e97a8e86d65dfd997fd5311c18bd238e0b3f6",
+      "contentHash": "sha256:f4b5115717dfac4dd9957731e5dee3dc0bb11231d78bd0461f8a9b594552b288",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 0,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/accept.go": {
-      "contentHash": "sha256:b50fa9bf62109cbbb6afc00dbb252e204b05c2888f5dd897ebb0cb4f4120aa97",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
+      "contentHash": "sha256:6af783f4de41a3c43cbd03b1d372f4a54977a06421f8a453de1339c7096497ed",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/board.go": {
-      "contentHash": "sha256:b50175f101d655ca962f1b0f616570b4ba10a384dddb519dcc69e32505bf5092",
+      "contentHash": "sha256:1a9ee63a5c52ff3e95e76e53ab6f0ff66b3b6b98aadf57745b650a955827d86b",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 1,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/branch.go": {
-      "contentHash": "sha256:8852c00d5d8d717d8022d4be4c02da9827ba2204dd43ddff060d9a4c1f3529c8",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "contentHash": "sha256:988b469da480e85445faf19f2724ac457efc181d120adccf8ad57e6cc86e224b",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 3,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/close.go": {
-      "contentHash": "sha256:a6ac275ccaee3abcef526ec37ef8a2f2a48297a660dbfbf944712916d3e3d2ee",
+      "contentHash": "sha256:d1c73cf1495aa81d8dc28d8d2e787ac0e8a80b5295abbdddd08c9caa06ab7f16",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 2,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    },
-    "cmd/comment.go": {
-      "contentHash": "sha256:f49c40970a131e6a1b87c672b4ac70c96bcb78b6a989b514e6cfcf6da9027896",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 2,
-      "findings": [],
-      "issueRefs": [
-        "#755"
-      ],
-      "domains": []
-    },
-    "cmd/create.go": {
-      "contentHash": "sha256:6d389f232d4ca91edaee72691d740ee39b5fa48fa16ee5d649c52ed2e0a23b94",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 3,
-      "findings": [],
-      "issueRefs": [
-        "#756"
-      ],
-      "domains": []
-    },
-    "cmd/edit.go": {
-      "contentHash": "sha256:67d2e03d3f62613a7388790915f8cc7b216b4d2eacf4f43643a219598d817528",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 1,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
-    "cmd/field.go": {
-      "contentHash": "sha256:f87230f6771906f27880819212eccbaf12fe1e35090bb2ce671f7413a67f57d7",
+    "cmd/comment.go": {
+      "contentHash": "sha256:1697c061646210e4e7ca68016f354b4f143e9f0668d118e5f15e23780181f7c6",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 3,
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
-    "cmd/fieldnames.go": {
-      "contentHash": "sha256:80c387af62983f394f16d59171906e25e1df15c6eb4fc615835c1be13774c24b",
+    "cmd/config.go": {
+      "contentHash": "sha256:0edf15093efc5fda9732e2d7b81cda852bde844f449901c280e7244dba94eeaf",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 0,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/create.go": {
+      "contentHash": "sha256:aade6f7bbb8eff4b86d5d8ad1f6f9321b47a144a271fcdcab21b3193f085ea7e",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/edit.go": {
+      "contentHash": "sha256:f9d00d3da672fea1512422f3af1d57c36da97d8374dddc056b31e1dea40fa01a",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/field.go": {
+      "contentHash": "sha256:81900baae420642d239f2ffa1bdad8c8c06600acb1f01f8d44b1ba3be7ae0007",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/fieldnames.go": {
+      "contentHash": "sha256:52b529ac3e511ea3211dffe2eb240752ba6693a4fbcb390ed299c28f6dd5f3a0",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/filter.go": {
-      "contentHash": "sha256:87c41ce1d6b569d872760c4a7225e24a7110046c6b57ab72622d0c36e8e0c1fe",
+      "contentHash": "sha256:863486c4b62b3e9c0f838d0011a191a0bee4c9f75754da8cfe2456c15418e0ad",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 3,
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
       "findings": [],
-      "issueRefs": [
-        "#757"
-      ],
-      "domains": []
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/history.go": {
-      "contentHash": "sha256:7e7ab47598c8e5b513415b670fea58c769caa92627e62a3033e1424ffb036a5b",
+      "contentHash": "sha256:cdd3c8adc4a8f7cf2be7fdd7b1e659b153918c913cd55b255a50d7430e09e879",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 6,
-      "findings": [],
-      "issueRefs": [
-        "#758",
-        "#759"
-      ],
-      "domains": []
-    },
-    "cmd/init.go": {
-      "contentHash": "sha256:2f406b5bf64dad629086469bb2d8632708ff3245b0c0f7d3088fce60c1eaf50c",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 5,
       "findings": [],
-      "issueRefs": [
-        "#760"
-      ],
-      "domains": []
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/init.go": {
+      "contentHash": "sha256:4cbb9bae6775669845e98c962fd3bd745e59830dd76b4dcbc73ef366bcb9bb7c",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/intake.go": {
-      "contentHash": "sha256:b15405e3d727c099f7e942d7eeae073a0bbf2299c92de8431cbc164c5bb293bd",
+      "contentHash": "sha256:74dfbb28a4229fb64e4213021290c5b05e082028e808358d269afb7d826b9808",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 2,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/integrity_check.go": {
+      "contentHash": "sha256:f975d6a3c58ca801f7ab20b88d971ba2a9dc44d477057127d7be01e924fee7de",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/label.go": {
+      "contentHash": "sha256:6f6d338084b56801207d228fed0d8a760bc5960b7d33993871318051cb20fe0f",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
       "findingCount": 1,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/list.go": {
-      "contentHash": "sha256:7eb5d73789e2219f8225d61f8f710233bf5ba982a3d61d3e77d0717a79eba271",
+      "contentHash": "sha256:b2c26dde0f2cb744e35366c68a7c0d4b98dae0771ecad4c92cd85ffff6b42670",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 2,
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/move.go": {
-      "contentHash": "sha256:49e8294f3bcc0808604f9e8de7e0bfaf8eae4abd294804ead9c80377102bd4ce",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 4,
+      "contentHash": "sha256:fc62cd2e849d2e104ebf75e21b0632145a2c7bb7099683c14ab4483e4f4256ac",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
       "findings": [],
-      "issueRefs": [
-        "#761",
-        "#762"
-      ],
-      "domains": []
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "cmd/root.go": {
-      "contentHash": "sha256:41cd7652670bd01043c57850399e67d7a87467cf4e070ef0d45850e001d8dc24",
+      "contentHash": "sha256:8a1c6eabef5639637cd798cf8f9546a3202d91118ef8af005bcbcaf6da847e1c",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    },
-    "cmd/split.go": {
-      "contentHash": "sha256:74bb3d88229032092777839fb6f0757d69304db27273e6ab27145e8a3133b515",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    },
-    "cmd/sub.go": {
-      "contentHash": "sha256:b011d25b3138cf74d615d12d1047391cf0069fb154ffc8d61fdabc7f2d5f4c6f",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 3,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    },
-    "cmd/triage.go": {
-      "contentHash": "sha256:b40215965a4ebd5c831da31bc39ae2bb93733f5bf9490180579a907f7aa0ea52",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 3,
-      "findings": [],
-      "issueRefs": [
-        "#763"
-      ],
-      "domains": []
-    },
-    "cmd/validation.go": {
-      "contentHash": "sha256:fae2d35ca0b1954007015386a8a6236f10921d95e91421fbfbcca32e91e4ad48",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    },
-    "cmd/view.go": {
-      "contentHash": "sha256:1fd894f78c8aad641451a963aa38bd156195ac1eef7061190254db125c9d7942",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 4,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    },
-    "internal/api/client.go": {
-      "contentHash": "sha256:2ee05b115b5caf51db371c8c63547a0cba89c9ffd2451dba8ee5b85406ef1ebb",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 3,
-      "findings": [],
-      "issueRefs": [
-        "#748",
-        "#749"
-      ],
-      "domains": []
-    },
-    "internal/api/errors.go": {
-      "contentHash": "sha256:7638264d91c30d737b3dff79966a4e4ebe6f6d314976c3af283cca965699a572",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 2,
       "findings": [],
-      "issueRefs": [
-        "#750"
-      ],
-      "domains": []
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/split.go": {
+      "contentHash": "sha256:d0c59f71596ab700fd6edca1a28b6c1da7490ab5a3c6658aec073ecf2a9b6eeb",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/sub.go": {
+      "contentHash": "sha256:6dfbbb2374c5841617edd542e2d6099e1e13089c9944f5e31623a1945271e5f1",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 2,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/triage.go": {
+      "contentHash": "sha256:d70b8dbe2d5ea67a033213d32437fb32b57e226fbc8641e0c6af44e429fc4e55",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/validation.go": {
+      "contentHash": "sha256:3ad2f2d8273779eef6f5b89db3a0b03bb4f3e66405d5a31cb3dbfe6aa3966488",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "cmd/view.go": {
+      "contentHash": "sha256:6a98d266112417dc91e168dbc5c4bed1fa911063b78c94859bda2ed9c518a8d9",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "internal/api/client.go": {
+      "contentHash": "sha256:e2b800d03484aa5fbc3cbc5d28659ee9b6cb05717871f499200863bf9f10fb44",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 3,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "internal/api/errors.go": {
+      "contentHash": "sha256:766776a0f000f1feaee14da30148f31fa90111fa85f674281bb7fb6765900761",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "internal/api/mutations.go": {
-      "contentHash": "sha256:50366312f970cf44c3f2634a9a7f330a6e72709a9530ce707d8f062c78ca7fe9",
+      "contentHash": "sha256:7fccb16797aa91594618d0ed2a58da33950f6115ed93b35df574cb6930330f8c",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 3,
       "findings": [],
-      "issueRefs": [
-        "#751"
-      ],
-      "domains": []
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "internal/api/queries.go": {
-      "contentHash": "sha256:e96d7c162890707f0078f5a7891d31c55501d4e4b9a70d716223d45a20a4776a",
+      "contentHash": "sha256:440cfd1f133d463a7868c814a784a70b31dd070ea7c6494d0138b6f002a5b0d4",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 3,
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
       "findings": [],
-      "issueRefs": [
-        "#752"
-      ],
-      "domains": []
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "internal/api/retry.go": {
       "contentHash": "sha256:0fcabf1c54b0083992bd47b4767799fd5e8d2bd4c227195fa84bf31a392bd00a",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 2,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    },
-    "internal/api/types.go": {
-      "contentHash": "sha256:a797021116d7e23b4c465af3167f278720759661b6a2fa3a9e7de074ea07bcfa",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 0,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "internal/api/types.go": {
+      "contentHash": "sha256:37d31093dc08f8816e5a6acad3eb1f268d084715281c5639c1d30a6eeacd07bb",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "internal/config/acceptance.go": {
       "contentHash": "sha256:5f390d75cd75997a7cae619f62468584417e6466f5fc6be7782cd0d078f276bd",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 0,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "internal/config/config.go": {
-      "contentHash": "sha256:040c2c69ef34ff9ebbe7aa2eadc6c3fe0c4cfde6c0632760aca54b2ecfdf1a8c",
+      "contentHash": "sha256:92962e62958fea6b89c594f3b108d31f240fc60c2cd1b3e0f9dc819086af3cc7",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 2,
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
       "findings": [],
-      "issueRefs": [
-        "#753"
-      ],
-      "domains": []
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "internal/defaults/embed.go": {
       "contentHash": "sha256:638bd9e815d07c5ccd04a249e1719469643a600c5c2b8fa4e8ad0aa1b53e9d79",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 0,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
     },
     "internal/framework/detect.go": {
-      "contentHash": "sha256:958b7b60ffcaec5e9ae42dc6613d83e95789d43deca670533b1753b029f52e3e",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    },
-    "internal/testutil/testutil.go": {
-      "contentHash": "sha256:96de449d9f935de4f72d402de0fbce19a8f6ae9be021f97a23a3240f3331eadd",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    },
-    "internal/ui/ui.go": {
-      "contentHash": "sha256:5d4b8f73c47a9ac0981fd03a4aa5957b08928ef4c3df7846316743655cd9ac57",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 3,
-      "findings": [],
-      "issueRefs": [
-        "#754"
-      ],
-      "domains": []
-    },
-    "internal/version/version.go": {
-      "contentHash": "sha256:f0db0760afb4bf3cf61facb4109e01e354ec3ccbdd87ab5516cbb4221c0ae092",
+      "contentHash": "sha256:b4b1ef28b70617856207d91ce3a1d4171f7fe3a6cb846dbd556fca81a61e6c08",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-03-26",
       "findingCount": 0,
       "findings": [],
       "issueRefs": [],
-      "domains": []
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "internal/integrity/integrity.go": {
+      "contentHash": "sha256:73a54ed5fa7ff8cf445c77486cfedb8984d4d62d496ee758c3f650bd503ff7fe",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "internal/testutil/testutil.go": {
+      "contentHash": "sha256:a94b23d9658927a5916e34f83759b7536bb6afe6bad7e478d339129ba7dd8680",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "internal/ui/ui.go": {
+      "contentHash": "sha256:cccfc5116cd135746bc1ce0716eaf64fcdc7ccd4b3b923dcc36f3cf17571a4b3",
+      "status": "flagged",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 1,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
+    },
+    "internal/version/version.go": {
+      "contentHash": "sha256:f771260812a028a2d9927ccb6b6eed6f3ef940c0d42c99905a17482f28a79343",
+      "status": "approved",
+      "reviewedAt": "2026-03-26",
+      "findingCount": 0,
+      "findings": [],
+      "issueRefs": [],
+      "domains": [
+        "security",
+        "performance"
+      ]
     }
   }
 }

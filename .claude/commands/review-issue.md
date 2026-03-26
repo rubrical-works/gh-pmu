@@ -1,5 +1,5 @@
 ---
-version: "v0.70.0"
+version: "v0.72.0"
 description: Review issues with type-specific criteria (project)
 argument-hint: "#issue [#issue...] [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -31,10 +31,10 @@ Multiple issues: reviews sequentially.
 ```bash
 node ./.claude/scripts/shared/review-preamble.js $ISSUE [--with extensions] [--mode mode] [--force]
 ```
-- `ok: false`: report error -> **STOP**
-- `context.redirect`: invoke corresponding skill with all original args (`#$ISSUE [--with extensions] [--mode mode] [--force]`) -> **STOP**
+- `ok: false`: report error → **STOP**
+- `context.redirect`: invoke corresponding skill with all original args (`#$ISSUE [--with extensions] [--mode mode] [--force]`) → **STOP**
 - Closed: ask user
-- `earlyExit: true` (issue has `reviewed` label, no `--force`): report count, early exit -> **STOP**
+- `earlyExit: true` (reviewed label, no `--force`): report count → **STOP**
 Extract: `context`, `criteria`, `extensions`, `warnings`.
 
 <!-- USER-EXTENSION-START: pre-review -->
@@ -60,30 +60,13 @@ Re-read `.claude/metadata/review-mode-criteria.json` from disk. Use AskUserQuest
 **Step 2d: Recommendation**
 Ready for work / Needs minor revision / Needs revision / Needs major rework.
 ### Step 3: Finalize (Script)
-Write findings to `.tmp-$ISSUE-findings.json`:
-```json
-{
-  "issue": 42,
-  "title": "Issue title from context",
-  "reviewNumber": 1,
-  "type": "bug",
-  "findings": {
-    "autoEvaluated": [
-      { "id": "title-clear", "criterion": "Title clear?", "status": "pass", "evidence": "..." }
-    ],
-    "userEvaluated": []
-  },
-  "recommendation": "Ready for work",
-  "recommendationReason": "All criteria passed"
-}
-```
-**Required:** `issue`, `title`, `reviewNumber`, `type`, `findings`, `recommendation`.
-**Status:** `pass`, `warn`, `fail`, `skip`. **Recommendation:** `Ready for work`, `Needs minor revision`, `Needs revision`, `Needs major rework`. **Solo:** `userEvaluated` is `[]`.
+Write findings to `.tmp-$ISSUE-findings.json`. **Read** `.claude/scripts/shared/lib/findings-schema.json` for contract structure, required fields, status values, and recommendation values. Solo mode: `userEvaluated` is `[]`.
 ```bash
 node ./.claude/scripts/shared/review-finalize.js $ISSUE -F .tmp-$ISSUE-findings.json
 ```
 Handles body metadata, comment, labels, epic propagation. Clean up.
 Non-`--with` tip: Available extensions listed.
+**Extensions Applied** lists only domains with findings. At least one domain section when `--with` used; if none produce findings, fall back to standard with warning.
 
 <!-- USER-EXTENSION-START: post-review -->
 <!-- USER-EXTENSION-END: post-review -->

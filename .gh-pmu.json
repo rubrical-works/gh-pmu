@@ -1,5 +1,5 @@
 {
-  "version": "1.4.0",
+  "version": "1.4.1",
   "project": {
     "name": "gh-pmu",
     "number": 11,
@@ -48,8 +48,8 @@
   "acceptance": {
     "accepted": true,
     "user": "sbeals",
-    "date": "2026-03-15",
-    "version": "1.3.0"
+    "date": "2026-03-25",
+    "version": "1.4.1"
   },
   "metadata": {
     "project": {

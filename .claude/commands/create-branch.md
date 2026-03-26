@@ -1,5 +1,5 @@
 ---
-version: "v0.70.0"
+version: "v0.72.0"
 description: Create a branch with tracker issue (project)
 argument-hint: "<branch-name> (e.g., release/v0.16.0, my-feature, bugfix-123)"
 copyright: "Rubrical Works (c) 2026"
@@ -19,17 +19,18 @@ Creates a new branch and associated tracker issue for any branch type.
 |----------|----------|-------------|
 | `$1` | Yes | Branch name (any valid git branch name) |
 ---
+## Execution Guidance
+Use 2-3 coarse tasks: "Validate and create branch", "Configure branch", "Report and commit". Validate branch name inline (no dedicated tool call). Chain independent shell commands with `&&` or run in parallel where noted.
+---
 ## Workflow
-### Step 1: Validate Arguments
-Branch name must be valid git branch name (no spaces, no special characters git rejects).
-If invalid or empty, report error and stop.
-### Step 2: Check Working Directory
+### Step 1: Validate and Check Working Directory
+Validate branch name inline — must be valid git branch name (no spaces, no special characters git rejects). If invalid or empty, report error and stop.
 ```bash
 git status --porcelain
 ```
 **If changes exist:**
 1. Report: "Uncommitted changes detected. These will be carried to the new branch."
-2. Save output for Step 6 reporting
+2. Save output for Step 4 reporting
 3. Continue with branch creation (do NOT block)
 
 <!-- USER-EXTENSION-START: pre-create -->
@@ -40,13 +41,12 @@ git status --porcelain .gh-pmu.json
 **If `success` is false, STOP.**
 <!-- USER-EXTENSION-END: pre-create -->
 
-### Step 3: Create Branch with Tracker
+### Step 2: Create Branch and Populate Tracker
 ```bash
 gh pmu branch start --name "$BRANCH"
 ```
-Creates git branch `$BRANCH` and tracker issue with `branch` label.
-### Step 3.5: Populate Tracker Body with Guidance
-Write a temp file with workflow guidance, then update the tracker issue body:
+Creates git branch `$BRANCH` and tracker issue with `branch` label. Extract tracker number from output.
+Then write tracker body and update in one call:
 ```markdown
 ## Branch: $BRANCH
 
@@ -66,42 +66,35 @@ Issues assigned to this branch appear as sub-issues below.
 ```bash
 gh pmu edit [TRACKER_NUMBER] -F .tmp-body.md && rm .tmp-body.md
 ```
-### Step 4: Switch to Branch
+### Step 3: Configure Branch (parallelizable)
+Switch to branch, push to remote, set labels, and auto-assign tracker. Chain with `&&` or run in parallel tool calls.
 ```bash
-git checkout "$BRANCH"
+git checkout "$BRANCH" && git push -u origin "$BRANCH"
 ```
-### Step 5: Push Branch to Remote
-```bash
-git push -u origin "$BRANCH"
-```
-### Step 5.5: Set Active Label
+**In parallel** (after checkout/push completes):
 ```bash
 node .claude/scripts/shared/lib/active-label.js ensure [TRACKER_NUMBER]
 ```
-### Step 5.6: Auto-Assign Tracker to Branch
-Assign the tracker issue to its own branch and apply the "assigned" label:
 ```bash
-gh pmu move [TRACKER_NUMBER] --branch "$BRANCH"
-gh issue edit [TRACKER_NUMBER] --add-label assigned
+gh pmu move [TRACKER_NUMBER] --branch "$BRANCH" && gh issue edit [TRACKER_NUMBER] --add-label assigned
 ```
-This ensures the tracker is born assigned — no separate `/assign-branch` step needed for the tracker itself.
 
 <!-- USER-EXTENSION-START: post-create -->
 <!-- USER-EXTENSION-END: post-create -->
 
-### Step 6: Report Completion
+### Step 4: Report Completion
 ```
 Branch created.
 
 Branch: $BRANCH
 Tracker: #[tracker-issue-number]
 ```
-**If uncommitted changes detected in Step 2:**
+**If uncommitted changes detected in Step 1:**
 Report carried-over files from saved `git status --porcelain` output.
 **Conditional Commit Prompt:**
 If any changes exist (staged, unstaged, or untracked):
 **ASK USER:** "Stage and commit all changes to new branch? (y/n)"
-- **Yes:** Request commit message, run `git add -A && git commit -m "<message>"`, report success
+- **Yes:** Auto-generate commit message from changed files using format: `chore: committed {file summaries} during create-branch` (e.g., `chore: committed skill-keywords.json during create-branch`). Use basenames, not full paths. Run `git add -A && git commit -m "<auto-message>"`, report success. Do NOT prompt for a commit message.
 - **No:** Continue without modifying working tree
 **Always end with:**
 ```
