@@ -226,10 +226,13 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 		for _, optField := range defs.Fields.CreateIfMissing {
 			exists, err := client.FieldExists(newProject.ID, optField.Name)
 			if err != nil {
-				continue // Skip on error in non-interactive mode
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to check field %q: %v\n", optField.Name, err)
+				continue
 			}
 			if !exists {
-				_, _ = client.CreateProjectField(newProject.ID, optField.Name, optField.Type, optField.Options)
+				if _, err := client.CreateProjectField(newProject.ID, optField.Name, optField.Type, optField.Options); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to create field %q: %v\n", optField.Name, err)
+				}
 			}
 		}
 
@@ -237,16 +240,22 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 		for _, labelDef := range defs.Labels {
 			exists, err := client.LabelExists(repoOwner, repoName, labelDef.Name)
 			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to check label %q: %v\n", labelDef.Name, err)
 				continue
 			}
 			if !exists {
-				_ = client.CreateLabel(repoOwner, repoName, labelDef.Name, labelDef.Color, labelDef.Description)
+				if err := client.CreateLabel(repoOwner, repoName, labelDef.Name, labelDef.Color, labelDef.Description); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to create label %q: %v\n", labelDef.Name, err)
+				}
 			}
 		}
 	}
 
 	// Refetch fields after potential creation
-	fields, _ := client.GetProjectFields(newProject.ID)
+	fields, err := client.GetProjectFields(newProject.ID)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to refetch project fields: %v\n", err)
+	}
 
 	// Convert to metadata
 	metadata := &ProjectMetadata{

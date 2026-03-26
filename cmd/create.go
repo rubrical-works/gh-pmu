@@ -206,9 +206,12 @@ func runCreateWithDeps(cmd *cobra.Command, opts *createOptions, cfg *config.Conf
 		if opts.bodyFile != "" {
 			return fmt.Errorf("cannot use --body-file and --body-stdin together")
 		}
-		content, err := io.ReadAll(os.Stdin)
+		content, err := io.ReadAll(io.LimitReader(os.Stdin, maxBodyFileSize+1))
 		if err != nil {
 			return fmt.Errorf("failed to read body from stdin: %w", err)
+		}
+		if int64(len(content)) > maxBodyFileSize {
+			return fmt.Errorf("stdin input exceeds maximum size of 1MB")
 		}
 		body = string(content)
 	}
@@ -486,20 +489,32 @@ func stripBranchPrefix(title string) string {
 	return strings.TrimPrefix(title, "Release: ")
 }
 
-// readBodyFile reads the body content from a file or stdin
+// maxBodyFileSize is the maximum size for body/template file reads (1MB).
+const maxBodyFileSize = 1 * 1024 * 1024
+
+// readBodyFile reads the body content from a file or stdin with a 1MB size limit.
 func readBodyFile(path string) (string, error) {
 	var content []byte
 	var err error
 
 	if path == "-" {
-		// Read from stdin
-		content, err = io.ReadAll(os.Stdin)
+		content, err = io.ReadAll(io.LimitReader(os.Stdin, maxBodyFileSize+1))
 	} else {
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			return "", statErr
+		}
+		if info.Size() > maxBodyFileSize {
+			return "", fmt.Errorf("file %s exceeds maximum size of 1MB", path)
+		}
 		content, err = os.ReadFile(path)
 	}
 
 	if err != nil {
 		return "", err
+	}
+	if int64(len(content)) > maxBodyFileSize {
+		return "", fmt.Errorf("input exceeds maximum size of 1MB")
 	}
 
 	return string(content), nil
@@ -516,6 +531,13 @@ func loadIssueTemplate(owner, repo, templateName string) (string, error) {
 	}
 
 	for _, path := range localPaths {
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			continue
+		}
+		if info.Size() > maxBodyFileSize {
+			continue
+		}
 		if content, err := os.ReadFile(path); err == nil {
 			return extractTemplateBody(string(content)), nil
 		}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -341,7 +342,10 @@ func parseCommitLog(output string) []CommitInfo {
 			continue
 		}
 
-		date, _ := time.Parse(time.RFC3339, parts[2])
+		date, err := time.Parse(time.RFC3339, parts[2])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse commit date %q: %v\n", parts[2], err)
+		}
 		commits = append(commits, CommitInfo{
 			Hash:    parts[0],
 			Author:  parts[1],
@@ -545,6 +549,20 @@ func outputHistoryJSON(commits []CommitInfo) error {
 	return encoder.Encode(commits)
 }
 
+// escapeMarkdown escapes markdown special characters for use in table cells.
+var mdReplacer = strings.NewReplacer(
+	`|`, `\|`,
+	`[`, `\[`,
+	`]`, `\]`,
+	`*`, `\*`,
+	`_`, `\_`,
+	"`", "\\`",
+)
+
+func escapeMarkdown(s string) string {
+	return mdReplacer.Replace(s)
+}
+
 // outputMarkdown writes history to a markdown file in History/ directory
 func outputMarkdown(commits []CommitInfo, targetPath, repoOwner, repoName string) error {
 	// Create History/ directory
@@ -603,15 +621,12 @@ func outputMarkdown(commits []CommitInfo, targetPath, repoOwner, repoName string
 			issuesStr = strings.Join(issueLinks, ", ")
 		}
 
-		// Escape pipe characters in subject
-		subject := strings.ReplaceAll(commit.Subject, "|", "\\|")
-
 		b.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s | %s | %s |\n",
-			commit.Hash,
+			escapeMarkdown(commit.Hash),
 			commit.Date.Format("2006-01-02"),
-			commit.Author,
-			commit.ChangeType,
-			subject,
+			escapeMarkdown(commit.Author),
+			escapeMarkdown(commit.ChangeType),
+			escapeMarkdown(commit.Subject),
 			issuesStr,
 		))
 	}
@@ -788,7 +803,10 @@ func fetchCommitComments(client commitCommentFetcher, hash, owner, repo string) 
 
 	var comments []CommitComment
 	for _, c := range apiComments {
-		date, _ := time.Parse(time.RFC3339, c.CreatedAt)
+		date, parseErr := time.Parse(time.RFC3339, c.CreatedAt)
+		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse comment date %q: %v\n", c.CreatedAt, parseErr)
+		}
 		comments = append(comments, CommitComment{
 			Author: c.User.Login,
 			Body:   c.Body,
@@ -1139,9 +1157,10 @@ func generateHistoryHTML(commits []CommitInfo, targetPath, repoOwner, repoName s
 		sb.WriteString("    <div class=\"commit-header\">\n")
 
 		// Hash with link to GitHub
-		commitURL := fmt.Sprintf("https://github.com/%s/%s/commit/%s", repoOwner, repoName, commit.Hash)
+		commitURL := fmt.Sprintf("https://github.com/%s/%s/commit/%s",
+			url.PathEscape(repoOwner), url.PathEscape(repoName), url.PathEscape(commit.Hash))
 		sb.WriteString(fmt.Sprintf("      <a href=\"%s\" class=\"hash\" target=\"_blank\">%s</a>\n",
-			commitURL, commit.Hash))
+			commitURL, html.EscapeString(commit.Hash)))
 
 		// Meta info
 		sb.WriteString(fmt.Sprintf("      <span class=\"meta\"> | %s | <span class=\"author\">%s</span> | %s</span>\n",

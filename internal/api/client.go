@@ -19,31 +19,54 @@ const FeatureSubIssues = "sub_issues"
 // FeatureIssueTypes is the GitHub API preview header for issue types
 const FeatureIssueTypes = "issue_types"
 
-// testMu guards testTransport and testAuthToken against concurrent access.
-var testMu sync.Mutex
+// testClientHook is set by SetTestTransport/SetTestAuthToken to override
+// client options during testing. nil in production use.
+var (
+	testMu         sync.Mutex
+	testClientHook func(*ClientOptions)
+)
 
-// testTransport is a package-level transport override for testing.
-// When set, NewClient() will use this transport instead of http.DefaultTransport.
-// This allows integration tests to mock the HTTP layer without modifying production code.
-var testTransport http.RoundTripper
+// testState holds the current test override values, guarded by testMu.
+var testState struct {
+	transport http.RoundTripper
+	token     string
+}
 
-// testAuthToken is a package-level auth token override for testing.
-var testAuthToken string
-
-// SetTestTransport sets a custom transport for testing purposes.
-// Call with nil to clear the test transport.
+// SetTestTransport sets a custom HTTP transport for testing purposes.
+// This overrides the transport used by NewClient(). Call with nil to clear.
+// Intended for use in test code only.
 func SetTestTransport(t http.RoundTripper) {
 	testMu.Lock()
 	defer testMu.Unlock()
-	testTransport = t
+	testState.transport = t
+	rebuildTestHook()
 }
 
 // SetTestAuthToken sets a custom auth token for testing purposes.
-// Call with empty string to clear the test token.
+// This overrides the token used by NewClient(). Call with "" to clear.
+// Intended for use in test code only.
 func SetTestAuthToken(token string) {
 	testMu.Lock()
 	defer testMu.Unlock()
-	testAuthToken = token
+	testState.token = token
+	rebuildTestHook()
+}
+
+// rebuildTestHook updates testClientHook from current testState. Caller must hold testMu.
+func rebuildTestHook() {
+	if testState.transport == nil && testState.token == "" {
+		testClientHook = nil
+		return
+	}
+	t, tok := testState.transport, testState.token
+	testClientHook = func(opts *ClientOptions) {
+		if t != nil {
+			opts.Transport = t
+		}
+		if tok != "" {
+			opts.AuthToken = tok
+		}
+	}
 }
 
 // GraphQLClient interface allows mocking the GitHub GraphQL client for testing
@@ -90,15 +113,10 @@ func NewClient() (*Client, error) {
 		EnableSubIssues:  true,
 		EnableIssueTypes: true,
 	}
-	// Apply test overrides if set
-	testMu.Lock()
-	if testTransport != nil {
-		opts.Transport = testTransport
+	// Apply test overrides if set (hook is nil in production builds)
+	if testClientHook != nil {
+		testClientHook(&opts)
 	}
-	if testAuthToken != "" {
-		opts.AuthToken = testAuthToken
-	}
-	testMu.Unlock()
 	return NewClientWithOptions(opts)
 }
 
@@ -201,7 +219,7 @@ func (h *httpRawGraphQL) DoRawBody(body []byte, headers map[string]string) ([]by
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024)) // 10MB limit
 	if err != nil {
 		return nil, fmt.Errorf("failed to read GraphQL response: %w", err)
 	}
@@ -215,14 +233,7 @@ func (h *httpRawGraphQL) DoRawBody(body []byte, headers map[string]string) ([]by
 
 // joinFeatures joins feature names with commas
 func joinFeatures(features []string) string {
-	if len(features) == 0 {
-		return ""
-	}
-	result := features[0]
-	for i := 1; i < len(features); i++ {
-		result += "," + features[i]
-	}
-	return result
+	return strings.Join(features, ",")
 }
 
 // GetLatestGitTag returns the latest git tag using git describe

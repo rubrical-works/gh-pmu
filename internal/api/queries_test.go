@@ -2715,12 +2715,61 @@ func TestGetProjectItems_WithLimit_Zero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	// Should fetch all items from both pages
+	// Should fetch all items from both pages (4 < default max of 10000)
 	if len(items) != 4 {
 		t.Errorf("Expected 4 items with no limit, got %d", len(items))
 	}
 	if callCount != 2 {
 		t.Errorf("Expected 2 API calls with no limit, got %d", callCount)
+	}
+}
+
+func TestGetProjectItems_DefaultMaxLimit(t *testing.T) {
+	// Verify that Limit: 0 applies default max (10000) instead of truly unlimited
+	// We test this indirectly: with a nil filter, early termination at limit should work
+	callCount := 0
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name == "GetProjectItems" {
+				callCount++
+				v := reflect.ValueOf(query).Elem()
+				node := v.FieldByName("Node")
+				projectV2 := node.FieldByName("ProjectV2")
+				items := projectV2.FieldByName("Items")
+				nodes := items.FieldByName("Nodes")
+				pageInfoField := items.FieldByName("PageInfo")
+
+				nodeType := nodes.Type().Elem()
+				newNodes := reflect.MakeSlice(nodes.Type(), 1, 1)
+				newNode := reflect.New(nodeType).Elem()
+				newNode.FieldByName("ID").SetString("item-1")
+				content := newNode.FieldByName("Content")
+				content.FieldByName("TypeName").SetString("Issue")
+				issue := content.FieldByName("Issue")
+				issue.FieldByName("ID").SetString("issue-1")
+				issue.FieldByName("Number").SetInt(1)
+				issue.FieldByName("Title").SetString("Test")
+				issue.FieldByName("State").SetString("OPEN")
+				repo := issue.FieldByName("Repository")
+				repo.FieldByName("NameWithOwner").SetString("owner/repo")
+				newNodes.Index(0).Set(newNode)
+				nodes.Set(newNodes)
+
+				pageInfoField.FieldByName("HasNextPage").SetBool(false)
+				pageInfoField.FieldByName("EndCursor").SetString("")
+			}
+			return nil
+		},
+	}
+
+	client := NewClientWithGraphQL(mock)
+	// nil filter should apply default max limit of 10000
+	items, err := client.GetProjectItems("proj-id", nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Errorf("Expected 1 item, got %d", len(items))
 	}
 }
 

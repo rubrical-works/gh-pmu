@@ -176,20 +176,28 @@ func runEditWithDeps(cmd *cobra.Command, opts *editOptions, cfg *config.Config, 
 
 	// Add labels if provided
 	if len(opts.addLabels) > 0 {
+		var labelErrors []string
 		for _, label := range opts.addLabels {
 			if err := client.AddLabelToIssue(owner, repo, issue.ID, label); err != nil {
-				return fmt.Errorf("failed to add label '%s': %w", label, err)
+				labelErrors = append(labelErrors, fmt.Sprintf("add '%s': %v", label, err))
 			}
+		}
+		if len(labelErrors) > 0 {
+			return fmt.Errorf("failed to apply labels: %s", strings.Join(labelErrors, "; "))
 		}
 		updates = append(updates, fmt.Sprintf("%d label(s) added", len(opts.addLabels)))
 	}
 
 	// Remove labels if provided
 	if len(opts.removeLabels) > 0 {
+		var labelErrors []string
 		for _, label := range opts.removeLabels {
 			if err := client.RemoveLabelFromIssue(owner, repo, issue.ID, label); err != nil {
-				return fmt.Errorf("failed to remove label '%s': %w", label, err)
+				labelErrors = append(labelErrors, fmt.Sprintf("remove '%s': %v", label, err))
 			}
+		}
+		if len(labelErrors) > 0 {
+			return fmt.Errorf("failed to apply labels: %s", strings.Join(labelErrors, "; "))
 		}
 		updates = append(updates, fmt.Sprintf("%d label(s) removed", len(opts.removeLabels)))
 	}

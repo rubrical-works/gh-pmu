@@ -487,11 +487,15 @@ type ProjectItemsFilter struct {
 // If filter.Limit > 0, pagination terminates early once the limit is reached.
 func (c *Client) GetProjectItems(projectID string, filter *ProjectItemsFilter) ([]ProjectItem, error) {
 
+	const defaultMaxItems = 10000
 	var allItems []ProjectItem
 	var cursor *string
 	limit := 0
 	if filter != nil {
 		limit = filter.Limit
+	}
+	if limit == 0 {
+		limit = defaultMaxItems
 	}
 
 	for {
@@ -971,6 +975,7 @@ func (c *Client) GetProjectItemsByIssues(projectID string, refs []IssueRef) ([]P
 
 		var repoIssuesData map[string]json.RawMessage
 		if err := json.Unmarshal(repoData, &repoIssuesData); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse batch response for %s: %v\n", repoAlias, err)
 			continue
 		}
 

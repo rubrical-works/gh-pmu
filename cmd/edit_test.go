@@ -382,8 +382,8 @@ func TestRunEditWithDeps_AddLabelError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error when AddLabelToIssue fails")
 	}
-	if !contains(err.Error(), "failed to add label") {
-		t.Errorf("Expected 'failed to add label' error, got: %s", err.Error())
+	if !contains(err.Error(), "failed to apply labels") {
+		t.Errorf("Expected 'failed to apply labels' error, got: %s", err.Error())
 	}
 }
 
@@ -431,8 +431,8 @@ func TestRunEditWithDeps_RemoveLabelError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error when RemoveLabelFromIssue fails")
 	}
-	if !contains(err.Error(), "failed to remove label") {
-		t.Errorf("Expected 'failed to remove label' error, got: %s", err.Error())
+	if !contains(err.Error(), "failed to apply labels") {
+		t.Errorf("Expected 'failed to apply labels' error, got: %s", err.Error())
 	}
 }
 

@@ -1,5 +1,5 @@
 ---
-version: "v0.70.0"
+version: "v0.73.0"
 description: Collaborative path analysis for proposals and enhancements (project)
 argument-hint: "#issue"
 copyright: "Rubrical Works (c) 2026"
@@ -34,21 +34,33 @@ Turn-based collaborative scenario path discovery on proposals and enhancements.
 ```bash
 node ./.claude/scripts/shared/paths-preamble.js $ISSUE [--quick] [--dry-run] [--categories IDs] [--from-code path]
 ```
-If `ok: false`: report error -> **STOP**.
+If `ok: false`: report error → **STOP**.
 Extract `context`: issue data, config (categories), flags, proposalFile, partial/resumeFrom.
 If enhancement: display `context.config.fromCodeHint`.
 ### Step 2: Load Content
 **`--from-code`:** Validate path, delegate to skill (Step 2b).
 **Otherwise:** Read `context.proposalFile`. Fall back to issue body. Empty: STOP.
+#### Step 2a: Load Screen Specs (Supplementary Context)
+After loading primary content, check for associated screen specs:
+1. Check proposal/issue body for `## Screen Specs` section with file references
+2. If none: scan `Mockups/*/Specs/` for specs matching issue title/body terms
+3. If found: read each spec, extract element data (types, validation, required, dependencies, conditionalRender, defaults)
+4. Use as supplementary context for Step 4:
+   - **Edge Cases:** boundary values from `inputRange`
+   - **Exception Paths:** required field violations, validation failures
+   - **Corner Cases:** element dependencies, conditional rendering combos
+   - **Negative Test Scenarios:** invalid inputs from type/validation constraints
+5. Report: `"Screen specs loaded: {N} screens, {M} elements — will inform path candidate generation."`
+No specs found: skip silently.
 #### Step 2b: Code Paths
 Validate path, scan source files, warn >50. Invoke skill. Zero candidates: AskUserQuestion manual/stop.
 ### Step 3: Check Existing / Partial Analysis
 Search for `## Path Analysis`. Use `context.partial`.
 Partial: resume. Full: load as starting point. Not found: empty.
 ### Step 4: Turn-Based Discovery (or Dry-Run)
-**Dry-run:** Generate all candidates, display grouped summary -> Step 7 -> STOP.
+**Dry-run:** Generate all candidates, display grouped summary → Step 7 → STOP.
 **Per category:**
-**4a:** Progress breadcrumb. **4b:** AI generates 2-5 candidates. **4c:** User validates (AskUserQuestion, multiSelect, "Skip" option). **4d:** User adds or generates more. **4e:** Buffer confirmed.
+**4a:** Progress breadcrumb. **4b:** AI generates 2-5 candidates (use screen spec data when available for precise scenarios). **4c:** User validates (AskUserQuestion, multiSelect, "Skip" option). **4d:** User adds or generates more. **4e:** Buffer confirmed.
 
 <!-- USER-EXTENSION-START: post-category -->
 <!-- USER-EXTENSION-END: post-category -->

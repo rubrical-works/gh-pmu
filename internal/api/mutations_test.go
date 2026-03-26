@@ -1117,9 +1117,9 @@ func TestGitTag_ErrorMessageIncludesGitOutput(t *testing.T) {
 		t.Fatal("Expected error when creating tag with invalid name")
 	}
 
-	// Verify error message includes "git tag failed:" prefix
-	if !strings.Contains(err.Error(), "git tag failed:") {
-		t.Errorf("Expected error to contain 'git tag failed:', got: %v", err)
+	// Verify error message includes validation failure
+	if !strings.Contains(err.Error(), "invalid tag name:") {
+		t.Errorf("Expected error to contain 'invalid tag name:', got: %v", err)
 	}
 }
 
@@ -1139,6 +1139,71 @@ func TestGitCommit_ErrorMessageIncludesGitOutput(t *testing.T) {
 		if !strings.Contains(err.Error(), "git commit failed:") {
 			t.Errorf("Expected error to contain 'git commit failed:', got: %v", err)
 		}
+	}
+}
+
+// ============================================================================
+// validateGitRef Tests
+// ============================================================================
+
+func TestValidateGitRef_ValidRefs(t *testing.T) {
+	validRefs := []string{
+		"main",
+		"feature/add-login",
+		"release/v1.2.3",
+		"pmu/sec-fixes",
+		"my-branch",
+		"my_branch",
+		"v1.0.0",
+		"a",
+	}
+	for _, ref := range validRefs {
+		if err := validateGitRef(ref); err != nil {
+			t.Errorf("validateGitRef(%q) returned error: %v", ref, err)
+		}
+	}
+}
+
+func TestValidateGitRef_InvalidChars(t *testing.T) {
+	invalidRefs := []string{
+		"branch name",
+		"branch\tname",
+		"branch@{name}",
+		"branch~1",
+		"branch^2",
+		"branch:name",
+		"branch?name",
+		"branch*name",
+		"branch[0]",
+	}
+	for _, ref := range invalidRefs {
+		err := validateGitRef(ref)
+		if err == nil {
+			t.Errorf("validateGitRef(%q) should have returned error", ref)
+		}
+		if !strings.Contains(err.Error(), "invalid characters") {
+			t.Errorf("validateGitRef(%q) error should mention 'invalid characters', got: %v", ref, err)
+		}
+	}
+}
+
+func TestValidateGitRef_DashDashPrefix(t *testing.T) {
+	err := validateGitRef("--option")
+	if err == nil {
+		t.Fatal("validateGitRef(\"--option\") should have returned error")
+	}
+	if !strings.Contains(err.Error(), "cannot start with '--'") {
+		t.Errorf("Expected error about '--' prefix, got: %v", err)
+	}
+}
+
+func TestValidateGitRef_EmptyString(t *testing.T) {
+	err := validateGitRef("")
+	if err == nil {
+		t.Fatal("validateGitRef(\"\") should have returned error")
+	}
+	if !strings.Contains(err.Error(), "cannot be empty") {
+		t.Errorf("Expected error about empty name, got: %v", err)
 	}
 }
 

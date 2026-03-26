@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -833,9 +834,7 @@ func (c *Client) getLabelIDs(owner, repo string, labelNames []string) (map[strin
 	// Example: query { repository(owner:"o", name:"r") { l0: label(name:"bug") { id } l1: label(name:"help") { id } } }
 	var queryParts []string
 	for i, name := range labelNames {
-		// Escape the label name for GraphQL string literal
-		escapedName := strings.ReplaceAll(name, `"`, `\"`)
-		queryParts = append(queryParts, fmt.Sprintf(`l%d: label(name: %q) { id }`, i, escapedName))
+		queryParts = append(queryParts, fmt.Sprintf(`l%d: label(name: %q) { id }`, i, name))
 	}
 
 	query := fmt.Sprintf(`query { repository(owner: %q, name: %q) { %s } }`,
@@ -1341,6 +1340,23 @@ func (c *Client) MkdirAll(path string) error {
 	return os.MkdirAll(path, 0750)
 }
 
+// validGitRef matches safe git ref names: alphanumeric, dots, underscores, hyphens, slashes.
+var validGitRef = regexp.MustCompile(`^[a-zA-Z0-9._/-]+$`)
+
+// validateGitRef validates that a git ref name contains only safe characters.
+func validateGitRef(name string) error {
+	if name == "" {
+		return fmt.Errorf("git ref name cannot be empty")
+	}
+	if strings.HasPrefix(name, "--") {
+		return fmt.Errorf("git ref name cannot start with '--': %s", name)
+	}
+	if !validGitRef.MatchString(name) {
+		return fmt.Errorf("git ref name contains invalid characters: %s", name)
+	}
+	return nil
+}
+
 // GitAdd stages files to git
 func (c *Client) GitAdd(paths ...string) error {
 	args := append([]string{"add"}, paths...)
@@ -1354,6 +1370,9 @@ func (c *Client) GitAdd(paths ...string) error {
 
 // GitTag creates an annotated git tag
 func (c *Client) GitTag(tag, message string) error {
+	if err := validateGitRef(tag); err != nil {
+		return fmt.Errorf("invalid tag name: %w", err)
+	}
 	cmd := exec.Command("git", "tag", "-a", tag, "-m", message)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1374,6 +1393,9 @@ func (c *Client) GitCommit(message string) error {
 
 // GitCheckoutNewBranch creates and checks out a new git branch
 func (c *Client) GitCheckoutNewBranch(branch string) error {
+	if err := validateGitRef(branch); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
 	cmd := exec.Command("git", "checkout", "-b", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

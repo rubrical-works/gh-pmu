@@ -144,7 +144,7 @@ func runCommentWithDeps(cmd *cobra.Command, opts *commentOptions, client comment
 	body := opts.body
 
 	if opts.bodyStdin {
-		content, err := io.ReadAll(stdin)
+		content, err := io.ReadAll(io.LimitReader(stdin, 1*1024*1024)) // 1MB limit
 		if err != nil {
 			return fmt.Errorf("failed to read body from stdin: %w", err)
 		}

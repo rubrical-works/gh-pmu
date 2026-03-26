@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -130,24 +130,17 @@ func runFilterWithDeps(cmd *cobra.Command, opts *filterOptions, cfg *config.Conf
 		return fmt.Errorf("failed to get project: %w", err)
 	}
 
-	// Read and parse JSON input from stdin
+	// Read and parse JSON input from stdin using streaming decoder
 	var issues []FilterInput
-	scanner := bufio.NewScanner(stdin)
-	var inputBuilder strings.Builder
-	for scanner.Scan() {
-		inputBuilder.WriteString(scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to read stdin: %w", err)
-	}
-
-	inputStr := strings.TrimSpace(inputBuilder.String())
-	if inputStr == "" {
-		return fmt.Errorf("empty input - pipe issue JSON from 'gh issue list --json ...'")
-	}
-
-	if err := json.Unmarshal([]byte(inputStr), &issues); err != nil {
+	decoder := json.NewDecoder(stdin)
+	if err := decoder.Decode(&issues); err != nil {
+		if err == io.EOF {
+			return fmt.Errorf("empty input - pipe issue JSON from 'gh issue list --json ...'")
+		}
 		return fmt.Errorf("failed to parse JSON input: %w\nExpected JSON array from 'gh issue list --json ...'", err)
+	}
+	if len(issues) == 0 {
+		return fmt.Errorf("empty input - pipe issue JSON from 'gh issue list --json ...'")
 	}
 
 	// Build IssueRef list for targeted query (optimization)

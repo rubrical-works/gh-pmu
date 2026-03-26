@@ -1084,3 +1084,51 @@ func TestHasPipedInput_RegularFile(t *testing.T) {
 		t.Error("Expected true for regular file (piped input)")
 	}
 }
+
+// ============================================================================
+// Streaming JSON parse equivalence tests
+// ============================================================================
+
+func TestStreamingJSONParse_ValidArray(t *testing.T) {
+	jsonData := `[{"number":1,"title":"Test","url":"https://github.com/o/r/issues/1"},{"number":2,"title":"Test2","url":"https://github.com/o/r/issues/2"}]`
+
+	stdin := createTempStdin(t, jsonData)
+	defer os.Remove(stdin.Name())
+	defer stdin.Close()
+
+	mock := newMockFilterClient()
+	mock.project = &api.Project{ID: "proj-1", Title: "Test"}
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "o", Number: 1},
+		Repositories: []string{"o/r"},
+	}
+	opts := &filterOptions{status: "backlog"}
+
+	// Should parse without error — validates streaming decoder handles valid JSON
+	err := runFilterWithDeps(newFilterCommand(), opts, cfg, mock, stdin)
+	// May error on "no items matched" but should NOT error on JSON parse
+	if err != nil && strings.Contains(err.Error(), "failed to parse JSON") {
+		t.Errorf("Streaming JSON parse failed: %v", err)
+	}
+}
+
+func TestStreamingJSONParse_EmptyStdin(t *testing.T) {
+	stdin := createTempStdin(t, "")
+	defer os.Remove(stdin.Name())
+	defer stdin.Close()
+
+	mock := newMockFilterClient()
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "o", Number: 1},
+		Repositories: []string{"o/r"},
+	}
+	opts := &filterOptions{}
+
+	err := runFilterWithDeps(newFilterCommand(), opts, cfg, mock, stdin)
+	if err == nil {
+		t.Fatal("Expected error for empty stdin")
+	}
+	if !strings.Contains(err.Error(), "empty input") {
+		t.Errorf("Expected 'empty input' error, got: %v", err)
+	}
+}

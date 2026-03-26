@@ -496,7 +496,7 @@ func runLabelDeleteWithDeps(cmd *cobra.Command, args []string, opts *labelDelete
 func resolveRepo(repoOverride string) (string, string, error) {
 	if repoOverride != "" {
 		parts := strings.Split(repoOverride, "/")
-		if len(parts) != 2 {
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 			return "", "", fmt.Errorf("invalid --repo format: expected owner/repo, got %s", repoOverride)
 		}
 		return parts[0], parts[1], nil
