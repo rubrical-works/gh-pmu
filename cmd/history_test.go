@@ -1061,3 +1061,33 @@ func TestEscapeMarkdown_NoSpecialChars(t *testing.T) {
 		t.Errorf("escapeMarkdown plain: got %q, want %q", got, input)
 	}
 }
+
+// ============================================================================
+// Error handling tests (Issue #816)
+// ============================================================================
+
+func TestParseCommitLog_InvalidDateWarns(t *testing.T) {
+	// parseCommitLog should still return commits even with unparseable dates
+	input := "abc1234\x00Test Author\x00not-a-date\x00feat: test commit"
+	commits := parseCommitLog(input)
+	if len(commits) != 1 {
+		t.Fatalf("expected 1 commit, got %d", len(commits))
+	}
+	if commits[0].Hash != "abc1234" {
+		t.Errorf("expected hash abc1234, got %s", commits[0].Hash)
+	}
+	if commits[0].Date.IsZero() == false {
+		t.Error("expected zero date for unparseable date string")
+	}
+}
+
+func TestParseCommitLog_ValidDate(t *testing.T) {
+	input := "abc1234\x00Author\x002025-12-10T10:00:00Z\x00feat: test"
+	commits := parseCommitLog(input)
+	if len(commits) != 1 {
+		t.Fatalf("expected 1 commit, got %d", len(commits))
+	}
+	if commits[0].Date.IsZero() {
+		t.Error("expected non-zero date for valid date string")
+	}
+}

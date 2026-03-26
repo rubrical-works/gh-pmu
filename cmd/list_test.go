@@ -291,6 +291,58 @@ func TestRunListWithDeps_InvalidRepoFormat(t *testing.T) {
 	}
 }
 
+func TestRunListWithDeps_EmptyOwnerRepoFormat(t *testing.T) {
+	mock := newMockListClient()
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+	}
+
+	cmd := newListCommand()
+	opts := &listOptions{repo: "/repo"}
+	err := runListWithDeps(cmd, opts, cfg, mock)
+	if err == nil {
+		t.Fatal("expected error for empty owner in repo format")
+	}
+	if !strings.Contains(err.Error(), "invalid --repo format") {
+		t.Errorf("expected 'invalid --repo format' error, got: %v", err)
+	}
+}
+
+func TestRunListWithDeps_EmptyRepoNameFormat(t *testing.T) {
+	mock := newMockListClient()
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+	}
+
+	cmd := newListCommand()
+	opts := &listOptions{repo: "owner/"}
+	err := runListWithDeps(cmd, opts, cfg, mock)
+	if err == nil {
+		t.Fatal("expected error for empty repo name in repo format")
+	}
+	if !strings.Contains(err.Error(), "invalid --repo format") {
+		t.Errorf("expected 'invalid --repo format' error, got: %v", err)
+	}
+}
+
+func TestRunListWithDeps_ValidRepoFormat(t *testing.T) {
+	mock := newMockListClient()
+	mock.project = &api.Project{ID: "proj-1", Title: "Test"}
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+	}
+
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	opts := &listOptions{repo: "owner/repo"}
+	err := runListWithDeps(cmd, opts, cfg, mock)
+	// Should not error on valid repo format (may error on no items, that's fine)
+	if err != nil && strings.Contains(err.Error(), "invalid --repo format") {
+		t.Errorf("valid repo format should not produce format error, got: %v", err)
+	}
+}
+
 func TestRunListWithDeps_WithPriorityFilter(t *testing.T) {
 	mock := newMockListClient()
 	mock.projectItems = []api.ProjectItem{
