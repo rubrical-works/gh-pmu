@@ -833,9 +833,7 @@ func (c *Client) getLabelIDs(owner, repo string, labelNames []string) (map[strin
 	// Example: query { repository(owner:"o", name:"r") { l0: label(name:"bug") { id } l1: label(name:"help") { id } } }
 	var queryParts []string
 	for i, name := range labelNames {
-		// Escape the label name for GraphQL string literal
-		escapedName := strings.ReplaceAll(name, `"`, `\"`)
-		queryParts = append(queryParts, fmt.Sprintf(`l%d: label(name: %q) { id }`, i, escapedName))
+		queryParts = append(queryParts, fmt.Sprintf(`l%d: label(name: %q) { id }`, i, name))
 	}
 
 	query := fmt.Sprintf(`query { repository(owner: %q, name: %q) { %s } }`,
