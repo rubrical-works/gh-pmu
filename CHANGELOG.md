@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-03-25
+
+### Security
+- Updated `github.com/cli/go-gh/v2` from v2.11.1 to v2.12.1 — fixes vulnerability where compromised GitHub Enterprise Server could execute arbitrary commands via CLI extensions (Dependabot alert #1)
+
 ## [1.4.2] - 2026-03-25
 
 ### Changed
