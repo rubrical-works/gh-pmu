@@ -975,6 +975,7 @@ func (c *Client) GetProjectItemsByIssues(projectID string, refs []IssueRef) ([]P
 
 		var repoIssuesData map[string]json.RawMessage
 		if err := json.Unmarshal(repoData, &repoIssuesData); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse batch response for %s: %v\n", repoAlias, err)
 			continue
 		}
 
