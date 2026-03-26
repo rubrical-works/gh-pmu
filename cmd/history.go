@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1150,9 +1151,10 @@ func generateHistoryHTML(commits []CommitInfo, targetPath, repoOwner, repoName s
 		sb.WriteString("    <div class=\"commit-header\">\n")
 
 		// Hash with link to GitHub
-		commitURL := fmt.Sprintf("https://github.com/%s/%s/commit/%s", repoOwner, repoName, commit.Hash)
+		commitURL := fmt.Sprintf("https://github.com/%s/%s/commit/%s",
+			url.PathEscape(repoOwner), url.PathEscape(repoName), url.PathEscape(commit.Hash))
 		sb.WriteString(fmt.Sprintf("      <a href=\"%s\" class=\"hash\" target=\"_blank\">%s</a>\n",
-			commitURL, commit.Hash))
+			commitURL, html.EscapeString(commit.Hash)))
 
 		// Meta info
 		sb.WriteString(fmt.Sprintf("      <span class=\"meta\"> | %s | <span class=\"author\">%s</span> | %s</span>\n",
