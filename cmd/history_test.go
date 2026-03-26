@@ -1009,3 +1009,55 @@ func TestGetCommitComments_EmptyOwnerOrRepo(t *testing.T) {
 		t.Error("expected nil for empty repo")
 	}
 }
+
+// ============================================================================
+// escapeMarkdown Tests
+// ============================================================================
+
+func TestEscapeMarkdown_Brackets(t *testing.T) {
+	got := escapeMarkdown("fix [bug] in parser")
+	want := `fix \[bug\] in parser`
+	if got != want {
+		t.Errorf("escapeMarkdown brackets: got %q, want %q", got, want)
+	}
+}
+
+func TestEscapeMarkdown_Asterisks(t *testing.T) {
+	got := escapeMarkdown("**bold** and *italic*")
+	want := `\*\*bold\*\* and \*italic\*`
+	if got != want {
+		t.Errorf("escapeMarkdown asterisks: got %q, want %q", got, want)
+	}
+}
+
+func TestEscapeMarkdown_Backticks(t *testing.T) {
+	got := escapeMarkdown("fix `calculateTotal` function")
+	want := "fix \\`calculateTotal\\` function"
+	if got != want {
+		t.Errorf("escapeMarkdown backticks: got %q, want %q", got, want)
+	}
+}
+
+func TestEscapeMarkdown_Pipes(t *testing.T) {
+	got := escapeMarkdown("a | b | c")
+	want := `a \| b \| c`
+	if got != want {
+		t.Errorf("escapeMarkdown pipes: got %q, want %q", got, want)
+	}
+}
+
+func TestEscapeMarkdown_MixedContent(t *testing.T) {
+	got := escapeMarkdown("fix [bug] in *parser* with `code` | note")
+	want := "fix \\[bug\\] in \\*parser\\* with \\`code\\` \\| note"
+	if got != want {
+		t.Errorf("escapeMarkdown mixed: got %q, want %q", got, want)
+	}
+}
+
+func TestEscapeMarkdown_NoSpecialChars(t *testing.T) {
+	input := "plain text with no special chars 123"
+	got := escapeMarkdown(input)
+	if got != input {
+		t.Errorf("escapeMarkdown plain: got %q, want %q", got, input)
+	}
+}
