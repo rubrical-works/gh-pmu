@@ -311,7 +311,7 @@ func getStatusColumns(cfg *config.Config) []statusColumn {
 
 // filterBoardItemsByPriority filters board items by priority value
 func filterBoardItemsByPriority(items []api.BoardItem, priority string) []api.BoardItem {
-	var filtered []api.BoardItem
+	filtered := make([]api.BoardItem, 0, len(items))
 	for _, item := range items {
 		if strings.EqualFold(item.Priority, priority) {
 			filtered = append(filtered, item)

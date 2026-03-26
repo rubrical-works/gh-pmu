@@ -233,14 +233,7 @@ func (h *httpRawGraphQL) DoRawBody(body []byte, headers map[string]string) ([]by
 
 // joinFeatures joins feature names with commas
 func joinFeatures(features []string) string {
-	if len(features) == 0 {
-		return ""
-	}
-	result := features[0]
-	for i := 1; i < len(features); i++ {
-		result += "," + features[i]
-	}
-	return result
+	return strings.Join(features, ",")
 }
 
 // GetLatestGitTag returns the latest git tag using git describe

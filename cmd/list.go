@@ -330,7 +330,7 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 
 // filterByFieldValue filters items by a specific field value
 func filterByFieldValue(items []api.ProjectItem, fieldName, value string) []api.ProjectItem {
-	var filtered []api.ProjectItem
+	filtered := make([]api.ProjectItem, 0, len(items))
 	for _, item := range items {
 		for _, fv := range item.FieldValues {
 			if strings.EqualFold(fv.Field, fieldName) && strings.EqualFold(fv.Value, value) {

@@ -11,8 +11,9 @@ import (
 
 // Regex patterns for checkbox detection
 var (
-	checkedBoxRegex   = regexp.MustCompile(`- \[x\]`)
-	uncheckedBoxRegex = regexp.MustCompile(`- \[ \]`)
+	checkedBoxRegex      = regexp.MustCompile(`- \[x\]`)
+	uncheckedBoxRegex    = regexp.MustCompile(`- \[ \]`)
+	uncheckedItemRegex   = regexp.MustCompile(`- \[ \] (.+)`)
 )
 
 // ValidationError represents a validation failure with actionable message
@@ -272,8 +273,6 @@ func countCodeBlockCheckboxes(body string) int {
 // excluding checkboxes inside code blocks.
 func getUncheckedItems(body string) []string {
 	strippedBody := stripCodeBlocks(body)
-	// Match unchecked checkboxes with their text content
-	uncheckedItemRegex := regexp.MustCompile(`- \[ \] (.+)`)
 	matches := uncheckedItemRegex.FindAllStringSubmatch(strippedBody, -1)
 
 	var items []string
