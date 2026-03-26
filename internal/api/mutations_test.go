@@ -1117,9 +1117,9 @@ func TestGitTag_ErrorMessageIncludesGitOutput(t *testing.T) {
 		t.Fatal("Expected error when creating tag with invalid name")
 	}
 
-	// Verify error message includes "git tag failed:" prefix
-	if !strings.Contains(err.Error(), "git tag failed:") {
-		t.Errorf("Expected error to contain 'git tag failed:', got: %v", err)
+	// Verify error message includes validation failure
+	if !strings.Contains(err.Error(), "invalid tag name:") {
+		t.Errorf("Expected error to contain 'invalid tag name:', got: %v", err)
 	}
 }
 
