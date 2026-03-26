@@ -3486,3 +3486,54 @@ func TestRunBranchCloseWithDeps_GetSubIssuesError(t *testing.T) {
 		t.Errorf("Expected error about sub-issues, got: %v", err)
 	}
 }
+
+// ============================================================================
+// sortBranchesByVersionDesc Tests
+// ============================================================================
+
+func TestSortBranchesByVersionDesc_SortedOrder(t *testing.T) {
+	releases := []branchInfo{
+		{version: "1.0.0"},
+		{version: "3.0.0"},
+		{version: "2.0.0"},
+		{version: "1.5.0"},
+	}
+	sortBranchesByVersionDesc(releases)
+	expected := []string{"3.0.0", "2.0.0", "1.5.0", "1.0.0"}
+	for i, r := range releases {
+		if r.version != expected[i] {
+			t.Errorf("index %d: got %s, want %s", i, r.version, expected[i])
+		}
+	}
+}
+
+func TestSortBranchesByVersionDesc_EqualVersions(t *testing.T) {
+	releases := []branchInfo{
+		{version: "1.0.0", codename: "alpha"},
+		{version: "1.0.0", codename: "beta"},
+	}
+	sortBranchesByVersionDesc(releases)
+	// Both are 1.0.0 — sort is stable-ish but both should remain
+	if len(releases) != 2 {
+		t.Errorf("expected 2 releases, got %d", len(releases))
+	}
+	if releases[0].version != "1.0.0" || releases[1].version != "1.0.0" {
+		t.Errorf("expected both 1.0.0, got %s and %s", releases[0].version, releases[1].version)
+	}
+}
+
+func TestSortBranchesByVersionDesc_EmptyInput(t *testing.T) {
+	var releases []branchInfo
+	sortBranchesByVersionDesc(releases) // should not panic
+	if len(releases) != 0 {
+		t.Errorf("expected empty, got %d", len(releases))
+	}
+}
+
+func TestSortBranchesByVersionDesc_SingleElement(t *testing.T) {
+	releases := []branchInfo{{version: "1.0.0"}}
+	sortBranchesByVersionDesc(releases)
+	if releases[0].version != "1.0.0" {
+		t.Errorf("expected 1.0.0, got %s", releases[0].version)
+	}
+}
