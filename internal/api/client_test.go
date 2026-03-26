@@ -124,59 +124,79 @@ func TestJoinFeatures_Multiple(t *testing.T) {
 func TestSetTestTransport(t *testing.T) {
 	// Clear any existing transport
 	SetTestTransport(nil)
+	SetTestAuthToken("")
 	testMu.Lock()
-	isNil := testTransport == nil
+	isNil := testClientHook == nil
 	testMu.Unlock()
 	if !isNil {
-		t.Fatal("Expected testTransport to be nil after clearing")
+		t.Fatal("Expected testClientHook to be nil after clearing both")
 	}
 
 	// Set a test transport
 	transport := &headerCapturingTransport{}
 	SetTestTransport(transport)
 	testMu.Lock()
-	match := testTransport == transport
+	hookSet := testClientHook != nil
 	testMu.Unlock()
-	if !match {
-		t.Fatal("Expected testTransport to be the set transport")
+	if !hookSet {
+		t.Fatal("Expected testClientHook to be set after SetTestTransport")
+	}
+
+	// Verify the hook applies the transport
+	probe := &ClientOptions{}
+	testMu.Lock()
+	testClientHook(probe)
+	testMu.Unlock()
+	if probe.Transport != transport {
+		t.Fatal("Expected hook to set transport")
 	}
 
 	// Clear the transport
 	SetTestTransport(nil)
 	testMu.Lock()
-	isNil = testTransport == nil
+	isNil = testClientHook == nil
 	testMu.Unlock()
 	if !isNil {
-		t.Fatal("Expected testTransport to be nil after clearing")
+		t.Fatal("Expected testClientHook to be nil after clearing")
 	}
 }
 
 func TestSetTestAuthToken(t *testing.T) {
-	// Clear any existing token
+	// Clear any existing overrides
+	SetTestTransport(nil)
 	SetTestAuthToken("")
 	testMu.Lock()
-	isEmpty := testAuthToken == ""
+	isNil := testClientHook == nil
 	testMu.Unlock()
-	if !isEmpty {
-		t.Fatal("Expected testAuthToken to be empty after clearing")
+	if !isNil {
+		t.Fatal("Expected testClientHook to be nil after clearing both")
 	}
 
 	// Set a token
 	SetTestAuthToken("test-token-123")
 	testMu.Lock()
-	val := testAuthToken
+	hookSet := testClientHook != nil
 	testMu.Unlock()
-	if val != "test-token-123" {
-		t.Errorf("Expected testAuthToken to be 'test-token-123', got %q", val)
+	if !hookSet {
+		t.Fatal("Expected testClientHook to be set after SetTestAuthToken")
+	}
+
+	// Verify the hook applies the token
+	probe := &ClientOptions{}
+	testMu.Lock()
+	testClientHook(probe)
+	testMu.Unlock()
+	if probe.AuthToken != "test-token-123" {
+		t.Errorf("Expected hook to set token to 'test-token-123', got %q", probe.AuthToken)
 	}
 
 	// Clear the token
 	SetTestAuthToken("")
 	testMu.Lock()
-	isEmpty = testAuthToken == ""
+	isNil = testClientHook == nil
 	testMu.Unlock()
-	if !isEmpty {
-		t.Fatal("Expected testAuthToken to be empty after clearing")
+	if !isNil {
+		t.Fatal("Expected testClientHook to be nil after clearing")
 	}
 }
 
