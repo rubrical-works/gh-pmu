@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
@@ -949,7 +951,9 @@ func parseJSONFields(input string, available []string) []string {
 
 // applyJQFilter applies a jq expression to JSON input and outputs the result
 func applyJQFilter(jsonBytes []byte, jqExpr string) error {
-	cmd := exec.Command("jq", jqExpr)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "jq", jqExpr)
 	cmd.Stdin = strings.NewReader(string(jsonBytes))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
