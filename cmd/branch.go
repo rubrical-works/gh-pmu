@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -1258,14 +1259,9 @@ func extractBranchInfo(issue api.Issue, status string) branchInfo {
 
 // sortBranchesByVersionDesc sorts releases by version in descending order
 func sortBranchesByVersionDesc(releases []branchInfo) {
-	// Simple bubble sort for version comparison
-	for i := 0; i < len(releases)-1; i++ {
-		for j := 0; j < len(releases)-i-1; j++ {
-			if compareVersions(releases[j].version, releases[j+1].version) < 0 {
-				releases[j], releases[j+1] = releases[j+1], releases[j]
-			}
-		}
-	}
+	sort.Slice(releases, func(i, j int) bool {
+		return compareVersions(releases[i].version, releases[j].version) > 0
+	})
 }
 
 // branchActiveEntry represents an active branch for config storage
