@@ -923,8 +923,8 @@ func TestParseCommitLog_EmptyInput(t *testing.T) {
 
 // mockRESTClient implements commitCommentFetcher for testing
 type mockRESTClient struct {
-	response interface{}
-	err      error
+	response   interface{}
+	err        error
 	calledPath string
 }
 
@@ -942,12 +942,16 @@ func TestFetchCommitComments_Success(t *testing.T) {
 	mock := &mockRESTClient{
 		response: []commitCommentAPI{
 			{
-				User:      struct{ Login string `json:"login"` }{Login: "alice"},
+				User: struct {
+					Login string `json:"login"`
+				}{Login: "alice"},
 				Body:      "Looks good",
 				CreatedAt: "2026-03-25T10:00:00Z",
 			},
 			{
-				User:      struct{ Login string `json:"login"` }{Login: "bob"},
+				User: struct {
+					Login string `json:"login"`
+				}{Login: "bob"},
 				Body:      "LGTM",
 				CreatedAt: "2026-03-25T11:00:00Z",
 			},

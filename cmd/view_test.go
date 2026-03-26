@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
-"github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 )
 
 // mockViewClient implements viewClient for testing
@@ -1368,8 +1368,6 @@ func TestRunViewWithDeps_JSONWithBodyStdoutError(t *testing.T) {
 		t.Errorf("expected mutual exclusivity error, got: %v", err)
 	}
 }
-
-
 
 func TestRunViewWithDeps_JSONWithCommentsError(t *testing.T) {
 	mock := newMockViewClient()

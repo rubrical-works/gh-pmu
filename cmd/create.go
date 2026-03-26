@@ -12,7 +12,7 @@ import (
 	ghapi "github.com/cli/go-gh/v2/pkg/api"
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
-"github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -63,7 +63,7 @@ any specified field values (status, priority) are set.`,
 	cmd.Flags().StringVarP(&opts.bodyFile, "body-file", "F", "", "Read body text from file (use \"-\" to read from standard input)")
 	cmd.Flags().BoolVar(&opts.bodyStdin, "body-stdin", false, "Read body text from standard input")
 	cmd.Flags().StringVarP(&opts.template, "template", "T", "", "Template name to use as starting body text")
-cmd.Flags().StringVarP(&opts.status, "status", "s", "", "Set project status field (e.g., backlog, in_progress)")
+	cmd.Flags().StringVarP(&opts.status, "status", "s", "", "Set project status field (e.g., backlog, in_progress)")
 	cmd.Flags().StringVarP(&opts.priority, "priority", "p", "", "Set project priority field (e.g., p0, p1, p2)")
 	cmd.Flags().StringVar(&opts.release, "branch", "", "Set branch field (use 'current' for active branch)")
 	cmd.Flags().StringVarP(&opts.release, "release", "r", "", "[DEPRECATED] Use --branch instead")

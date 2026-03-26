@@ -25,11 +25,11 @@ type mockCloseClient struct {
 	addIssueCommentErr     error
 
 	// Tracking
-	issue            *api.Issue
-	closedIssueID    string
-	closedReason     string
-	commentIssueID   string
-	commentBody      string
+	issue          *api.Issue
+	closedIssueID  string
+	closedReason   string
+	commentIssueID string
+	commentBody    string
 }
 
 func newMockCloseClient() *mockCloseClient {

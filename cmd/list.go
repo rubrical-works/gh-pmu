@@ -10,7 +10,7 @@ import (
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
-"github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 )
 
 // listClient defines the interface for API methods used by list functions.
@@ -81,7 +81,7 @@ Use filters to narrow down the results.`,
 	cmd.Flags().StringVar(&opts.jsonFields, "json", "", "Output JSON with specified fields (comma-separated, or empty to list available fields)")
 	cmd.Flags().Lookup("json").NoOptDefVal = "_list_" // When --json is used without value, list fields
 	cmd.Flags().StringVar(&opts.jq, "jq", "", "Filter JSON output using a jq expression")
-cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Filter by repository (owner/repo format)")
+	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Filter by repository (owner/repo format)")
 
 	return cmd
 }

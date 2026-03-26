@@ -290,8 +290,6 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 	return nil
 }
 
-
-
 // existingConfigRaw is used for JSON unmarshaling to get framework
 type existingConfigRaw struct {
 	Framework string `json:"framework"`
@@ -692,5 +690,3 @@ func findFieldByName(fields []api.ProjectField, name string) *api.ProjectField {
 	}
 	return nil
 }
-
-

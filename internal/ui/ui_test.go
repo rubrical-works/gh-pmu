@@ -2,7 +2,7 @@ package ui
 
 import (
 	"bytes"
-"strings"
+	"strings"
 	"testing"
 	"time"
 )

@@ -14,7 +14,7 @@ import (
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
-"github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 )
 
 // viewClient defines the interface for API methods used by view functions.
@@ -115,7 +115,7 @@ Note: --body-file and --body-stdout are only supported for single issues.`,
 	cmd.Flags().Bool("json-fields", false, "List available JSON fields")
 	cmd.Flags().StringVarP(&opts.jq, "jq", "q", "", "Filter JSON output using a jq expression")
 	cmd.Flags().StringVarP(&opts.template, "template", "t", "", "Format output using a Go template (not supported; see error for alternatives)")
-cmd.Flags().BoolVarP(&opts.comments, "comments", "c", false, "Show issue comments")
+	cmd.Flags().BoolVarP(&opts.comments, "comments", "c", false, "Show issue comments")
 	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Repository for the issue (owner/repo format)")
 	cmd.Flags().BoolVarP(&opts.bodyFile, "body-file", "b", false, "Write issue body to tmp/issue-{number}.md")
 	cmd.Flags().BoolVar(&opts.bodyStdout, "body-stdout", false, "Output issue body to stdout (raw markdown)")

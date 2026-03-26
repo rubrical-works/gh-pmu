@@ -9,7 +9,7 @@ import (
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
-"github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 )
 
 func newSubCommand() *cobra.Command {
@@ -447,7 +447,7 @@ Examples:
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output in JSON format")
 	cmd.Flags().StringVarP(&opts.state, "state", "s", "all", "Filter by state: open, closed, all")
 	cmd.Flags().IntVarP(&opts.limit, "limit", "n", 0, "Maximum number of items to display (0 for no limit)")
-cmd.Flags().StringVar(&opts.relation, "relation", "children", "Relation to show: children, parent, siblings, all")
+	cmd.Flags().StringVar(&opts.relation, "relation", "children", "Relation to show: children, parent, siblings, all")
 	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Repository for the issue (owner/repo format)")
 
 	return cmd
