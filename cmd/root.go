@@ -92,11 +92,15 @@ func Execute() error {
 func runYAMLMigration(cmd *cobra.Command) {
 	cwd, err := os.Getwd()
 	if err != nil {
+		if os.Getenv("GH_PMU_DEBUG") != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Debug: YAML migration skipped (getwd failed): %v\n", err)
+		}
 		return
 	}
 
 	jsonPath, err := config.FindConfigFile(cwd)
 	if err != nil {
+		// No config file — expected for uninitialized repos
 		return
 	}
 
@@ -131,6 +135,9 @@ func checkAcceptance(cmd *cobra.Command) error {
 	// Try to load config — if no config exists, skip gate (init not run yet)
 	cwd, err := os.Getwd()
 	if err != nil {
+		if os.Getenv("GH_PMU_DEBUG") != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Debug: acceptance check skipped (getwd failed): %v\n", err)
+		}
 		return nil
 	}
 

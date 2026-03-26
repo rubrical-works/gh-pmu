@@ -133,7 +133,7 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 	if opts.repo != "" {
 		// Validate repo format
 		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
 		}
 		repoFilter = opts.repo

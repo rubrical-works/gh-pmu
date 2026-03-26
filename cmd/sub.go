@@ -342,11 +342,10 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	w := cmd.OutOrStdout()
 	err = client.AddSubIssue(parentIssue.ID, newIssue.ID)
 	if err != nil {
-		// Issue was created but linking failed - inform user
-		fmt.Fprintf(os.Stderr, "Warning: Issue created but failed to link as sub-issue: %v\n", err)
+		// Issue was created but linking failed - report as partial failure
 		fmt.Fprintf(w, "Created issue #%d: %s\n", newIssue.Number, newIssue.Title)
 		fmt.Fprintf(w, "%s\n", newIssue.URL)
-		return nil
+		return fmt.Errorf("issue #%d created but failed to link as sub-issue of #%d: %w", newIssue.Number, parentNumber, err)
 	}
 
 	// Add to project if specified

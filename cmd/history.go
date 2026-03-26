@@ -342,7 +342,10 @@ func parseCommitLog(output string) []CommitInfo {
 			continue
 		}
 
-		date, _ := time.Parse(time.RFC3339, parts[2])
+		date, err := time.Parse(time.RFC3339, parts[2])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse commit date %q: %v\n", parts[2], err)
+		}
 		commits = append(commits, CommitInfo{
 			Hash:    parts[0],
 			Author:  parts[1],
@@ -800,7 +803,10 @@ func fetchCommitComments(client commitCommentFetcher, hash, owner, repo string) 
 
 	var comments []CommitComment
 	for _, c := range apiComments {
-		date, _ := time.Parse(time.RFC3339, c.CreatedAt)
+		date, parseErr := time.Parse(time.RFC3339, c.CreatedAt)
+		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse comment date %q: %v\n", c.CreatedAt, parseErr)
+		}
 		comments = append(comments, CommitComment{
 			Author: c.User.Login,
 			Body:   c.Body,

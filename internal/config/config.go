@@ -270,6 +270,8 @@ func (c *Config) ApplyEnvOverrides() {
 	if numberStr := os.Getenv("GH_PM_PROJECT_NUMBER"); numberStr != "" {
 		if number, err := strconv.Atoi(numberStr); err == nil {
 			c.Project.Number = number
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: GH_PM_PROJECT_NUMBER=%q is not a valid number: %v\n", numberStr, err)
 		}
 	}
 }
