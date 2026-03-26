@@ -11,9 +11,9 @@ import (
 
 // Regex patterns for checkbox detection
 var (
-	checkedBoxRegex      = regexp.MustCompile(`- \[x\]`)
-	uncheckedBoxRegex    = regexp.MustCompile(`- \[ \]`)
-	uncheckedItemRegex   = regexp.MustCompile(`- \[ \] (.+)`)
+	checkedBoxRegex    = regexp.MustCompile(`- \[x\]`)
+	uncheckedBoxRegex  = regexp.MustCompile(`- \[ \]`)
+	uncheckedItemRegex = regexp.MustCompile(`- \[ \] (.+)`)
 )
 
 // ValidationError represents a validation failure with actionable message
