@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-03-26
+
+### Security
+- Remove redundant double-escaping in GraphQL label queries (`getLabelIDs`)
+- Add `io.LimitReader` for unbounded `io.ReadAll` calls (10MB API responses, 1MB stdin)
+- Validate git command arguments against safe character pattern (`validateGitRef`)
+- Escape markdown special chars in history table output (`escapeMarkdown`)
+- Use `url.PathEscape` for URL construction in history HTML output
+- Add 30s timeout to jq command execution in `view`
+- Add size validation (1MB) for template file reads in `create`
+- Isolate test transport/auth overrides from production code path
+
+### Performance
+- Add default max limit (10,000) for `GetProjectItems` pagination
+- Replace O(n^2) bubble sort with `sort.Slice` in branch version sorting
+- Use `json.NewDecoder` for streaming stdin parse in filter command
+- Hoist `uncheckedItemRegex` to module-level compiled variable
+- Replace `joinFeatures` string concatenation loop with `strings.Join`
+- Replace O(n^2) label deduplication with map-based set
+- Pre-allocate filter slices with capacity hints
+
+### Fixed
+- Surface silent JSON unmarshal failures in batch operations with warnings
+- Log warnings for field/label creation failures in `init` command
+- Add debug-level logging for silent pre-run hook failures
+- Validate repo format splits reject empty owner/repo parts
+- Return partial-failure error when sub-issue linking fails (was silent success)
+- Log warnings for `GH_PM_PROJECT_NUMBER` parse failures
+- Collect all label operation errors in `edit` instead of failing on first
+- Log warnings for `time.Parse` errors in history output
+
+### Added
+- Unit tests for `validateGitRef`, `escapeMarkdown`, `io.LimitReader` boundary behavior
+- Unit tests for `sortBranchesByVersionDesc` correctness
+- Unit tests for `GetProjectItems` default pagination limit
+- Unit tests for streaming JSON parse equivalence
+- Unit tests for error handling behavior changes (date parse, repo validation)
+- E2E test suite README with run instructions
+
 ## [1.4.3] - 2026-03-25
 
 ### Security
