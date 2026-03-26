@@ -2104,3 +2104,56 @@ func TestLoadIssueTemplate_NotFoundReturnsError(t *testing.T) {
 		t.Errorf("expected 'not found' error, got: %v", err)
 	}
 }
+
+// ============================================================================
+// readBodyFile size limit tests
+// ============================================================================
+
+func TestReadBodyFile_AtLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "at-limit.txt")
+	// Create a file exactly at maxBodyFileSize (1MB)
+	data := bytes.Repeat([]byte("a"), int(maxBodyFileSize))
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	content, err := readBodyFile(path)
+	if err != nil {
+		t.Errorf("readBodyFile at limit should succeed, got error: %v", err)
+	}
+	if len(content) != int(maxBodyFileSize) {
+		t.Errorf("expected %d bytes, got %d", maxBodyFileSize, len(content))
+	}
+}
+
+func TestReadBodyFile_OverLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "over-limit.txt")
+	// Create a file exceeding maxBodyFileSize
+	data := bytes.Repeat([]byte("a"), int(maxBodyFileSize)+1)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readBodyFile(path)
+	if err == nil {
+		t.Fatal("readBodyFile over limit should return error")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Errorf("expected 'exceeds maximum size' error, got: %v", err)
+	}
+}
+
+func TestReadBodyFile_EmptyInput(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "empty.txt")
+	if err := os.WriteFile(path, []byte{}, 0644); err != nil {
+		t.Fatal(err)
+	}
+	content, err := readBodyFile(path)
+	if err != nil {
+		t.Errorf("readBodyFile empty should succeed, got error: %v", err)
+	}
+	if content != "" {
+		t.Errorf("expected empty content, got %q", content)
+	}
+}
