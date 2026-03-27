@@ -1,6 +1,6 @@
 # Scope Boundaries: gh-pmu
 
-**Last Updated:** 2026-01-04
+**Last Updated:** 2026-03-27
 
 ---
 
@@ -12,7 +12,11 @@
 - [x] **Sub-Issue Hierarchy**: Parent-child relationships with progress tracking
 - [x] **Batch Operations**: Intake untracked issues, triage with rules, split checklists
 - [x] **Board View**: Terminal Kanban visualization
-- [x] **Workflow Commands**: Microsprint and release management
+- [x] **Workflow Commands**: Branch-based development workflows
+- [x] **Label Management**: Sync, add, update, delete repository labels
+- [x] **Config Integrity**: Checksum-based config drift detection
+- [x] **Status Validation**: Transition rules for workflow enforcement
+- [x] **Terms Gate**: Acceptance gate for CLI usage
 
 ### Capabilities
 
@@ -22,8 +26,10 @@
 | Sub-issue hierarchy | P0 | Done |
 | Terminal Kanban board | P1 | Done |
 | Batch intake/triage | P1 | Done |
-| Microsprint workflow | P1 | Done |
-| Release workflow | P1 | Done |
+| Branch workflow | P1 | Done |
+| Label management | P1 | Done |
+| Config integrity verification | P2 | Done |
+| Status transition validation | P2 | Done |
 | Field value aliases | P2 | Done |
 | Cross-repository sub-issues | P2 | Done |
 
@@ -68,8 +74,7 @@
 | Workflow | Description | Priority |
 |----------|-------------|----------|
 | Sub-issue management | Create/track child issues | P0 |
-| Microsprint | Time-boxed development batches | P1 |
-| Release management | Branch-based deployments | P1 |
+| Branch management | Branch-based deployments | P1 |
 | Batch triage | Bulk status updates | P2 |
 
 ---

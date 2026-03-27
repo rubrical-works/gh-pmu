@@ -1,6 +1,6 @@
 # Constraints: gh-pmu
 
-**Last Updated:** 2026-01-04
+**Last Updated:** 2026-03-27
 
 ---
 
@@ -10,7 +10,7 @@
 
 | Technology | Reason | Flexibility |
 |------------|--------|-------------|
-| Go 1.22+ | Module features, gh ecosystem | None |
+| Go 1.23+ | Module features, gh ecosystem | None |
 | go-gh SDK | GitHub CLI extension system | None |
 | GraphQL | Projects v2 field mutations | None |
 | Cobra | CLI framework standard | Low |

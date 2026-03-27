@@ -6,12 +6,12 @@ Comprehensive testing strategy for gh-pmu.
 
 | Package | Target | Current | Notes |
 |---------|--------|---------|-------|
-| Overall | 68-70% | 68.5% | Coverage target for CLI commands |
-| `internal/api` | 60%+ | 59.4% | GraphQL mocking is complex |
-| `internal/config` | 75%+ | 74.4% | Core configuration parsing |
+| Overall | 70%+ | ~75% | Coverage target for CLI commands |
+| `internal/api` | 60%+ | 66.3% | GraphQL mocking is complex |
+| `internal/config` | 75%+ | 84.8% | Core configuration parsing |
 | `internal/framework` | 85%+ | 88.9% | Framework detection logic |
 | `internal/ui` | 95%+ | 96.9% | UI component rendering |
-| `cmd` (wrappers) | 70%+ | 68.8% | Command implementations |
+| `cmd` (wrappers) | 70%+ | 77.1% | Command implementations |
 
 ## Test Categories
 
@@ -75,7 +75,6 @@ gh pmu list --status in_progress # Verify table formatting
 |----------|------|--------|-------------|
 | `runInit` | `cmd/init.go:59` | Uses `bufio.NewReader(os.Stdin)` for prompts | Manual testing, #415 |
 | `runFilter` | `cmd/filter.go:80` | Checks `os.Stdin.Stat()` for piped input | Manual testing, #415 |
-| `runMicrosprintResolveWithDeps` | `cmd/microsprint.go` | Uses `fmt.Scanln` for confirmation | Manual testing, #415 |
 
 **Why not mocked:** These functions hardcode `os.Stdin` and would require refactoring to accept `io.Reader` for testability. See issue #415.
 
@@ -104,7 +103,7 @@ gh pmu list --status in_progress # Verify table formatting
 
 | Function | File | Reason | Alternative |
 |----------|------|--------|-------------|
-| `RunE` closures | `cmd/release.go` | Inline functions that just call `*WithDeps` | Tested via `*WithDeps` |
+| `RunE` closures | Various | Inline functions that just call `*WithDeps` | Tested via `*WithDeps` |
 | `newXxxCommand` | Multiple | Cobra command setup only | Tested via command execution |
 
 **Why not tested:** These are thin wrappers with no logic. The actual implementation in `*WithDeps` functions is tested.
@@ -131,10 +130,10 @@ Before releases, verify these features:
 - [ ] Arrow keys scroll through history
 - [ ] `q` exits cleanly
 
-### Microsprint/Release
-- [ ] `gh pmu microsprint start` - Creates tracker issue
-- [ ] `gh pmu microsprint resolve` - Handles conflicts
-- [ ] `gh pmu release close --tag` - Creates git tag
+### Branch Workflow
+- [ ] `gh pmu branch start --name release/v2.0.0` - Creates branch and tracker
+- [ ] `gh pmu branch current` - Shows active branch
+- [ ] `gh pmu branch close --tag` - Creates git tag
 
 ## Test Patterns
 
@@ -205,7 +204,7 @@ The `-short` flag skips tests that require `gh` authentication, enabling tests t
 
 ## Related Issues
 
-- #414 - Coverage improvement from 63.2% to 68.5%
+- #414 - Coverage improvement tracking
 - #416 - Refactor external process calls for testability
 - #797 - Remove all interactive features (CLI-only mode)
 
