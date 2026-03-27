@@ -684,6 +684,12 @@ func (c *Client) GetOwnerID(owner string) (string, error) {
 	return userQuery.User.ID, nil
 }
 
+// LinkProjectV2ToRepositoryInput represents the input for linking a repository to a project.
+type LinkProjectV2ToRepositoryInput struct {
+	ProjectID    graphql.ID `json:"projectId"`
+	RepositoryID graphql.ID `json:"repositoryId"`
+}
+
 // LinkProjectToRepository adds a repository to a project's linked repositories.
 func (c *Client) LinkProjectToRepository(projectID, repositoryID string) error {
 
@@ -695,12 +701,9 @@ func (c *Client) LinkProjectToRepository(projectID, repositoryID string) error {
 		} `graphql:"linkProjectV2ToRepository(input: $input)"`
 	}
 
-	input := struct {
-		ProjectId    graphql.ID `json:"projectId"`
-		RepositoryId graphql.ID `json:"repositoryId"`
-	}{
-		ProjectId:    graphql.ID(projectID),
-		RepositoryId: graphql.ID(repositoryID),
+	input := LinkProjectV2ToRepositoryInput{
+		ProjectID:    graphql.ID(projectID),
+		RepositoryID: graphql.ID(repositoryID),
 	}
 
 	variables := map[string]interface{}{

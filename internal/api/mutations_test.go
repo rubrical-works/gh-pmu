@@ -3050,3 +3050,55 @@ func TestGetProjectItemID_FindsItemOnPage1(t *testing.T) {
 		t.Errorf("Expected 1 API call, got %d", callCount)
 	}
 }
+
+// ============================================================================
+// LinkProjectToRepository Tests
+// ============================================================================
+
+func TestLinkProjectToRepository_Success(t *testing.T) {
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			if name != "LinkProjectV2ToRepository" {
+				t.Errorf("Expected mutation name 'LinkProjectV2ToRepository', got '%s'", name)
+			}
+
+			// Verify input type is LinkProjectV2ToRepositoryInput (not anonymous struct)
+			input, ok := variables["input"].(LinkProjectV2ToRepositoryInput)
+			if !ok {
+				t.Fatal("Expected LinkProjectV2ToRepositoryInput type in variables, got anonymous struct")
+			}
+			if input.ProjectID.(string) != "project-123" {
+				t.Errorf("Expected ProjectID 'project-123', got '%v'", input.ProjectID)
+			}
+			if input.RepositoryID.(string) != "repo-456" {
+				t.Errorf("Expected RepositoryID 'repo-456', got '%v'", input.RepositoryID)
+			}
+			return nil
+		},
+	}
+
+	client := NewClientWithGraphQL(mock)
+	err := client.LinkProjectToRepository("project-123", "repo-456")
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+func TestLinkProjectToRepository_MutationError(t *testing.T) {
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			return errors.New("mutation failed")
+		},
+	}
+
+	client := NewClientWithGraphQL(mock)
+	err := client.LinkProjectToRepository("project-123", "repo-456")
+
+	if err == nil {
+		t.Fatal("Expected error when mutation fails")
+	}
+	if !strings.Contains(err.Error(), "failed to link repository to project") {
+		t.Errorf("Expected 'failed to link repository to project' in error, got: %v", err)
+	}
+}
