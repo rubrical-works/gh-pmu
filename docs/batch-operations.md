@@ -46,7 +46,7 @@ gh pmu intake --apply
 Added 3 issues to project.
 ```
 
-Issues are added with defaults from `.gh-pmu.yml`:
+Issues are added with defaults from `.gh-pmu.json`:
 
 ```yaml
 defaults:
@@ -60,7 +60,7 @@ Apply configured rules to update multiple issues at once.
 
 ### Configure Rules
 
-Add triage rules to `.gh-pmu.yml`:
+Add triage rules to `.gh-pmu.json`:
 
 ```yaml
 triage:
@@ -193,7 +193,7 @@ When adding a repository to a project:
 
 ```bash
 # 1. Add repo to config
-# Edit .gh-pmu.yml to add repository
+# Edit .gh-pmu.json to add repository
 
 # 2. Find existing issues
 gh pmu intake --dry-run
@@ -257,7 +257,7 @@ gh pmu move 102 --priority p1 --status ready
    - Combine labels for precision
 
 3. **Set sensible defaults**
-   - Configure defaults in `.gh-pmu.yml`
+   - Configure defaults in `.gh-pmu.json`
    - New issues land in the right place
 
 4. **Use dry-run before applying**

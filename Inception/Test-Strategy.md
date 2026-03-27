@@ -100,8 +100,9 @@ A feature is considered tested when:
 | edit | `edit_test.go` | `edit_integration_test.go` |
 | move | `move_test.go` | `move_integration_test.go` |
 | sub | `sub_test.go` | `sub_*_integration_test.go` |
-| microsprint | `microsprint_test.go` | - |
-| release | `release_test.go` | - |
+| branch | `branch_test.go` | - |
+| label | `label_test.go` | - |
+| validation | `validation_test.go` | - |
 
 ---
 

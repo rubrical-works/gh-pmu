@@ -1,7 +1,7 @@
 # Project Charter Details: gh-pmu
 
 **Generated:** 2026-01-04
-**Last Updated:** 2026-01-21
+**Last Updated:** 2026-03-27
 
 ---
 
@@ -23,7 +23,7 @@ Managing GitHub Projects through the `gh` CLI is fragmented. Project field updat
 - **Unified commands**: Combine issue operations with project field updates
 - **Sub-issue hierarchy**: Native parent-child relationships with progress tracking
 - **Batch operations**: Automate intake, triage, and issue splitting
-- **Workflow automation**: Microsprint and release management with artifact generation
+- **Workflow automation**: Branch-based development workflows with artifact generation
 - **Terminal-native**: Kanban board visualization without leaving the CLI
 
 ### Success Criteria
@@ -31,7 +31,7 @@ Managing GitHub Projects through the `gh` CLI is fragmented. Project field updat
 - Extension installed via `gh extension install`
 - Reduces project management commands by 50%+ vs raw `gh` CLI
 - Sub-issue hierarchy visible in GitHub Projects UI
-- Microsprint/release workflows generate standard artifacts
+- Branch workflows generate standard release artifacts
 
 ---
 
@@ -44,8 +44,11 @@ Managing GitHub Projects through the `gh` CLI is fragmented. Project field updat
 - [x] Sub-issue hierarchy (add, create, list, remove)
 - [x] Batch operations (intake, triage, split)
 - [x] Terminal Kanban board
-- [x] Microsprint workflow with retrospectives
-- [x] Release workflow with artifact generation
+- [x] Branch workflow with artifact generation
+- [x] Label management (sync, add, update, delete)
+- [x] Config integrity verification
+- [x] Status transition validation
+- [x] Terms acceptance gate
 
 ### Out of Scope
 
@@ -57,7 +60,7 @@ Managing GitHub Projects through the `gh` CLI is fragmented. Project field updat
 
 1. **Issue tracking**: `gh pmu list` → `gh pmu view 42` → `gh pmu move 42 --status done`
 2. **Sub-issue management**: `gh pmu sub create --parent 42 --title "Subtask"` → `gh pmu sub list 42`
-3. **Sprint workflow**: `gh pmu microsprint start` → `gh pmu microsprint add 42` → `gh pmu microsprint close`
+3. **Branch workflow**: `gh pmu branch start --name release/v2.0.0` → `gh pmu move 42 --branch current` → `gh pmu branch close`
 
 ---
 
@@ -67,10 +70,10 @@ Managing GitHub Projects through the `gh` CLI is fragmented. Project field updat
 
 | Layer | Technology | Rationale |
 |-------|------------|-----------|
-| Language | Go 1.22 | CLI performance, static binary, `gh` ecosystem |
+| Language | Go 1.23 | CLI performance, static binary, `gh` ecosystem |
 | Framework | Cobra | Standard for Go CLI applications |
 | API | GitHub GraphQL | Project field mutations require GraphQL |
-| Config | YAML | Human-readable, git-friendly |
+| Config | JSON | Machine-friendly, git-friendly |
 
 ### Architecture Style
 
@@ -81,7 +84,7 @@ CLI Extension - Single binary that extends GitHub CLI (`gh`) with project manage
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | GraphQL vs REST | GraphQL | Projects v2 requires GraphQL for mutations |
-| Config format | YAML | Matches `gh` ecosystem conventions |
+| Config format | JSON | `.gh-pmu.json` — YAML support removed in v1.4.x |
 | Alias system | Field value aliases | User-friendly status names (e.g., `in_progress` vs `47fc9ee4`) |
 
 ### Technical Risks
@@ -141,15 +144,16 @@ None (MIT licensed open source)
 
 ### Current Target
 
-**v0.14.0**: Stability and documentation improvements
+**v1.4.x**: Stability, security hardening, and documentation improvements
 
 ### Milestone Roadmap
 
 | Milestone | Target | Criteria |
 |-----------|--------|----------|
-| v0.13.x | Complete | Branch terminology, batch performance, E2E tests |
-| v0.14.0 | Current | Stability, documentation, misc improvements |
-| v0.15.0 | Next | TBD based on backlog |
+| v1.4.x | Current | Security fixes, documentation audit, stability |
+| v1.5.0 | Next | TBD based on backlog |
+
+See `Milestones.md` for full release history.
 
 ---
 
@@ -159,6 +163,7 @@ None (MIT licensed open source)
 |------|--------|--------|
 | 2026-01-04 | Charter extracted from codebase | Claude |
 | 2026-01-21 | Update focus to v0.14.0, add scope items, update milestones | Claude |
+| 2026-03-27 | Update to v1.4.x, remove microsprint refs, add new capabilities | Claude |
 
 ---
 

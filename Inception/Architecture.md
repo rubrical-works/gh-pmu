@@ -1,6 +1,6 @@
 # Architecture: gh-pmu
 
-**Last Updated:** 2026-01-04
+**Last Updated:** 2026-03-27
 
 ---
 
@@ -48,8 +48,13 @@ gh-pmu is a GitHub CLI extension built as a single Go binary. It extends `gh` wi
 |-----------|----------------|------------|
 | cmd/ | Command parsing, validation, output | Cobra CLI |
 | internal/api/ | GraphQL queries and mutations | go-gh, shurcooL-graphql |
-| internal/config/ | YAML config loading, alias resolution | yaml.v3 |
+| internal/config/ | Config loading, alias resolution | encoding/json |
+| internal/defaults/ | Default labels, fields, and config values | Go |
+| internal/framework/ | IDPF framework detection and validation | Go |
+| internal/integrity/ | Config checksum and drift detection | Go |
+| internal/testutil/ | Shared test helpers and fixtures | Go |
 | internal/ui/ | Terminal styling, board rendering | Lipgloss |
+| internal/version/ | Version constant and display | Go |
 
 ---
 
@@ -92,7 +97,7 @@ User Input → Cobra Parsing → Config Load → API Call → Format Output
 | Decision | Choice | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
 | API protocol | GraphQL | REST | Projects v2 requires GraphQL for mutations |
-| Config format | YAML | JSON, TOML | Matches `gh` ecosystem conventions |
+| Config format | JSON | YAML, TOML | `.gh-pmu.json` — YAML support removed in v1.4.x |
 | CLI framework | Cobra | urfave/cli | Standard for Go CLI, better completion |
 | Distribution | gh extension | Standalone binary | Leverage existing auth, ecosystem |
 

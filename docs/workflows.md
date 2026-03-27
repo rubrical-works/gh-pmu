@@ -1,107 +1,22 @@
 # Workflow Commands
 
-gh-pmu provides workflow command groups for managing development at different cadences:
-
-| Workflow | Cadence | Use Case |
-|----------|---------|----------|
-| `microsprint` | Hours | AI-assisted development batches, rapid iteration |
-| `branch` | Days/Weeks | Branch-based deployment, feature releases, patches, hotfixes |
-
-## Microsprint
-
-Microsprints are hour-scale work batches designed for AI-assisted development workflows. They help organize focused work sessions with automatic artifact generation.
-
-### Starting a Microsprint
-
-```bash
-# Start with auto-generated name (YYYY-MM-DD-a pattern)
-gh pmu microsprint start
-
-# Start with custom suffix
-gh pmu microsprint start --name "auth-refactor"
-# Creates: Microsprint: 2025-01-15-auth-refactor
-```
-
-A tracker issue is created with the `microsprint` label to track the session.
-
-### Managing Issues
-
-```bash
-# Add issue to current microsprint
-gh pmu microsprint add 42
-
-# Remove issue from microsprint
-gh pmu microsprint remove 42
-
-# Create new issue directly in microsprint
-gh pmu create --title "Fix login bug" --microsprint current
-```
-
-### Viewing Status
-
-```bash
-# Show current microsprint details
-gh pmu microsprint current
-
-# Update tracker issue body with latest progress
-gh pmu microsprint current --refresh
-
-# List all microsprints (open and closed)
-gh pmu microsprint list
-```
-
-### Closing with Artifacts
-
-```bash
-# Interactive close with retrospective prompts
-gh pmu microsprint close
-# Prompts for: What Went Well, What Could Be Improved, Action Items
-
-# Skip prompts, generate empty template
-gh pmu microsprint close --skip-retro
-
-# Auto-commit generated artifacts
-gh pmu microsprint close --commit
-```
-
-**Generated artifacts:**
-```
-Microsprints/{name}/
-  review.md    # Issue summary with status
-  retro.md     # Retrospective notes
-```
-
-### Multi-User Support
-
-Microsprints support team-wide workflows:
-
-```bash
-# If another user has an active microsprint, you'll be prompted:
-# - Join their microsprint
-# - Work without a microsprint
-# - Cancel
-
-# Resolve multiple active microsprints
-gh pmu microsprint resolve
-```
-
----
+gh-pmu provides branch workflow commands for managing development across feature releases, patches, and hotfixes.
 
 ## Branch
 
-Branch workflows are used for feature releases, patches, and hotfixes. The branch name is used literally for all artifacts.
+Branch workflows organize work into tracked branches with automatic issue management and artifact generation. The branch name is used literally for all artifacts.
 
 ### Starting a Branch
 
 ```bash
 # Start a feature release
-gh pmu branch start --branch release/v2.0.0
+gh pmu branch start --name release/v2.0.0
 
 # Start a patch release
-gh pmu branch start --branch patch/v1.9.1
+gh pmu branch start --name patch/v1.9.1
 
 # Start a hotfix
-gh pmu branch start --branch hotfix-auth-bypass
+gh pmu branch start --name hotfix-auth-bypass
 ```
 
 The command creates the git branch and a tracker issue with the `branch` label.
@@ -160,12 +75,7 @@ Examples:
 
 ### Project Fields
 
-Workflows require project fields to function. Run `gh pmu init` to auto-create:
-
-| Field | Type | Purpose |
-|-------|------|---------|
-| `Microsprint` | Text | Track microsprint assignment |
-| `Release` | Text | Track release assignment |
+Branch workflows require a `Branch` text field on the project. Run `gh pmu init` to auto-create it.
 
 ### Labels
 
@@ -173,21 +83,24 @@ Workflows use labels for tracker issues:
 
 | Label | Used By |
 |-------|---------|
-| `microsprint` | Microsprint tracker issues |
 | `branch` | Branch tracker issues |
 
 Run `gh pmu init` to auto-create these labels.
 
 ### Branch Artifacts
 
-Configure artifact generation in `.gh-pmu.yml`:
+Configure artifact generation in `.gh-pmu.json`:
 
-```yaml
-branch:
-  artifacts:
-    directory: "Releases"      # Base directory (default)
-    release_notes: true        # Generate release-notes.md
-    changelog: true            # Generate changelog.md
+```json
+{
+  "release": {
+    "artifacts": {
+      "directory": "Releases",
+      "release_notes": true,
+      "changelog": true
+    }
+  }
+}
 ```
 
 ---
@@ -197,22 +110,24 @@ branch:
 ### With Move Command
 
 ```bash
-# Move issue and assign to current microsprint
-gh pmu move 42 --status in_progress --microsprint current
+# Move issue and assign to current branch
+gh pmu move 42 --status in_progress --branch current
+
+# Clear branch assignment
+gh pmu move 42 --backlog
 ```
 
 ### With Create Command
 
 ```bash
-# Create issue in current microsprint
-gh pmu create --title "New feature" --microsprint current
+# Create issue in current branch
+gh pmu create --title "New feature" --branch current
 ```
 
-### Checking Active Workflows
+### Checking Active Branch
 
 ```bash
-# See what workflows are active
-gh pmu microsprint current
+# See what branch is active
 gh pmu branch current
 ```
 
@@ -221,5 +136,5 @@ gh pmu branch current
 ## See Also
 
 - [Commands Reference](commands.md) - Full command documentation
-- [Configuration Guide](configuration.md) - `.gh-pmu.yml` setup
+- [Configuration Guide](configuration.md) - `.gh-pmu.json` setup
 - [Sub-Issues Guide](sub-issues.md) - Hierarchy management

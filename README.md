@@ -62,7 +62,7 @@ gh pmu branch close
 
 ## Standalone Usage
 
-`gh pmu` works as a standalone tool without any framework integration. The optional `framework` field in `.gh-pmu.yml` enables workflow restrictions when used with process frameworks like [IDPF](https://github.com/rubrical-works/idpf-praxis).
+`gh pmu` works as a standalone tool without any framework integration. The optional `framework` field in `.gh-pmu.json` enables workflow restrictions when used with process frameworks like [IDPF](https://github.com/rubrical-works/idpf-praxis).
 
 **Standalone (default):**
 - All commands work normally
@@ -76,17 +76,22 @@ gh pmu branch close
 
 To use standalone, simply omit the `framework` field from your config:
 
-```yaml
-project:
-  owner: your-org
-  number: 1
-repositories:
-  - your-org/your-repo
-fields:
-  status:
-    values: {backlog, in_progress, in_review, done}
-  priority:
-    values: {p0, p1, p2}
+```json
+{
+  "project": {
+    "owner": "your-org",
+    "number": 1
+  },
+  "repositories": ["your-org/your-repo"],
+  "fields": {
+    "status": {
+      "values": {"backlog": "Backlog", "in_progress": "In progress", "in_review": "In review", "done": "Done"}
+    },
+    "priority": {
+      "values": {"p0": "P0", "p1": "P1", "p2": "P2"}
+    }
+  }
+}
 ```
 
 ## Documentation
@@ -107,7 +112,9 @@ fields:
 Project:    init, list, view, create, edit, comment, move, close, board, field
 Sub-Issues: sub add, sub create, sub list, sub remove
 Batch:      intake, triage, split
-Workflows:  branch, accept
+Labels:     label sync, label list, label add, label update, label delete
+Workflows:  branch, validation, accept
+Config:     config verify
 Utilities:  filter, history
 ```
 
@@ -130,6 +137,18 @@ Flags and features not available in base `gh` CLI:
 | `branch` | `start`, `add`, `close`, `reopen`, `--tag` | Branch-based deployment workflow |
 
 See [gh vs gh pmu](docs/gh-comparison.md) for detailed comparison.
+
+## Framework Integration
+
+`gh-pmu` is the backbone of project management for framework-driven development. When paired with a process framework like IDPF-Praxis, it provides:
+
+- **Branch-tracked development** — every feature, release, and patch gets a tracked branch with automatic sub-issue management
+- **Epic-to-story hierarchies** — epics decompose into stories, each tracked through the full lifecycle (Backlog → In Progress → In Review → Done)
+- **Workflow enforcement** — status transition validation prevents accidental state changes and ensures work follows the defined process
+- **Acceptance criteria gates** — issues cannot be closed until all acceptance criteria are checked, maintaining quality standards
+- **Artifact generation** — release notes and changelogs are generated automatically from tracked issues
+
+For teams using IDPF-Praxis for structured development, `gh-pmu` replaces the need for external project management tools by keeping everything in GitHub — issues, project boards, branch tracking, and release management — all accessible from the terminal.
 
 ## Attribution
 

@@ -33,8 +33,11 @@ These commands have no equivalent in the base `gh` CLI:
 | `gh pmu sub` | Manage sub-issue hierarchy (add/create/list/remove) |
 | `gh pmu triage` | Bulk rule-based issue processing |
 | `gh pmu field` | Create and list project fields |
-| `gh pmu microsprint` | AI-assisted development workflow (hour-scale batches) |
 | `gh pmu branch` | Branch-based deployment workflow (releases, patches, hotfixes) |
+| `gh pmu label` | Label management (sync, add, update, delete) |
+| `gh pmu config` | Configuration integrity verification |
+| `gh pmu validation` | Status transition validation rules |
+| `gh pmu accept` | Terms and conditions acceptance gate |
 
 ### Unique Flags
 
@@ -47,15 +50,13 @@ Flags available in `gh pmu` that don't exist in base `gh`:
 | `list` | `--has-sub-issues` | Show only parent issues |
 | `create` | `--status` | Set project status on create |
 | `create` | `--priority` | Set project priority on create |
-| `create` | `--microsprint` | Assign to microsprint (use 'current') |
 | `create` | `--from-file` | Create issue from YAML/JSON file |
 | `close` | `--update-status` | Move to 'done' status before closing |
 | `move` | `--recursive` | Cascade changes to sub-issues |
 | `move` | `--dry-run` | Preview changes without applying |
 | `move` | `--depth` | Limit recursion depth |
-| `move` | `--microsprint` | Assign to microsprint |
 | `move` | `--branch` | Assign to branch (use 'current' for active) |
-| `move` | `--backlog` | Clear branch and microsprint fields |
+| `move` | `--backlog` | Clear branch field |
 | `move` | `--yes` | Skip confirmation prompt |
 | `view` | `--body-file` | Export body to tmp/issue-{n}.md |
 | `view` | `--body-stdout` | Output body to stdout |
