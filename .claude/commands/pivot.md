@@ -1,5 +1,5 @@
 ---
-version: "v0.73.0"
+version: "v0.74.0"
 description: Review stories for direction change (project)
 argument-hint: "[epic-number|prd-name]"
 copyright: "Rubrical Works (c) 2026"

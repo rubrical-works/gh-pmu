@@ -1,5 +1,5 @@
 ---
-version: "v0.73.0"
+version: "v0.74.0"
 description: Prepare release with PR, merge to main, and tag
 argument-hint: "[version] [--skip-coverage] [--dry-run] [--help]"
 copyright: "Rubrical Works (c) 2026"
@@ -268,20 +268,15 @@ git tag -a $VERSION -m "Release $VERSION"
 git push origin $VERSION
 ```
 ### Step 4.7: Wait for CI Workflow
-
 **Conditional:** Check if CI workflows exist before waiting.
-
 ```bash
-# Check for .github/workflows/*.yml or *.yaml files
 ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null
 ```
-
 **If no workflow files found:** Skip CI wait with message:
 ```
 No CI workflows detected — skipping CI wait.
 ```
-
-**If workflow files exist:** Proceed normally:
+**If workflow files exist:**
 ```bash
 node .claude/scripts/shared/wait-for-ci.js
 ```
@@ -368,16 +363,12 @@ git push origin --delete $BRANCH
 git branch -d $BRANCH
 ```
 ### Step 5.3: Verify GitHub Release
-
 Check if the GitHub release already exists (Step 4.8 may have created it):
-
 ```bash
 gh release view $VERSION
 ```
-
 - **If release exists:** Report `"GitHub release $VERSION already exists (created by Step 4.8). Skipping creation."` — no action needed.
 - **If release does not exist:** Create it:
-
 ```bash
 gh release create $VERSION \
   --title "Release $VERSION" \
