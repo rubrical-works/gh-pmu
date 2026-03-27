@@ -60,23 +60,29 @@ Flags:
 
 ### init
 
-Initialize or refresh project configuration.
+Initialize project configuration by copying from a template project or connecting to an existing one.
 
 ```bash
-# Interactive setup
-gh pmu init
+# Copy from a source project template
+gh pmu init --source-project 30 --repo owner/repo
+
+# Connect to an existing project
+gh pmu init --project 42 --repo owner/repo
 
 # Refresh metadata only
 gh pmu init --refresh
 ```
 
-**Output:**
-```
-? Select a project: my-project (#5)
-? Select repositories to track: myorg/frontend, myorg/backend
-✓ Configuration saved to .gh-pmu.json
-✓ Fetched 8 project fields
-```
+| Flag | Description |
+|------|-------------|
+| `--source-project N` | Source project number to copy from |
+| `--project N` | Existing project number to connect to |
+| `--repo owner/repo` | Repository to configure (required) |
+| `--owner` | Project owner (defaults to repo owner) |
+| `--framework` | Framework type: `IDPF` (default) or `none` |
+| `--yes` | Auto-confirm prompts (overwrite existing config) |
+
+`--project` and `--source-project` are mutually exclusive.
 
 ### list
 

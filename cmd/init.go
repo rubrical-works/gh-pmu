@@ -42,6 +42,7 @@ func isRepoRoot(dir string) bool {
 type initOptions struct {
 	nonInteractive bool
 	sourceProject  int
+	project        int
 	repo           string
 	owner          string
 	framework      string
@@ -56,27 +57,33 @@ func newInitCommand() *cobra.Command {
 		Short: "Initialize gh-pmu configuration for the current project",
 		Long: `Initialize gh-pmu configuration by creating a .gh-pmu.json file.
 
-Creates a new project by copying from a source project template,
-links the repository, and writes config with the new project number.
+Use --source-project to copy from a template project, or --project to
+connect to an existing project. Both require --repo.
 
-Requires --source-project and --repo flags.`,
+Flags --project and --source-project are mutually exclusive.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runInit(cmd, args, opts)
 		},
 	}
 
 	cmd.Flags().BoolVar(&opts.nonInteractive, "non-interactive", false, "Disable UI and prompts (requires --source-project and --repo)")
+	_ = cmd.Flags().MarkDeprecated("non-interactive", "init is always non-interactive; this flag will be removed in a future release")
 	cmd.Flags().IntVar(&opts.sourceProject, "source-project", 0, "Source project number to copy from")
+	cmd.Flags().IntVar(&opts.project, "project", 0, "Existing project number to connect to")
 	cmd.Flags().StringVar(&opts.repo, "repo", "", "Repository (owner/repo format)")
 	cmd.Flags().StringVar(&opts.owner, "owner", "", "Project owner (defaults to repo owner)")
 	cmd.Flags().StringVar(&opts.framework, "framework", "IDPF", "Framework type (IDPF or none)")
 	cmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Auto-confirm prompts")
+	cmd.MarkFlagsMutuallyExclusive("project", "source-project")
 
 	return cmd
 }
 
 func runInit(cmd *cobra.Command, args []string, opts *initOptions) error {
 	// --non-interactive is now a no-op (all modes are non-interactive)
+	if opts.project > 0 {
+		return runInitExistingProject(cmd, opts)
+	}
 	return runInitNonInteractive(cmd, opts)
 }
 
@@ -87,14 +94,14 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 	// Validate required flags
 	var missingFlags []string
 	if opts.sourceProject == 0 {
-		missingFlags = append(missingFlags, "--source-project")
+		missingFlags = append(missingFlags, "--source-project (or --project)")
 	}
 	if opts.repo == "" {
 		missingFlags = append(missingFlags, "--repo")
 	}
 
 	if len(missingFlags) > 0 {
-		fmt.Fprintf(os.Stderr, "error: non-interactive mode requires flags: %s\n", strings.Join(missingFlags, ", "))
+		fmt.Fprintf(os.Stderr, "error: required flags: %s\n", strings.Join(missingFlags, ", "))
 		return fmt.Errorf("missing required flags: %s", strings.Join(missingFlags, ", "))
 	}
 
@@ -295,6 +302,160 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 	// Output success to stdout (minimal for CI/CD parsing)
 	fmt.Fprintf(cmd.OutOrStdout(), "Created .gh-pmu.json for %s (#%d) [copied from source project #%d]\n",
 		newProject.Title, newProject.Number, opts.sourceProject)
+
+	return nil
+}
+
+// runInitExistingProject connects to an existing project (--project flag).
+func runInitExistingProject(cmd *cobra.Command, opts *initOptions) error {
+	// Validate --repo is required
+	if opts.repo == "" {
+		fmt.Fprintf(os.Stderr, "error: --project requires --repo flag\n")
+		return fmt.Errorf("missing required flag: --repo")
+	}
+
+	// Validate repo format
+	repoOwner, repoName := splitRepository(opts.repo)
+	if repoOwner == "" || repoName == "" {
+		fmt.Fprintf(os.Stderr, "error: --repo must be in owner/repo format\n")
+		return fmt.Errorf("invalid repo format: %s", opts.repo)
+	}
+
+	// Determine owner
+	owner := opts.owner
+	if owner == "" {
+		owner = repoOwner
+	}
+
+	// Determine framework
+	framework := opts.framework
+	if framework == "" {
+		framework = "IDPF"
+	}
+
+	// Check if config already exists
+	var existingFramework string
+	if _, err := os.Stat(".gh-pmu.json"); err == nil {
+		if existingCfg, err := loadExistingFramework("."); err == nil {
+			existingFramework = existingCfg
+		}
+		if !opts.yes {
+			fmt.Fprintf(os.Stderr, "error: .gh-pmu.json already exists (use --yes to overwrite)\n")
+			return fmt.Errorf("config already exists")
+		}
+	}
+
+	// Preserve existing framework on re-init
+	if existingFramework != "" {
+		framework = existingFramework
+	}
+
+	// Initialize API client
+	client, clientErr := api.NewClient()
+	if clientErr != nil {
+		return clientErr
+	}
+
+	// Fetch existing project
+	project, err := client.GetProject(owner, opts.project)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: project %s/%d not found: %v\n", owner, opts.project, err)
+		return fmt.Errorf("project not found: %w", err)
+	}
+
+	// Load embedded defaults for field validation
+	defs, err := defaults.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: failed to load defaults: %v\n", err)
+		return fmt.Errorf("failed to load embedded defaults: %w", err)
+	}
+
+	// Fetch project fields
+	projectFields, err := client.GetProjectFields(project.ID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: could not fetch project fields: %v\n", err)
+		return fmt.Errorf("could not fetch project fields: %w", err)
+	}
+
+	// Validate required fields exist (IDPF only)
+	if framework == "IDPF" {
+		for _, reqField := range defs.Fields.Required {
+			field := findFieldByName(projectFields, reqField.Name)
+			if field == nil {
+				fmt.Fprintf(os.Stderr, "error: required field %q not found in project — create it in the project settings before connecting\n", reqField.Name)
+				return fmt.Errorf("required field %q not found in project", reqField.Name)
+			}
+
+			if field.DataType != reqField.Type {
+				fmt.Fprintf(os.Stderr, "error: field %q has type %s, expected %s\n", reqField.Name, field.DataType, reqField.Type)
+				return fmt.Errorf("field %q has type %s, expected %s", reqField.Name, field.DataType, reqField.Type)
+			}
+
+			if reqField.Type == "SINGLE_SELECT" && len(reqField.Options) > 0 {
+				for _, reqOpt := range reqField.Options {
+					found := false
+					for _, opt := range field.Options {
+						if opt.Name == reqOpt {
+							found = true
+							break
+						}
+					}
+					if !found {
+						fmt.Fprintf(os.Stderr, "error: field %q missing required option %q\n", reqField.Name, reqOpt)
+						return fmt.Errorf("field %q missing required option %q", reqField.Name, reqOpt)
+					}
+				}
+			}
+		}
+	}
+
+	// Link repository to the project
+	repoID, err := client.GetRepositoryID(repoOwner, repoName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not get repository ID: %v\n", err)
+	} else {
+		if linkErr := client.LinkProjectToRepository(project.ID, repoID); linkErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not link repository: %v\n", linkErr)
+		}
+	}
+
+	// Convert fields to metadata
+	metadata := &ProjectMetadata{
+		ProjectID: project.ID,
+	}
+	for _, f := range projectFields {
+		fm := FieldMetadata{
+			ID:       f.ID,
+			Name:     f.Name,
+			DataType: f.DataType,
+		}
+		for _, opt := range f.Options {
+			fm.Options = append(fm.Options, OptionMetadata{
+				ID:   opt.ID,
+				Name: opt.Name,
+			})
+		}
+		metadata.Fields = append(metadata.Fields, fm)
+	}
+
+	// Create config
+	cfg := &InitConfig{
+		ProjectName:   project.Title,
+		ProjectOwner:  owner,
+		ProjectNumber: project.Number,
+		Repositories:  []string{opts.repo},
+		Framework:     framework,
+	}
+
+	// Write config
+	cwd, _ := os.Getwd()
+	if err := writeConfigWithMetadata(cwd, cfg, metadata); err != nil {
+		fmt.Fprintf(os.Stderr, "error: failed to write config: %v\n", err)
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Created .gh-pmu.json for %s (#%d) [connected to existing project]\n",
+		project.Title, project.Number)
 
 	return nil
 }

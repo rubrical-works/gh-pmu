@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.5] - 2026-03-27
+
+### Fixed
+- Replace anonymous struct with named `LinkProjectV2ToRepositoryInput` type in `LinkProjectToRepository` — fixes "Missing type definition for variable: $input" GraphQL error during `gh pmu init` (#824)
+
+### Added
+- `--project` flag on `gh pmu init` to connect to an existing GitHub ProjectV2 without copying from a template (#825)
+
+### Changed
+- Deprecate `--non-interactive` flag on `gh pmu init` — flag is a no-op and will be removed in a future release (#826)
+
+### Documentation
+- Update `docs/commands.md` with `init` flag reference (`--project`, `--source-project`, `--repo`, etc.)
+- Fix stale `.gh-pmu.yml` references to `.gh-pmu.json`
+- Update README with missing commands and framework integration
+- Remove irrelevant files and stale docs references
+
 ## [1.4.4] - 2026-03-26
 
 ### Security
