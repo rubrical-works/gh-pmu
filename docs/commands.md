@@ -233,7 +233,7 @@ gh pmu edit 42 -F issue.md
 gh pmu edit 42 --body-stdin
 
 # Output body to stdout (for piping)
-gh pmu edit 42 --body-stdout
+gh pmu view 42 --body-stdout
 
 # Edit issue in different repository
 gh pmu edit 42 --repo owner/other-repo
@@ -244,7 +244,6 @@ gh pmu edit 42 --repo owner/other-repo
 |------|---------|
 | `--body-file` / `-F` | Read body from file, or export to file if used alone |
 | `--body-stdin` | Read body from standard input |
-| `--body-stdout` | Output current body to stdout |
 | `--repo` / `-R` | Specify repository (owner/repo format) |
 
 **Output:**
@@ -480,7 +479,7 @@ gh pmu sub create --parent 10 --title "Task" --inherit-assignees
 **Flags unique to gh-pmu:**
 | Flag | Purpose |
 |------|---------|
-| `--inherit-labels` | Copy labels from parent (default: true) |
+| `--inherit-labels` | Copy labels from parent (default: false) |
 | `--inherit-milestone` | Copy milestone from parent (default: true) |
 | `--inherit-assignees` | Copy assignees from parent (default: false) |
 
@@ -729,7 +728,7 @@ gh pmu branch close
 
 # List branch history
 gh pmu branch list
-gh pmu branch list --refresh         # Force API fetch, update cache
+gh pmu branch list
 ```
 
 **Notes:**
