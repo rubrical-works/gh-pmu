@@ -62,7 +62,7 @@ gh pmu branch close
 
 ## Standalone Usage
 
-`gh pmu` works as a standalone tool without any framework integration. The optional `framework` field in `.gh-pmu.yml` enables workflow restrictions when used with process frameworks like [IDPF](https://github.com/rubrical-works/idpf-praxis).
+`gh pmu` works as a standalone tool without any framework integration. The optional `framework` field in `.gh-pmu.json` enables workflow restrictions when used with process frameworks like [IDPF](https://github.com/rubrical-works/idpf-praxis).
 
 **Standalone (default):**
 - All commands work normally
@@ -76,17 +76,22 @@ gh pmu branch close
 
 To use standalone, simply omit the `framework` field from your config:
 
-```yaml
-project:
-  owner: your-org
-  number: 1
-repositories:
-  - your-org/your-repo
-fields:
-  status:
-    values: {backlog, in_progress, in_review, done}
-  priority:
-    values: {p0, p1, p2}
+```json
+{
+  "project": {
+    "owner": "your-org",
+    "number": 1
+  },
+  "repositories": ["your-org/your-repo"],
+  "fields": {
+    "status": {
+      "values": {"backlog": "Backlog", "in_progress": "In progress", "in_review": "In review", "done": "Done"}
+    },
+    "priority": {
+      "values": {"p0": "P0", "p1": "P1", "p2": "P2"}
+    }
+  }
+}
 ```
 
 ## Documentation

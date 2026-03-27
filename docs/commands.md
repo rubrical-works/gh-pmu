@@ -74,7 +74,7 @@ gh pmu init --refresh
 ```
 ? Select a project: my-project (#5)
 ? Select repositories to track: myorg/frontend, myorg/backend
-✓ Configuration saved to .gh-pmu.yml
+✓ Configuration saved to .gh-pmu.json
 ✓ Fetched 8 project fields
 ```
 
@@ -755,7 +755,7 @@ gh pmu validation disable
 ```
 
 **Notes:**
-- Validation is configured in the `validation` section of `.gh-pmu.yml`
+- Validation is configured in the `validation` section of `.gh-pmu.json`
 - When enabled, `move`, `create`, and workflow commands enforce transition rules
 - Use `--force` flag on `move` command to bypass validation when needed
 
@@ -790,7 +790,7 @@ gh pmu accept --dir /path/to/repo
 | `--dir` | Directory to search for config (default: current directory) |
 
 **Notes:**
-- Acceptance is stored in `.gh-pmu.yml` and shared across collaborators
+- Acceptance is stored in `.gh-pmu.json` and shared across collaborators
 - Re-acceptance is required when the major or minor version changes (patch updates do not require re-acceptance)
 - The `init`, `accept`, `--help`, and `--version` commands are exempt from the acceptance gate
 

@@ -149,7 +149,7 @@ gh-pmu/
 │   ├── config/            # Configuration loading
 │   └── ui/                # Terminal UI components
 ├── docs/                  # Documentation
-├── .gh-pmu.yml           # Project configuration
+├── .gh-pmu.json           # Project configuration
 └── main.go               # Entry point
 ```
 

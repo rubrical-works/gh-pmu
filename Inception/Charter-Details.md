@@ -73,7 +73,7 @@ Managing GitHub Projects through the `gh` CLI is fragmented. Project field updat
 | Language | Go 1.23 | CLI performance, static binary, `gh` ecosystem |
 | Framework | Cobra | Standard for Go CLI applications |
 | API | GitHub GraphQL | Project field mutations require GraphQL |
-| Config | YAML | Human-readable, git-friendly |
+| Config | JSON | Machine-friendly, git-friendly |
 
 ### Architecture Style
 
@@ -84,7 +84,7 @@ CLI Extension - Single binary that extends GitHub CLI (`gh`) with project manage
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | GraphQL vs REST | GraphQL | Projects v2 requires GraphQL for mutations |
-| Config format | JSON + YAML | JSON primary, YAML companion for readability |
+| Config format | JSON | `.gh-pmu.json` — YAML support removed in v1.4.x |
 | Alias system | Field value aliases | User-friendly status names (e.g., `in_progress` vs `47fc9ee4`) |
 
 ### Technical Risks

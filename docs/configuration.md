@@ -1,6 +1,6 @@
 # Configuration Guide
 
-gh-pmu uses a `.gh-pmu.yml` file in your repository root to configure project connections, field aliases, and triage rules.
+gh-pmu uses a `.gh-pmu.json` file in your repository root to configure project connections, field aliases, and triage rules.
 
 > **Note:** gh-pmu is designed for Kanban-style GitHub Projects with status-based columns (e.g., Backlog, In Progress, In Review, Done). If your project uses a different board style, some features may not apply.
 
@@ -12,7 +12,7 @@ Run the interactive setup:
 gh pmu init
 ```
 
-This creates `.gh-pmu.yml` with your project settings and fetches field metadata.
+This creates `.gh-pmu.json` with your project settings and fetches field metadata.
 
 ## Configuration Reference
 
@@ -206,7 +206,7 @@ acceptance:
 
 **Notes:**
 - Acceptance is required before using any command (except `init`, `accept`, `--help`, `--version`)
-- Stored in `.gh-pmu.yml` so acceptance is shared across collaborators
+- Stored in `.gh-pmu.json` so acceptance is shared across collaborators
 - Re-acceptance is triggered on major or minor version bumps (not patch)
 - Run `gh pmu accept` to accept or re-accept terms
 
@@ -287,7 +287,7 @@ metadata:
 
 ## Tips
 
-- **Commit `.gh-pmu.yml`** to share configuration with your team
+- **Commit `.gh-pmu.json`** to share configuration with your team
 - **Use aliases consistently** across your workflow for faster typing
 - **Run `init --refresh`** after adding new project fields
 - **Multiple triage rules** let you handle different scenarios (untracked, stale, needs-review)
