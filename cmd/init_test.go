@@ -1823,3 +1823,86 @@ func TestWriteConfigWithMetadata_PreservesAcceptance_SameVersion(t *testing.T) {
 		t.Errorf("Expected version=%s, got %v", currentVersion, accMap["version"])
 	}
 }
+
+// ============================================================================
+// --project flag tests (connect to existing project)
+// ============================================================================
+
+func TestInitCommand_HasProjectFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"init", "--help"})
+
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("init --help should not error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "--project") {
+		t.Error("Expected --help output to mention --project flag")
+	}
+}
+
+func TestInit_MutualExclusion_ProjectAndSourceProject(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"init", "--project", "42", "--source-project", "5", "--repo", "owner/repo"})
+
+	buf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(errBuf)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("Expected error when both --project and --source-project are provided")
+	}
+
+	errOutput := errBuf.String()
+	if !strings.Contains(errOutput, "none of the others can be") && !strings.Contains(errOutput, "mutually exclusive") {
+		t.Errorf("Expected mutual exclusion error, got: %s", errOutput)
+	}
+}
+
+func TestInit_ProjectRequiresRepo(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"init", "--project", "42"})
+
+	buf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(errBuf)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("Expected error when --repo is missing with --project")
+	}
+
+	errOutput := errBuf.String()
+	if !strings.Contains(errOutput, "--repo") {
+		t.Errorf("Expected error to mention --repo, got: %s", errOutput)
+	}
+}
+
+func TestInit_NeitherProjectNorSourceProject(t *testing.T) {
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"init", "--repo", "owner/repo"})
+
+	buf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(errBuf)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("Expected error when neither --project nor --source-project is provided")
+	}
+
+	errOutput := errBuf.String()
+	if !strings.Contains(errOutput, "--source-project") || !strings.Contains(errOutput, "--project") {
+		t.Errorf("Expected error to mention --source-project or --project, got: %s", errOutput)
+	}
+}
