@@ -1177,7 +1177,7 @@ func TestFindFieldByName_EmptySlice(t *testing.T) {
 // Non-Interactive Mode Tests (Issue #609)
 // ============================================================================
 
-func TestInitCommand_HasNonInteractiveFlag(t *testing.T) {
+func TestInitCommand_NonInteractiveIsDeprecated(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetArgs([]string{"init", "--help"})
 
@@ -1190,9 +1190,10 @@ func TestInitCommand_HasNonInteractiveFlag(t *testing.T) {
 		t.Fatalf("init --help should work: %v", err)
 	}
 
+	// Deprecated flags are hidden from help output
 	output := buf.String()
-	if !strings.Contains(output, "--non-interactive") {
-		t.Error("Expected help output to mention '--non-interactive'")
+	if strings.Contains(output, "--non-interactive") {
+		t.Error("Expected --non-interactive to be hidden from help (deprecated)")
 	}
 }
 
@@ -1904,5 +1905,46 @@ func TestInit_NeitherProjectNorSourceProject(t *testing.T) {
 	errOutput := errBuf.String()
 	if !strings.Contains(errOutput, "--source-project") || !strings.Contains(errOutput, "--project") {
 		t.Errorf("Expected error to mention --source-project or --project, got: %s", errOutput)
+	}
+}
+
+// ============================================================================
+// --non-interactive deprecation tests
+// ============================================================================
+
+func TestInit_NonInteractiveEmitsDeprecationWarning(t *testing.T) {
+	cmd := NewRootCommand()
+	// Use --non-interactive with minimal flags to trigger deprecation during parsing
+	// Cobra prints deprecation to stderr during flag parsing before command execution
+	cmd.SetArgs([]string{"init", "--non-interactive", "--source-project", "5", "--repo", "owner/repo"})
+
+	combinedBuf := new(bytes.Buffer)
+	cmd.SetOut(combinedBuf)
+	cmd.SetErr(combinedBuf)
+
+	// Will fail at API call, but deprecation warning should appear before the error
+	_ = cmd.Execute()
+
+	output := combinedBuf.String()
+	if !strings.Contains(output, "deprecated") {
+		t.Errorf("Expected deprecation warning when --non-interactive is used, got: %s", output)
+	}
+}
+
+func TestInit_NonInteractiveFlagStillAccepted(t *testing.T) {
+	cmd := NewRootCommand()
+	// Should not return "unknown flag" error
+	cmd.SetArgs([]string{"init", "--non-interactive", "--source-project", "5", "--repo", "owner/repo"})
+
+	buf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(errBuf)
+
+	err := cmd.Execute()
+
+	// It will fail at the API call, but should NOT fail with "unknown flag"
+	if err != nil && strings.Contains(err.Error(), "unknown flag") {
+		t.Error("--non-interactive should still be accepted (deprecated, not removed)")
 	}
 }

@@ -67,6 +67,7 @@ Flags --project and --source-project are mutually exclusive.`,
 	}
 
 	cmd.Flags().BoolVar(&opts.nonInteractive, "non-interactive", false, "Disable UI and prompts (requires --source-project and --repo)")
+	_ = cmd.Flags().MarkDeprecated("non-interactive", "init is always non-interactive; this flag will be removed in a future release")
 	cmd.Flags().IntVar(&opts.sourceProject, "source-project", 0, "Source project number to copy from")
 	cmd.Flags().IntVar(&opts.project, "project", 0, "Existing project number to connect to")
 	cmd.Flags().StringVar(&opts.repo, "repo", "", "Repository (owner/repo format)")
