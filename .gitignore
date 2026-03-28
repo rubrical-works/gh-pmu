@@ -85,3 +85,15 @@ runp_claude
 .claude/commands/split-story.md
 .claude/commands/switch-branch.md
 .claude/commands/transfer-issue.md
+.claude/skills/anti-pattern-analysis/
+.claude/skills/codebase-analysis/
+.claude/skills/command-spec-audit/
+.claude/skills/drawio-generation/
+.claude/skills/error-handling-patterns/
+.claude/skills/mutation-testing/
+.claude/skills/tdd-failure-recovery/
+.claude/skills/tdd-green-phase/
+.claude/skills/tdd-red-phase/
+.claude/skills/tdd-refactor-phase/
+.claude/skills/test-scaffold/
+.claude/skills/test-writing-patterns/
