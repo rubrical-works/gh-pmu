@@ -1,5 +1,5 @@
 ---
-version: "v0.76.0"
+version: "v0.77.3"
 description: Merge branch to main with gated checks (project)
 argument-hint: "[--skip-gates] [--dry-run]"
 copyright: "Rubrical Works (c) 2026"

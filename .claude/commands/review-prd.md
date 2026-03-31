@@ -1,5 +1,5 @@
 ---
-version: "v0.76.0"
+version: "v0.77.3"
 description: Review a PRD with tracked history (project)
 argument-hint: "#issue [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -23,7 +23,13 @@ Reviews a PRD document linked from a GitHub issue. Self-contained: handles docum
 | `--force` | No | Force re-review even if issue has `reviewed` label |
 ---
 ## Execution Instructions
-**REQUIRED:** Generate TodoWrite todos. Include extensions. Track progress. Post-compaction: re-read spec.
+**REQUIRED:** This is a routed command -- use two-phase task creation:
+1. **Phase 1 -- Preamble task only:** Create a single task for the preamble/setup step using `TaskCreate`. Do NOT create tasks for subsequent workflow steps yet.
+2. **Phase 2 -- Bulk create after routing:** After the preamble confirms the workflow path (no redirect, no early exit), bulk-create tasks for all remaining workflow steps using `TaskCreate`.
+3. **On redirect or early exit:** Mark the preamble task as completed and stop. Do NOT create tasks for the original command's remaining steps.
+4. **Include Extensions:** For each non-empty `USER-EXTENSION` block, add a task in Phase 2.
+5. **Track Progress:** Mark tasks `in_progress` -> `completed` as you work.
+6. **Post-Compaction:** Re-read this spec. Resume from the first incomplete task -- no re-routing needed.
 ---
 ## Workflow
 ### Step 1: Setup (Preamble Script)

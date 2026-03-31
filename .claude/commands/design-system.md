@@ -1,5 +1,5 @@
 ---
-version: "v0.76.0"
+version: "v0.77.3"
 description: Produce DTCG-compliant design tokens with pluggable adapter architecture (project)
 argument-hint: "[--discover | --export <adapter> | --theme <name>]"
 copyright: "Rubrical Works (c) 2026"

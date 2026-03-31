@@ -1,5 +1,5 @@
 ---
-version: "v0.76.0"
+version: "v0.77.3"
 description: Comprehensive code review with manifest-driven incremental tracking (project)
 argument-hint: "[--full] [--status] [--scope <globs>] [--batch <N>] [--with <domains>] [--suggest]"
 copyright: "Rubrical Works (c) 2026"

@@ -1,5 +1,5 @@
 ---
-version: "v0.76.0"
+version: "v0.77.3"
 description: Resolve review findings for an issue (project)
 argument-hint: "#issue"
 copyright: "Rubrical Works (c) 2026"
@@ -8,16 +8,16 @@ copyright: "Rubrical Works (c) 2026"
 # /resolve-review
 Parse latest review findings on an issue and systematically resolve each one. Delegates comment parsing and classification to `resolve-preamble.js`. Works with `/review-issue`, `/review-proposal`, `/review-prd`, `/review-test-plan`.
 **Prerequisites:** `gh pmu` installed, `.gh-pmu.json` configured, issue has review comment(s).
-
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `#issue` | Yes | Issue number (e.g., `#42` or `42`) |
-
 ## Execution Instructions
-**REQUIRED:** Before executing:
-1. **Create Todo List:** Use `TodoWrite` from steps below
-2. **Track Progress:** Mark todos `in_progress` -> `completed`
-3. **Resume Point:** If interrupted, todos show where to continue
+**REQUIRED:** This is a routed command -- use two-phase task creation:
+1. **Phase 1 -- Preamble task only:** Create a single task for the preamble/setup step using `TaskCreate`. Do NOT create tasks for subsequent workflow steps yet.
+2. **Phase 2 -- Bulk create after routing:** After the preamble confirms the workflow path (no redirect, no early exit), bulk-create tasks for all remaining workflow steps using `TaskCreate`.
+3. **On redirect or early exit:** Mark the preamble task as completed and stop. Do NOT create tasks for the original command's remaining steps.
+4. **Track Progress:** Mark tasks `in_progress` -> `completed` as you work.
+5. **Post-Compaction:** Re-read this spec. Resume from the first incomplete task -- no re-routing needed.
 ## Workflow
 ### Step 1: Setup (Preamble Script)
 ```bash

@@ -1,5 +1,5 @@
 ---
-version: "v0.76.0"
+version: "v0.77.3"
 description: Prepare release with PR, merge to main, and tag
 argument-hint: "[version] [--skip-coverage] [--dry-run] [--help]"
 copyright: "Rubrical Works (c) 2026"
@@ -238,13 +238,16 @@ gh pr merge --merge
 ```
 ### Step 4.3: Close Branch Tracker
 ```bash
-gh pmu branch close
+gh pmu branch close --yes
 ```
 ### Step 4.4: Switch to Main
 ```bash
+git stash
 git checkout main
 git pull origin main
+git stash pop
 ```
+**Note:** `git stash` handles uncommitted `settings.local.json` changes (session-specific permission entries added by Claude Code during the session).
 
 <!-- USER-EXTENSION-START: pre-tag -->
 ### Important Rules

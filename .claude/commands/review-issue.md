@@ -1,5 +1,5 @@
 ---
-version: "v0.76.0"
+version: "v0.77.3"
 description: Review issues with type-specific criteria (project)
 argument-hint: "#issue [#issue...] [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -23,7 +23,13 @@ Reviews one or more GitHub issues with type-specific criteria. Delegates setup t
 Multiple issues: reviews sequentially.
 ---
 ## Execution Instructions
-**REQUIRED:** Generate TodoWrite todos. Include extensions. Track progress. Post-compaction: re-read spec.
+**REQUIRED:** This is a routed command -- use two-phase task creation:
+1. **Phase 1 -- Preamble task only:** Create a single task for the preamble/setup step using `TaskCreate`. Do NOT create tasks for subsequent workflow steps yet.
+2. **Phase 2 -- Bulk create after routing:** After the preamble confirms the workflow path (no redirect, no early exit), bulk-create tasks for all remaining workflow steps using `TaskCreate`.
+3. **On redirect or early exit:** Mark the preamble task as completed and stop. Do NOT create tasks for the original command's remaining steps.
+4. **Include Extensions:** For each non-empty `USER-EXTENSION` block, add a task in Phase 2.
+5. **Track Progress:** Mark tasks `in_progress` -> `completed` as you work.
+6. **Post-Compaction:** Re-read this spec. Resume from the first incomplete task -- no re-routing needed.
 ---
 ## Workflow
 **Multiple issues:** Process each through Steps 1-3.
@@ -31,10 +37,10 @@ Multiple issues: reviews sequentially.
 ```bash
 node ./.claude/scripts/shared/review-preamble.js $ISSUE [--with extensions] [--mode mode] [--force]
 ```
-- `ok: false`: report error → **STOP**
-- `context.redirect`: invoke corresponding skill with all original args (`#$ISSUE [--with extensions] [--mode mode] [--force]`) → **STOP**
+- `ok: false`: report error -> **STOP**
+- `context.redirect`: invoke corresponding skill with all original args (`#$ISSUE [--with extensions] [--mode mode] [--force]`) -> **STOP**
 - Closed: ask user
-- `earlyExit: true` (reviewed label, no `--force`): report count → **STOP**
+- `earlyExit: true` (reviewed label, no `--force`): report count -> **STOP**
 Extract: `context`, `criteria`, `extensions`, `warnings`.
 
 <!-- USER-EXTENSION-START: pre-review -->

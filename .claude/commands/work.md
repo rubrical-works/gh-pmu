@@ -1,5 +1,5 @@
 ---
-version: "v0.76.0"
+version: "v0.77.3"
 description: Start working on issues with validation and auto-TODO (project)
 argument-hint: "#issue [#issue...] [--assign] [--nonstop] [--wait] | all in <status>"
 copyright: "Rubrical Works (c) 2026"
@@ -25,7 +25,13 @@ Start working on one or more issues. Validates existence, branch assignment, and
 | `--wait` | No | Wait for pending CI to pass before starting work |
 ---
 ## Execution Instructions
-Generate todos from steps + extensions. Track progress. Post-compaction: re-read spec.
+**REQUIRED:** This is a routed command -- use two-phase task creation:
+1. **Phase 1 -- Preamble task only:** Create a single task for the preamble/setup step using `TaskCreate`. Do NOT create tasks for subsequent workflow steps yet.
+2. **Phase 2 -- Bulk create after routing:** After the preamble confirms the workflow path (no redirect, no early exit), bulk-create tasks for all remaining workflow steps using `TaskCreate`.
+3. **On redirect or early exit:** Mark the preamble task as completed and stop. Do NOT create tasks for the original command's remaining steps.
+4. **Include Extensions:** For each non-empty `USER-EXTENSION` block, add a task in Phase 2.
+5. **Track Progress:** Mark tasks `in_progress` -> `completed` as you work.
+6. **Post-Compaction:** Re-read this spec. Resume from the first incomplete task -- no re-routing needed.
 ---
 ## Workflow
 ### Step 0: Clear Todo List
@@ -36,7 +42,7 @@ If not epic or branch tracker, clear todos.
 
 ### Step 1: Context Gathering (Preamble Script)
 Run `node .claude/scripts/shared/work-preamble.js` with `--issue N`, `--issues "N,N,N"`, or `--status <status>`. Append `--assign` for auto-assign.
-Parse JSON: `ok: false` → report errors, STOP. Extract `context`, `gates`, `autoTodo`, `warnings`.
+Parse JSON: `ok: false` -> report errors, STOP. Extract `context`, `gates`, `autoTodo`, `warnings`.
 **--assign errors:** `ALREADY_ASSIGNED`, `WORKSTREAM_CONFLICT`.
 
 <!-- USER-EXTENSION-START: post-work-start -->
@@ -54,11 +60,11 @@ node .claude/scripts/shared/wait-for-ci.js --branch $(git branch --show-current)
 If `context.wait` not set, skip.
 ### Step 1b: Epic Complexity Assessment
 **Trigger:** `context.type` is `"epic"` and `--nonstop` set.
-Run `node .claude/scripts/shared/epic-complexity.js $ISSUE`. `"functional"` → `strictTDD = true`. Signals: `.claude/metadata/epic-complexity-signals.json`.
+Run `node .claude/scripts/shared/epic-complexity.js $ISSUE`. `"functional"` -> `strictTDD = true`. Signals: `.claude/metadata/epic-complexity-signals.json`.
 ### Step 2: Framework Methodology Dispatch
 Load core file from `framework-config.json`. Missing: warn, continue.
 ### Step 3: Work the Issue
-Per AC: mark in_progress, TDD cycle (RED→GREEN→REFACTOR), run tests, mark completed, commit (`Refs #$ISSUE`).
+Per AC: mark in_progress, TDD cycle (RED->GREEN->REFACTOR), run tests, mark completed, commit (`Refs #$ISSUE`).
 **GATE: Do NOT start next AC until commit made.**
 **Sub-Agent Review Gate:** After Agent tool, `git diff --name-only`. Read changed files, verify match. Mandatory when `strictTDD`. Not satisfied by summaries/tests alone.
 If no auto-TODO: single unit. Post-compaction: resume from first incomplete AC.
@@ -70,13 +76,13 @@ Re-read `.claude/scripts/shared/lib/doc-templates.json` from disk. Create if war
 
 ### Step 4: Verify Acceptance Criteria (with QA Extraction)
 **Re-read files before evaluating each AC.** Do NOT evaluate from memory.
-Can verify → `[x]`. Cannot verify → QA extraction (4a).
+Can verify -> `[x]`. Cannot verify -> QA extraction (4a).
 Update issue body via `gh pmu view/edit` with temp file.
-#### Step 4a: QA Extraction — Automatic Sub-Issue Creation
+#### Step 4a: QA Extraction -- Automatic Sub-Issue Creation
 Re-read `.claude/scripts/shared/lib/qa-config.json`. Match unverifiable ACs against keywords. For each match, **automatically** (no user confirmation):
 1. `gh pmu sub create --parent $ISSUE --title "QA: [AC description]" --label qa-required -F .tmp-qa-body.md`
 2. Sub-issue body: AC text, parent reference, QA context
-3. Annotate parent AC as `[x] AC text → QA: #NNN`
+3. Annotate parent AC as `[x] AC text -> QA: #NNN`
 Silent, automatic flow. Works in standard and `--nonstop` mode.
 #### Step 4b: Force-Move Prohibition
 **NEVER** use `--force` to bypass unchecked ACs on issues you implemented. Legitimate: epic parents, external, branch trackers, test-plan approvals.
@@ -96,11 +102,11 @@ gh pmu move $ISSUE --status in_review
 ```
 ### Step 6: STOP Boundary
 ```
-Issue #$ISSUE: $TITLE — In Review
+Issue #$ISSUE: $TITLE -- In Review
 Say "done" or run /done #$ISSUE to close.
 ```
 **STOP.** Do NOT close.
-**CRITICAL — Autonomous Epic/Branch processing:** Ascending numeric order (or custom Processing Order). Skip done/in_review.
+**CRITICAL -- Autonomous Epic/Branch processing:** Ascending numeric order (or custom Processing Order). Skip done/in_review.
 **Default:** Per-sub-issue STOP.
 **`--nonstop`:** No STOP between sub-issues. One commit per AC. Commits local. Failure halts with resume instructions.
 **Post-compaction:** Check `gh pmu sub list`, resume from first incomplete.

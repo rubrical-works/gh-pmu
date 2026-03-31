@@ -1,5 +1,5 @@
 ---
-version: "v0.76.0"
+version: "v0.77.3"
 description: Create text-based or diagrammatic screen mockups (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -38,7 +38,7 @@ Creates text-based or diagrammatic screen mockups for UI screens. Fully interact
 **REQUIRED:** Before executing:
 1. **Generate Todo List:** Parse workflow steps, use `TodoWrite` to create todos
 2. **Include Extensions:** Add todo for each non-empty `USER-EXTENSION` block
-3. **Track Progress:** Mark todos `in_progress` → `completed` as you work
+3. **Track Progress:** Mark todos `in_progress` -> `completed` as you work
 4. **Post-Compaction:** Re-read spec and regenerate todos after context compaction
 
 ---
@@ -70,8 +70,8 @@ Before asking questions, scan `Mockups/` and subdirectories:
 
 **If ASCII-only detected:** Use `AskUserQuestion`:
 - Question: "This mockup set contains only ASCII mockups. Would you like to convert them to interactive mockups and create specs?"
-- **Yes, convert** — Generate `.drawio.svg` from ASCII sources; create specs in `Specs/` if missing. Report: `"Converted {N} ASCII mockups. Created {M} screen specs."` Continue with normal processing.
-- **No, continue** — Skip conversion.
+- **Yes, convert** -- Generate `.drawio.svg` from ASCII sources; create specs in `Specs/` if missing. Report: `"Converted {N} ASCII mockups. Created {M} screen specs."` Continue with normal processing.
+- **No, continue** -- Skip conversion.
 
 **If not ASCII-only:** Skip silently.
 
@@ -82,12 +82,12 @@ Before asking questions, scan `Mockups/` and subdirectories:
 **Screen spec detection:**
 1. Check issue body/linked proposal for `## Screen Specs` section with file references
 2. Scan `Mockups/*/Specs/` for specs matching screens in the issue title/body
-3. If found: pre-select in Q4, report: `"Screen specs found: {names} — available as starting point."`
+3. If found: pre-select in Q4, report: `"Screen specs found: {names} -- available as starting point."`
 
 **Path analysis detection:**
 1. Check proposal file or issue body for `## Path Analysis` section
 2. If found: report category names and path counts
-3. `AskUserQuestion`: "Use path analysis to scope mockups" / "Ignore path analysis — scope mockups by screen"
+3. `AskUserQuestion`: "Use path analysis to scope mockups" / "Ignore path analysis -- scope mockups by screen"
 4. If "Use path analysis": generate a mockup per distinct screen state; group by scenario category in README.
 
 **No `#NN` or no artifacts:** Skip silently.
@@ -99,7 +99,7 @@ Before asking questions, scan `Mockups/` and subdirectories:
 - "Modify existing mockups"
 - "View/browse existing mockup sets"
 
-**Conditions:** With `#NN`: pre-select from issue type (enhancement/proposal → Create, bug → Modify). No existing mockups: skip Q1, default to "Create new mockups".
+**Conditions:** With `#NN`: pre-select from issue type (enhancement/proposal -> Create, bug -> Modify). No existing mockups: skip Q1, default to "Create new mockups".
 
 **Q2: Which mockup set?** `AskUserQuestion`:
 - List each existing `Mockups/{Name}/` directory
@@ -118,13 +118,13 @@ node .claude/scripts/shared/mockup-detect-framework.js
 If a supported framework is detected (exit code 0), add "Framework-native components" as the first option.
 
 `AskUserQuestion`:
-- "Framework-native components ({framework})" → `Components/` (only shown when framework detected)
-- "Interactive HTML mockups" → `Screens/` as `.html` files
-- "ASCII/text mockups" → `AsciiScreens/`
-- "Interactive UI mockups (drawio.svg)" → `Screens/`
-- "Both ASCII + drawio.svg" → both subdirectories
+- "Framework-native components ({framework})" -> `Components/` (only shown when framework detected)
+- "Interactive HTML mockups" -> `Screens/` as `.html` files
+- "ASCII/text mockups" -> `AsciiScreens/`
+- "Interactive UI mockups (drawio.svg)" -> `Screens/`
+- "Both ASCII + drawio.svg" -> both subdirectories
 
-**Framework-native:** Generate layout-only components using the detected framework's extensions (`.tsx`, `.svelte`, `.vue`, `.component.ts`/`.component.html`). Structure and placeholder content only — no business logic, state, or API calls. Written to `Mockups/{Name}/Components/`.
+**Framework-native:** Generate layout-only components using the detected framework's extensions (`.tsx`, `.svelte`, `.vue`, `.component.ts`/`.component.html`). Structure and placeholder content only -- no business logic, state, or API calls. Written to `Mockups/{Name}/Components/`.
 
 **Fallback decision table (when framework-native is NOT available):**
 
@@ -136,7 +136,7 @@ If a supported framework is detected (exit code 0), add "Framework-native compon
 | Framework not chosen | Charter tech stack is TBD/placeholder | `.drawio.svg` |
 | Static/content site | Astro/Eleventy/Hugo without component framework | `.drawio.svg` |
 
-When fallback applies, "Framework-native components" is not shown — Q3 presents the standard options only.
+When fallback applies, "Framework-native components" is not shown -- Q3 presents the standard options only.
 
 **Q4: How should screen content be sourced?** `AskUserQuestion`:
 - "From existing screen specs" (replaces `--from-spec`)
@@ -146,20 +146,35 @@ When fallback applies, "Framework-native components" is not shown — Q3 present
 
 If `Mockups/{Name}/Specs/` has specs, show them as available sources.
 
-**Q4a** (from specs): `AskUserQuestion` with `multiSelect: true` — list available specs in `Mockups/{Name}/Specs/`.
+**Q4a** (from specs): `AskUserQuestion` with `multiSelect: true` -- list available specs in `Mockups/{Name}/Specs/`.
 
 **Q4b** (source discovery): Free text path via `AskUserQuestion`. Defaults to full project scan.
 
 **Q5** (per screen): **Review mockup for {Screen}?** `AskUserQuestion`:
 - "Looks good, save it"
-- "Make adjustments" → follow-up conversation for changes
+- "Make adjustments" -> follow-up conversation for changes
 - "Skip this screen"
 
-**Q6** (Modify flow): **Which mockups?** `AskUserQuestion` with `multiSelect: true` — list existing files in selected set. Then ask what changes are needed via conversation.
+**Q6** (Modify flow): **Which mockups?** `AskUserQuestion` with `multiSelect: true` -- list existing files in selected set. Then ask what changes are needed via conversation.
 
 **Without `#NN`:** All questions start fresh with no pre-populated answers.
 
 **Per-screen progress tracking:** After Q4 resolves the screen list, create one todo per screen. Post-compaction: re-read spec, check `Mockups/{Name}/` for partially created files, resume from first unwritten screen.
+
+### Step 1e: Load Design Tokens
+
+```javascript
+const { getMockupPalette } = require('.claude/scripts/shared/lib/dtcg-token-reader');
+const { paletteToCSS, paletteToDrawioColors } = require('.claude/scripts/shared/mockup-token-styles');
+const palette = getMockupPalette(projectRoot);
+const cssVars = paletteToCSS(palette);
+const drawioColors = paletteToDrawioColors(palette);
+```
+
+- `palette.hasTokens === true`: use token-derived values from `Design-System/idpf-design.tokens.json`
+- `palette.hasTokens === false`: using built-in defaults
+
+Record token status for Step 7 reporting.
 
 ### Step 2: Generate Mockup
 
@@ -188,15 +203,15 @@ If `Mockups/{Name}/Specs/` has specs, show them as available sources.
 ```
 
 **Diagram-based mockup** (written to `Mockups/{Name}/Screens/{Screen-Name}-mockup.drawio.svg`):
-Use `.drawio.svg` format with editable `mxGraphModel` structure per the `drawio-generation` skill.
+Use `.drawio.svg` format with editable `mxGraphModel` structure per the `drawio-generation` skill. Apply token-derived colors from `paletteToDrawioColors()` to `mxCell` style attributes.
 
 **Interactive HTML mockup** (written to `Mockups/{Name}/Screens/{Screen-Name}-mockup.html`):
 Self-contained HTML file using Tailwind CSS via CDN. Structure:
-1. **Header badge:** Fixed mockup label with issue reference (e.g., `MOCKUP — Issue #NN`)
-2. **Visual states:** Show all relevant states — before/after, collapsed/expanded, enabled/disabled; label each with a colored chip (State 1, State 2, etc.)
+1. **Header badge:** Fixed mockup label with issue reference (e.g., `MOCKUP -- Issue #NN`)
+2. **Visual states:** Show all relevant states -- before/after, collapsed/expanded, enabled/disabled; label each with a colored chip (State 1, State 2, etc.)
 3. **Interactive elements:** Use `onclick` handlers for demo behavior where helpful
 4. **Implementation notes section:** Component names/file paths to modify, line references, CSS cleanup guidance, test selector impact, post-success behavior
-5. **Fonts:** Use project fonts where known, otherwise `Plus Jakarta Sans` for UI text and `JetBrains Mono` for code/monospace
+5. **Fonts:** Use `palette.fonts.sans` for UI text and `palette.fonts.mono` for code/monospace. Fallback: `Plus Jakarta Sans` and `JetBrains Mono`.
 
 ```html
 <!DOCTYPE html>
@@ -205,13 +220,16 @@ Self-contained HTML file using Tailwind CSS via CDN. Structure:
 <meta charset="UTF-8">
 <title>{Screen Name} Mockup (#NN)</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<style>
+{cssVars from paletteToCSS()}
+</style>
 </head>
-<body class="min-h-screen flex flex-col items-center gap-8 py-8 bg-slate-50">
+<body class="min-h-screen flex flex-col items-center gap-8 py-8" style="background: var(--color-background, #f8fafc); color: var(--color-text, #111827); font-family: var(--font-sans, system-ui)">
 
 <!-- Mockup badge -->
 <div class="fixed top-2 right-3 z-50 text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded"
      style="background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.3);color:#dc2626;">
-  MOCKUP — Issue #NN
+  MOCKUP -- Issue #NN
 </div>
 
 <!-- State 1: {Description} -->
@@ -225,7 +243,7 @@ Self-contained HTML file using Tailwind CSS via CDN. Structure:
 
 <!-- Implementation Notes -->
 <div class="bg-slate-50 rounded-lg border border-slate-200 p-4 text-sm text-slate-500 space-y-2">
-  <p class="font-semibold text-slate-600">Implementation Notes — Issue #NN</p>
+  <p class="font-semibold text-slate-600">Implementation Notes -- Issue #NN</p>
   <ul class="list-disc pl-4 space-y-1.5">
     <li><strong>{Change}:</strong> {specific guidance with file paths and line references}</li>
     <li><strong>Test selectors:</strong> {impact on data-testid attributes}</li>
@@ -242,7 +260,7 @@ Self-contained HTML file using Tailwind CSS via CDN. Structure:
 - **Exists:** `AskUserQuestion`: "Overwrite existing mockup" / "Save with alternative name" / "Skip this mockup"
 - **Does not exist:** Write directly.
 
-Ensure all directories exist (create if missing): `Mockups/{Name}/`, `Mockups/{Name}/AsciiScreens/`, `Mockups/{Name}/Screens/`, `Mockups/{Name}/Specs/`.
+Ensure all directories exist (create if missing): `Mockups/{Name}/`, `Mockups/{Name}/AsciiScreens/`, `Mockups/{Name}/Screens/`, `Mockups/{Name}/Specs/`, `Mockups/{Name}/AC/`.
 
 ### Step 4: Cross-Reference Updates
 
@@ -261,6 +279,35 @@ Ensure all directories exist (create if missing): `Mockups/{Name}/`, `Mockups/{N
 
 <!-- USER-EXTENSION-START: post-mockup -->
 <!-- USER-EXTENSION-END: post-mockup -->
+
+### Step 4b: AC JSON Generation (if `#NN` provided)
+
+1. Extract ACs from issue body using `mockup-ac-generator.js`:
+   ```javascript
+   const { extractAC, generateACFile, mergeACFile } = require('.claude/scripts/shared/mockup-ac-generator');
+   ```
+2. Generate AC JSON with `generateACFile()`, mapping criteria to mockup files
+3. Write to `Mockups/{Name}/AC/ac-{NN}.json`
+4. On re-run: merge with `mergeACFile()` to preserve existing `verified` state
+
+**AC JSON structure:**
+```json
+{
+  "issue": 42,
+  "title": "Issue title",
+  "generated": "YYYY-MM-DD",
+  "criteria": [
+    {
+      "id": "AC-1",
+      "description": "Criterion text",
+      "mockups": ["Screens/Login-mockup.drawio.svg"],
+      "verified": false
+    }
+  ]
+}
+```
+
+**No `#NN`:** Skip (no AC file generated).
 
 ### Step 5: README.md Auto-Generation
 
@@ -282,12 +329,15 @@ Auto-generate (or update) `Mockups/{Name}/README.md`:
 ### ASCII Screens
 - `AsciiScreens/{Screen-Name-1}-mockup.md`
 
+### Acceptance Criteria
+- `AC/ac-{NN}.json` -- Issue #{NN}
+
 ---
 
 *Auto-generated by /mockups*
 ```
 
-List all files found in each subdirectory. Omit empty sections.
+List all files found in each subdirectory. Omit empty sections (including Acceptance Criteria if no AC files).
 
 ### Step 6: Issue Writeback (if applicable)
 
@@ -300,7 +350,7 @@ If `#NN` provided, write mockup references back to the source:
 - `Mockups/{Name}/AsciiScreens/{Screen-Name-1}-mockup.md`
 - `Mockups/{Name}/Screens/{Screen-Name-1}-mockup.drawio.svg`
 ```
-Invalid/deleted path → warn, skip writeback, mockup still created.
+Invalid/deleted path -> warn, skip writeback, mockup still created.
 
 **Enhancement or Bug:** Update issue body via `gh pmu view #NN --body-stdout` / `gh pmu edit #NN -F`. Append or update `## Mockups` section; replace contents if section exists.
 
@@ -313,6 +363,8 @@ Mockup complete.
   Mockup set: Mockups/{Name}/
   Screens: {names}
   Output: {list of created/modified files}
+  AC file: {Mockups/{Name}/AC/ac-{NN}.json (created/merged) | skipped (no issue reference)}
+  Tokens: {Design-System/idpf-design.tokens.json (applied) | not found (defaults used)}
   README: Mockups/{Name}/README.md (updated)
   Cross-references: {updated | no spec exists}
 
@@ -325,22 +377,22 @@ If any files were created or modified:
 
 **Step 8a: Satisfaction Check**
 `AskUserQuestion`: "Are the mockups satisfactory?"
-- **Yes, looks good** — Proceed to commit offer
-- **No, make changes** — Return to conversation for revisions. After revisions, return to Step 8a.
-- **No, discard** — Report "Mockups left uncommitted." → **STOP**
+- **Yes, looks good** -- Proceed to commit offer
+- **No, make changes** -- Return to conversation for revisions. After revisions, return to Step 8a.
+- **No, discard** -- Report "Mockups left uncommitted." -> **STOP**
 
 **Step 8b: Commit Offer**
-Only reached when user confirms satisfaction. `AskUserQuestion`: "Stage and commit mockup changes?" — **Yes** / **No**
+Only reached when user confirms satisfaction. `AskUserQuestion`: "Stage and commit mockup changes?" -- **Yes** / **No**
 
 **If Yes:**
 ```bash
 git add Mockups/{Name}/
 git commit -m "Refs #NN -- Add/update mockups for {Name}"
 ```
-- With `#NN`: use `Refs #NN`. Always `Refs` — mockup creation does not close issues.
+- With `#NN`: use `Refs #NN`. Always `Refs` -- mockup creation does not close issues.
 - Without issue context: descriptive message without issue reference.
 
-**If No:** Skip — do not stage or commit.
+**If No:** Skip -- do not stage or commit.
 
 **STOP.** Do not proceed without user instruction.
 
@@ -351,13 +403,13 @@ git commit -m "Refs #NN -- Add/update mockups for {Name}"
 | Situation | Response |
 |-----------|----------|
 | No argument and no existing mockups | Skip Q1, default to "Create new mockups" |
-| `#NN` issue not found | "Issue #NN not found" → continue without issue context |
+| `#NN` issue not found | "Issue #NN not found" -> continue without issue context |
 | Source discovery fails (no spec, no source) | Suggest "Describe screens manually" or "Run /catalog-screens first" |
 | `Mockups/` missing | Create directory structure automatically |
 | File collision on write | Ask user: overwrite, alternative name, or skip |
 | Spec cross-reference update fails | Warn, continue (mockup still created) |
 | Proposal writeback path invalid | Warn, skip writeback, mockup still created |
-| Schema file missing | "Shared schema not found at .claude/metadata/screen-spec-schema.json" → STOP |
+| Schema file missing | "Shared schema not found at .claude/metadata/screen-spec-schema.json" -> STOP |
 
 ---
 
