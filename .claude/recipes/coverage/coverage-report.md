@@ -7,6 +7,8 @@ extensionPoints:
 appliesTo:
   - prepare-release:post-validation
   - prepare-beta:post-validation
+  - prepare-release:post-prepare
+  - prepare-beta:post-prepare
 prerequisites:
   - Coverage tool configured
   - (Optional) Codecov or similar service
