@@ -1,5 +1,5 @@
 ---
-version: "v0.77.4"
+version: "v0.79.0"
 description: Change domain specialist for this project
 argument-hint: "[specialist-name] (optional)"
 copyright: "Rubrical Works (c) 2026"
