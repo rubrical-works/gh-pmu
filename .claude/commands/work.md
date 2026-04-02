@@ -1,5 +1,5 @@
 ---
-version: "v0.77.3"
+version: "v0.77.4"
 description: Start working on issues with validation and auto-TODO (project)
 argument-hint: "#issue [#issue...] [--assign] [--nonstop] [--wait] | all in <status>"
 copyright: "Rubrical Works (c) 2026"

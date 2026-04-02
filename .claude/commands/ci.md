@@ -1,5 +1,5 @@
 ---
-version: "v0.77.3"
+version: "v0.77.4"
 description: Manage GitHub Actions CI workflows interactively (project)
 argument-hint: "[list|validate|add|recommend] (no args shows status)"
 copyright: "Rubrical Works (c) 2026"

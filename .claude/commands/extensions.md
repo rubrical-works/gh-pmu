@@ -1,5 +1,5 @@
 ---
-version: "v0.77.3"
+version: "v0.77.4"
 description: Discover, view, and manage extension points in release commands
 argument-hint: "list|view|edit|validate|summary|recipes [args]"
 copyright: "Rubrical Works (c) 2026"

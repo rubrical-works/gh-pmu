@@ -1,5 +1,5 @@
 ---
-version: "v0.77.3"
+version: "v0.77.4"
 description: Generate session statistics report with development velocity metrics
 argument-hint: "[--since YYYY-MM-DD] [--until YYYY-MM-DD]"
 copyright: "Rubrical Works (c) 2026"
