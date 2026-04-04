@@ -1,129 +1,87 @@
 ---
-version: "v0.70.0"
-description: Audit command spec formatting for LLM processing reliability (project)
+version: "v0.80.0"
+description: Audit project command specs for LLM processing reliability (project)
 argument-hint: "[all|<command-name>|<group description>]"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- MANAGED -->
 # /audit-commands
-
-Audit command specification files for formatting weaknesses that impact LLM processing reliability. Creates one enhancement issue per command with findings.
-
+Audit command specs for formatting weaknesses impacting LLM processing reliability. Respects managed/extensible/local boundary.
 **Skill Dependency:** Loads `command-spec-audit` skill for evaluation rubric.
-
 ---
-
 ## Prerequisites
-
 - `gh pmu` extension installed
-- `.gh-pmu.json` configured in repository root
-
+- `.gh-pmu.json` configured
+- `framework-config.json` with `frameworkPath` set
 ---
-
 ## Arguments
-
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `all` | No | Audit every command in `.claude/commands/` |
-| `<command-name>` | No | Audit a single command (e.g., `work`, `done`) |
-| `<group description>` | No | NL grouping (e.g., "release commands", "review commands") |
-
-If no argument provided, prompt the user for scope.
-
+| `all` | No | Audit every auditable command |
+| `<command-name>` | No | Audit a single command |
+| `<group description>` | No | NL grouping (e.g., "review commands") |
+If no argument, prompt user for scope.
 ---
-
 ## Execution Instructions
-
 **REQUIRED:** Before executing:
-
-1. **Load Skill:** Read `Skills/command-spec-audit/SKILL.md` for the evaluation rubric
-2. **Generate Todo List:** Use `TodoWrite` to create todos from workflow steps
-3. **Track Progress:** Mark todos `in_progress` -> `completed` as you work
-
+1. **Load Skill:** Read `command-spec-audit` skill's `SKILL.md`
+2. **Generate Todo List:** Use `TodoWrite` from workflow steps
+3. **Track Progress:** Mark todos `in_progress` -> `completed`
 ---
-
 ## Workflow
-
-### Step 1: Resolve Scope
-
-Parse the argument to determine which commands to audit:
-
+### Step 1: Load Manifest and Classify Commands
+Read `{frameworkPath}/framework-manifest.json`, extract `managedCommands` and `extensibleCommands`. List `.md` files in `.claude/commands/`. Classify:
+| Category | Source | Audit Scope |
+|----------|--------|-------------|
+| **Managed** | In `managedCommands` | Skip entirely |
+| **Extensible** | In `extensibleCommands` | Extension points only |
+| **Local** | Not in either | Full spec audit |
+Report classification summary.
+### Step 2: Resolve Scope
 | Input | Resolution |
 |-------|-----------|
-| `all` | List all `.md` files in `.claude/commands/` |
-| `<command-name>` | Resolve to `.claude/commands/<name>.md` |
-| `<group description>` | Match commands by NL description against command descriptions from frontmatter |
-
-**If command not found:** Report `"Command '<name>' not found."` -> **STOP**
-
-### Step 2: Audit Each Command
-
-For each in-scope command file:
-
-1. **Read** the full command file content
-2. **Evaluate** against all 4 rubric categories from `command-spec-audit` skill:
-   - **Structural Integrity** (5 criteria)
-   - **Decision Formatting** (4 criteria)
-   - **Execution Reliability** (6 criteria)
-   - **Extension Points** (6 criteria)
-3. **Record findings** with: criterion name, severity, location (line/section), finding description, recommendation
-
-**Evaluation approach:** Read the command file section by section. For each criterion in the rubric, check the detection heuristic against the actual content. Record all findings — do not fix anything.
-
-### Step 3: Report or Create Issue
-
-**If zero findings:** Report `"No issues found: <command-name>"` and skip to next command.
-
-**If findings exist:** Create one enhancement issue per command:
-
+| `all` | All extensible + local (managed always skipped) |
+| `<command-name>` | `.claude/commands/<name>.md` |
+| `<group description>` | Match by NL against frontmatter descriptions |
+Managed -> report and skip. Not found -> STOP.
+### Step 3: Audit Each Command
+#### Step 3a: Extensible Commands -- Extension Point Audit
+1. Read full command, extract `USER-EXTENSION-START/END` content
+2. All blocks empty -> skip
+3. Content exists -> evaluate against **Category 4: Extension Points** rubric: formatting, conflicts, size (>50 lines), marker integrity
+4. Record: criterion, severity, location, finding, recommendation
+#### Step 3b: Local Commands -- Full Spec Audit
+1. Read full command
+2. Evaluate all 4 rubric categories: Structural Integrity (5), Decision Formatting (4), Execution Reliability (6), Extension Points (6)
+3. Record: criterion, severity, location, finding, recommendation
+### Step 4: Report or Create Issue
+Zero findings -> report and skip. Findings exist -> create enhancement issue:
 ```bash
-gh pmu create --title "[Audit]: <command-name> — N findings" --label enhancement --status backlog -F .tmp-body.md
+gh pmu create --title "[Audit]: <command-name> -- N findings" --label enhancement --status backlog -F .tmp-body.md
 rm .tmp-body.md
 ```
-
-Issue body format:
-
-```markdown
-## Command Spec Audit: <command-name>
-
-**Source:** `.claude/commands/<command-name>.md`
-**Audited:** YYYY-MM-DD
-**Rubric:** `command-spec-audit` skill
-
-### Findings
-
-| # | Criterion | Severity | Location | Finding | Recommendation |
-|---|-----------|----------|----------|---------|----------------|
-| 1 | ... | High | ... | ... | ... |
-
-**Summary:** N High, N Medium, N Low
-```
-
-### Step 4: Summary Report
-
-After all commands audited:
-
+Issue body: command name, source path, date, rubric, audit type, findings table (criterion/severity/location/finding/recommendation), severity summary.
+### Step 5: Summary Report
 ```
 Audit Complete
+  Commands skipped (managed): N
   Commands audited: N
+    Extensible (extensions only): N
+    Local (full spec): N
   Commands with findings: N
   Issues created: N
   Severity breakdown: N High, N Medium, N Low
 ```
-
-**STOP.** Do not implement fixes — this is an audit-only command.
-
+**STOP.** Audit-only -- do not implement fixes.
 ---
-
 ## Error Handling
-
 | Situation | Response |
 |-----------|----------|
-| No commands found | "No command files found in .claude/commands/." -> STOP |
-| Command file unreadable | "Cannot read: <path>." -> skip, continue |
-| Skill not loaded | "Warning: command-spec-audit skill not found. Using inline criteria." -> continue |
-| `gh pmu create` fails | "Failed to create issue: {error}" -> report, continue to next |
-
+| No commands found | STOP |
+| `framework-manifest.json` missing | Treat all as local, continue |
+| Command unreadable | Skip, continue |
+| Skill not loaded | Use inline criteria, continue |
+| `gh pmu create` fails | Report, continue |
+| Managed command requested | Report and skip |
 ---
-
 **End of /audit-commands Command**

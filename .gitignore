@@ -98,3 +98,6 @@ runp_claude
 .claude/skills/test-scaffold/
 .claude/skills/test-writing-patterns/
 .claude/skills/tdd-process/
+
+# IDPF Framework (managed by Praxis Hub Manager)
+.claude/commands/audit-commands.md

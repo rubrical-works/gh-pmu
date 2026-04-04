@@ -1,5 +1,5 @@
 ---
-version: "v0.79.0"
+version: "v0.80.0"
 description: View, create, or manage project charter
 argument-hint: "[update|refresh|validate]"
 copyright: "Rubrical Works (c) 2026"
@@ -160,12 +160,19 @@ What review mode should be used for this project?
 4. Create Construction/ structure with .gitkeep and README.md
 5. Create Transition/ artifacts (Deployment-Guide, Runbook, User-Documentation)
 6. Use "TBD" for sections without answers
-7. Commit: "Initialize project charter and lifecycle structure"
+7. Generate `domain-entities.json` at project root:
+   ```javascript
+   const { generateFromCharter } = require('.claude/scripts/shared/generate-domain-entities.js');
+   // Validate against .claude/metadata/domain-entities-schema.json before writing
+   ```
+   If validation fails, warn and skip (non-blocking).
+8. Commit: "Initialize project charter and lifecycle structure"
 Directories created after questions to avoid orphaned dirs if user abandons.
 ### /charter update
 **Step 1:** Read current CHARTER.md and Inception/Charter-Details.md
 **Step 2:** Ask what to update (Vision, Current Focus, Tech Stack, Scope, Milestones, Deployment Target)
 **Step 3:** Apply updates, sync to CHARTER.md if vision changes, update Last Updated date
+**Step 3a:** Regenerate `domain-entities.json` from updated charter using `generateFromCharter()`. Validate against schema. If `domain-entities.json` doesn't exist, generate it (migration).
 **Step 4:** If Tech Stack modified, trigger skill and recipe suggestions (NEW items only). Detect new default skills not in current `projectSkills` (via `getDefaultSkills()` from `manage-skills.js`) and add additively.
 **Step 4b:** If Deployment Target selected: read existing `deploymentTarget`. If changing, uninstall old skill, install new one. Update config.
 ### /charter refresh
@@ -174,6 +181,7 @@ Directories created after questions to avoid orphaned dirs if user abandons.
 **Step 3:** Compare with existing Inception/ artifacts, identify differences
 **Step 4:** Present diff, ask for confirmation
 **Step 5:** Merge changes, commit "Charter refresh"
+**Step 5a:** Regenerate `domain-entities.json` from refreshed charter using `generateFromCharter()`. Validate and write.
 **Step 6:** Trigger skill and recipe suggestions. Detect new default skills (via `getDefaultSkills()`) -- add additively. If tech stack changed, trigger keyword-based suggestions (NEW only).
 ### /charter validate
 **Step 1:** Load CHARTER.md and Inception/Scope-Boundaries.md

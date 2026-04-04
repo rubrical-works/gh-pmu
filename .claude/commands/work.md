@@ -1,5 +1,5 @@
 ---
-version: "v0.79.0"
+version: "v0.80.0"
 description: Start working on issues with validation and auto-TODO (project)
 argument-hint: "#issue [#issue...] [--assign] [--nonstop] [--wait] | all in <status>"
 copyright: "Rubrical Works (c) 2026"
@@ -63,10 +63,16 @@ If `context.wait` not set, skip.
 Run `node .claude/scripts/shared/epic-complexity.js $ISSUE`. `"functional"` -> `strictTDD = true`. Signals: `.claude/metadata/epic-complexity-signals.json`.
 ### Step 2: Framework Methodology Dispatch
 Load core file from `framework-config.json`. Missing: warn, continue.
+### Step 2a: Load TDD Checklist
+Read `.claude/skills/tdd-process/tdd-checklist.json`. If valid JSON with `red`, `green`, `refactor` objects (each with `required[]` and `gate` string) and `failure-recovery` (with `triggers[]` and `steps[]`):
+- Set `tddChecklist` = loaded JSON. Each phase may have `deepReference: { skill, when }` for gate-failure skill loading.
+If load fails: warn "TDD checklist not found -- using inline TDD behavior", set `tddChecklist = null`.
 ### Step 3: Work the Issue
 Per AC: mark in_progress, TDD cycle (RED->GREEN->REFACTOR), run tests, mark completed, commit (`Refs #$ISSUE`).
 **GATE: Do NOT start next AC until commit made.**
 **Sub-Agent Review Gate:** After Agent tool, `git diff --name-only`. Read changed files, verify match. Mandatory when `strictTDD`. Not satisfied by summaries/tests alone.
+**TDD Execution (checklist-driven):** When `tddChecklist` loaded: execute `required[]` items per phase, enforce `gate` before proceeding. On failure-recovery trigger, execute recovery steps. On gate failure, check `deepReference` -- load `.claude/skills/{skill-name}/SKILL.md` for guidance, retry. Missing skill: warn, continue.
+**TDD Fallback (inline):** When `tddChecklist` null: RED (failing test), GREEN (minimal pass), REFACTOR (analyze, report decision).
 If no auto-TODO: single unit. Post-compaction: resume from first incomplete AC.
 ### Step 3b: Documentation Judgment
 Re-read `.claude/scripts/shared/lib/doc-templates.json` from disk. Create if warranted.
