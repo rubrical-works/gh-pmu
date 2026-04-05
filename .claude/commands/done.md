@@ -1,5 +1,5 @@
 ---
-version: "v0.81.1"
+version: "v0.82.0"
 description: Complete issues with criteria verification and status transitions (project)
 argument-hint: "[#issue... | --all] (optional)"
 copyright: "Rubrical Works (c) 2026"
@@ -57,16 +57,18 @@ Parse JSON output and check `ok`:
   - Report status transition, tracker link, next steps guidance.
 Report `warnings[]` (non-blocking).
 **Multiple issues:** Process each through Step 1, then Steps 2-3 once after last (batch push).
+**Batch push detection:** When 2+ issues in scope, determine total count at start. Track position as each completes Step 1.
 ### Step 1a: Epic Detection
 Check `context.issue.labels` for `epic` label.
 **Not epic:** Skip to Step 2.
 **Epic completion flow:**
 1. Fetch sub-issues: `gh pmu sub list $ISSUE`
-2. Classify by status (done=skip, in_review=queue, in_progress=warn about in_progress sub-issues, backlog/ready=warn)
-3. If all sub-issues are already done: skip sub-issue processing, proceed directly to completing the epic
+2. Classify by status (done=skip, in_review=queue, in_progress=warn, backlog/ready=warn)
+3. If all sub-issues already done: skip sub-issue processing, complete epic directly
 4. Process in_review sub-issues through done workflow, with per-sub-issue reporting. Deferred single batch push.
 5. Complete the epic via preamble after all sub-issues processed
-6. Report summary: sub-issues completed count + epic completed
+6. Report summary: sub-issues completed/already done/warned counts + epic done
+**Push behavior for epics:** All transitions treated as single batch -- push deferred until after epic completed (Step 2).
 
 <!-- USER-EXTENSION-START: pre-done -->
 <!-- USER-EXTENSION-END: pre-done -->
@@ -78,10 +80,12 @@ Check `context.issue.labels` for `epic` label.
 After each issue moved to done (only when commits reference issue):
 1. Find commits referencing issue
 2. No commits: skip
-3. Post comment with files changed and commit link via temp file
-4. Non-blocking on failure
+3. Get latest commit SHA and changed files
+4. Post comment with files changed and commit link via temp file
+5. Non-blocking on failure
 ### Step 2: Push (Batch-Aware)
 **Single/last:** `git push`. **Not last:** defer. **Nothing to push:** skip.
+Check unpushed commits first: `git log @{u}..HEAD --oneline`. Empty: skip.
 ### Step 3: Background CI Monitoring (Batch-Aware)
 **Only after actual push.**
 1. Get SHA
@@ -89,8 +93,9 @@ After each issue moved to done (only when commits reference issue):
 3. Pre-check paths-ignore -- all match: skip
 4. Spawn: `node ./.claude/scripts/shared/ci-watch.js --sha $SHA --timeout 300`
 **Exit codes:** 0=passed, 1=FAILED, 2=timeout, 3=no run, 4=cancelled.
+**Multiple workflows:** Report per-workflow from `workflows` array.
 ### Step 4: Cleanup
-**MUST DO:** Clear todo list.
+**MUST DO:** Clear task list.
 ---
 ## Error Handling
 | Situation | Response |

@@ -1,5 +1,5 @@
 ---
-version: "v0.81.1"
+version: "v0.82.0"
 description: Produce DTCG-compliant design tokens with pluggable adapter architecture (project)
 argument-hint: "[--discover | --export <adapter> | --theme <name>]"
 copyright: "Rubrical Works (c) 2026"
@@ -15,7 +15,7 @@ Produces a DTCG-compliant design token file (`Design-System/idpf-design.tokens.j
 ## Arguments
 | Argument | Required | Description |
 |----------|----------|-------------|
-| *(none)* | No | Init mode — guided walkthrough |
+| *(none)* | No | Init mode -- guided walkthrough |
 | `--discover` | No | Extract tokens from existing code via adapters |
 | `--export <adapter>` | No | Export to framework-specific format |
 | `--export all` | No | Export to all detected formats |

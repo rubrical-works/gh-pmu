@@ -1,5 +1,5 @@
 ---
-version: "v0.81.1"
+version: "v0.82.0"
 description: Add story to epic with charter compliance (project)
 argument-hint: "[epic-number] (e.g., 42 or #42)"
 copyright: "Rubrical Works (c) 2026"
@@ -13,9 +13,9 @@ Add a new story to an epic with charter compliance validation and automatic test
 | `[epic-number]` | Parent epic issue number (e.g., `42` or `#42`). Optional - prompts if not specified. |
 ## Execution Instructions
 **REQUIRED:** Before executing:
-1. **Create Todo List:** Use `TodoWrite` to create todos from the steps below
-2. **Track Progress:** Mark todos `in_progress` -> `completed`
-3. **Resume Point:** If interrupted, todos show where to continue
+1. **Create Tasks:** Use `TaskCreate` to create tasks from the phases below (bulk upfront)
+2. **Track Progress:** Use `TaskUpdate` to mark tasks `in_progress` -> `completed`
+3. **Resume Point:** If interrupted, use `TaskList` to find incomplete tasks
 ## Phase 1: Select or Create Epic, Gather Story Details
 **Step 1: Parse epic number (if provided)**
 ```bash
@@ -83,7 +83,7 @@ Infer the user type from context or ask if unclear.
 | `Inception/Scope-Boundaries.md` | Optional | In/out of scope boundaries |
 | `Inception/Constraints.md` | Optional | Technical/business constraints |
 If no charter: warn and suggest running `/charter`.
-**Step 2: Validate story against charter** — compare against vision, goals, scope boundaries, constraints.
+**Step 2: Validate story against charter** -- compare against vision, goals, scope boundaries, constraints.
 **Step 3: Report compliance**
 - If aligned: report matching goal and scope item
 - If concern: show concerning element, constraint, exclusion; **ASK USER** to confirm
@@ -183,7 +183,7 @@ gh pmu view $prd_num --body-stdout > .tmp-prd-tracker.md
 gh pmu edit $prd_num -F .tmp-prd-tracker.md
 rm .tmp-prd-tracker.md
 ```
-**Step 4: Update PRD document file (if found)** — determine next story number under epic, append story section.
+**Step 4: Update PRD document file (if found)** -- determine next story number under epic, append story section.
 **Step 5: Add comment to PRD tracker**
 ```bash
 gh issue comment $prd_num --body "Story #{story_num}: {Story Title}
@@ -201,7 +201,7 @@ Epic: #{epic_num}
 Refs #{prd_num}"
 ```
 ## Phase 6: Skill Suggestions (Optional)
-**Step 1: Check opt-out** — if `framework-config.json` has `"skillSuggestions": false`, skip to Report.
+**Step 1: Check opt-out** -- if `framework-config.json` has `"skillSuggestions": false`, skip to Report.
 **Step 2: Run keyword matching**
 ```bash
 node .claude/scripts/shared/lib/skill-keyword-matcher.js \

@@ -1,5 +1,5 @@
 ---
-version: "v0.81.1"
+version: "v0.82.0"
 description: Discover, view, and manage extension points in release commands
 argument-hint: "list|view|edit|validate|summary|recipes [args]"
 copyright: "Rubrical Works (c) 2026"
@@ -21,6 +21,7 @@ Unified management of extension points across release commands.
 | `matrix` | Alias for `summary` |
 | `recipes` | Common patterns for extension points |
 | `recipes <category>` | Recipes for specific category |
+| `recipes --stack <tech>` | Filter recipes by technology stack (auto-detects if omitted) |
 ---
 ## Target Commands
 **Registry:** `.claude/metadata/extension-points.json`
@@ -38,7 +39,7 @@ Read-only subcommands delegated to `node .claude/scripts/shared/extensions-cli.j
 | `validate` | `extensions-cli.js validate` |
 | `summary` | `extensions-cli.js summary` |
 | `matrix` | `extensions-cli.js matrix` |
-| `recipes [category]` | `extensions-cli.js recipes [category]` |
+| `recipes [category] [--stack tech]` | `extensions-cli.js recipes [category] [--stack tech]` |
 | `help` | `extensions-cli.js help` |
 **Dispatch:** Parse subcommand, run via Bash, display stdout as-is (do NOT reformat). Non-zero exit: 1=validation failures, 2=fatal error.
 ---

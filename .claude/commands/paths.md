@@ -1,5 +1,5 @@
 ---
-version: "v0.81.1"
+version: "v0.82.0"
 description: Collaborative path analysis for proposals and enhancements (project)
 argument-hint: "#issue"
 copyright: "Rubrical Works (c) 2026"
@@ -34,7 +34,7 @@ Turn-based collaborative scenario path discovery on proposals and enhancements.
 ```bash
 node ./.claude/scripts/shared/paths-preamble.js $ISSUE [--quick] [--dry-run] [--categories IDs] [--from-code path]
 ```
-If `ok: false`: report error → **STOP**.
+If `ok: false`: report error -> **STOP**.
 Extract `context`: issue data, config (categories), flags, proposalFile, partial/resumeFrom.
 If enhancement: display `context.config.fromCodeHint`.
 ### Step 2: Load Content
@@ -50,7 +50,7 @@ After loading primary content, check for associated screen specs:
    - **Exception Paths:** required field violations, validation failures
    - **Corner Cases:** element dependencies, conditional rendering combos
    - **Negative Test Scenarios:** invalid inputs from type/validation constraints
-5. Report: `"Screen specs loaded: {N} screens, {M} elements — will inform path candidate generation."`
+5. Report: `"Screen specs loaded: {N} screens, {M} elements -- will inform path candidate generation."`
 No specs found: skip silently.
 #### Step 2b: Code Paths
 Validate path, scan source files, warn >50. Invoke skill. Zero candidates: AskUserQuestion manual/stop.
@@ -58,7 +58,7 @@ Validate path, scan source files, warn >50. Invoke skill. Zero candidates: AskUs
 Search for `## Path Analysis`. Use `context.partial`.
 Partial: resume. Full: load as starting point. Not found: empty.
 ### Step 4: Turn-Based Discovery (or Dry-Run)
-**Dry-run:** Generate all candidates, display grouped summary → Step 7 → STOP.
+**Dry-run:** Generate all candidates, display grouped summary -> Step 7 -> STOP.
 **Per category:**
 **4a:** Progress breadcrumb. **4b:** AI generates 2-5 candidates (use screen spec data when available for precise scenarios). **4c:** User validates (AskUserQuestion, multiSelect, "Skip" option). **4d:** User adds or generates more. **4e:** Buffer confirmed.
 
@@ -70,6 +70,20 @@ Partial: resume. Full: load as starting point. Not found: empty.
 Display grouped list. AskUserQuestion: write/review/discard. Discard or no paths: STOP.
 ### Step 6: Write Path Analysis
 File exists: append/update `## Path Analysis`. No file: issue comment. Quick: note in footer. Write failure: STOP.
+#### Step 6a: Generate Acceptance Criteria (Enhancement Only)
+**Trigger:** `context.issue.type === 'enhancement'` AND paths were written in Step 6.
+```javascript
+const { generateACsFromPaths } = require('.claude/scripts/shared/lib/paths-ac-generator.js');
+const result = generateACsFromPaths(pathsByCategory, issueType, existingACs);
+```
+- If `result.skipped`: continue silently.
+- If ACs generated:
+  1. Read issue body: `gh pmu view $ISSUE --body-stdout > .tmp-$ISSUE.md`
+  2. Append generated ACs after existing Acceptance Criteria section (`result.markdown`)
+  3. Update: `gh pmu edit $ISSUE -F .tmp-$ISSUE.md && rm .tmp-$ISSUE.md`
+  4. Report: `result.report`
+- **Categorical grouping:** 6+ paths -> ACs grouped under italic category headings
+- **Deduplication:** Fuzzy-match existing ACs skipped. Report includes duplicate count.
 
 <!-- USER-EXTENSION-START: post-paths -->
 <!-- USER-EXTENSION-END: post-paths -->

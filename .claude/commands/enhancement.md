@@ -1,5 +1,5 @@
 ---
-version: "v0.81.1"
+version: "v0.82.0"
 description: Create an enhancement issue with standard template (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -54,6 +54,8 @@ Build issue body with standard template:
 **Scope:**
 - **In scope:** {infer from description, or "To be documented"}
 - **Out of scope:** {infer from description, or "To be documented"}
+
+**Deployment Impact:** {dev-only | deployed (list affected areas) | unknown}
 
 **Acceptance Criteria:**
 - [ ] {infer from description, or "To be documented"}
