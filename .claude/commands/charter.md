@@ -1,7 +1,7 @@
 ---
-version: "v0.80.0"
+version: "v0.81.1"
 description: View, create, or manage project charter
-argument-hint: "[update|refresh|validate]"
+argument-hint: "[update|refresh|validate|--create-domain-entities]"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- MANAGED -->
@@ -14,6 +14,7 @@ Context-aware charter command. Shows summary if exists, starts creation if missi
 | `/charter update` | Update specific charter sections |
 | `/charter refresh` | Re-extract from code, merge with existing |
 | `/charter validate` | Check current work against charter scope |
+| `/charter --create-domain-entities` | Regenerate `domain-entities.json` from current charter |
 ## Execution Instructions
 **REQUIRED:** Before executing:
 1. **Generate Todo List:** Parse workflow steps, use `TodoWrite` to create todos
@@ -137,7 +138,7 @@ What review mode should be used for this project?
 | Chaos/resilience mentioned | Chaos |
 | Automated testing mentioned | QA-Automation |
 **Step 2: ASK USER (multi-select):** Present all 11 domains with pre-checked ones based on auto-detection.
-**Step 3:** Write `activeDomains` array to `framework-config.json` (lowercase domain IDs).
+**Step 3:** Write `activeDomains` array to `framework-config.json` (lowercase domain IDs: `"security"`, `"accessibility"`, `"seo"`, `"privacy"`, `"observability"`, `"i18n"`, `"api-design"`, `"performance"`, `"chaos"`, `"contract"`, `"qa"`).
 **Step 4:** `/charter refresh`: Re-evaluate domain relevance when codebase changes.
 **Step 5:** `/charter update`: Allow adding/removing active domains via multi-select.
 #### Artifact Generation from Answers
@@ -167,12 +168,14 @@ What review mode should be used for this project?
    ```
    If validation fails, warn and skip (non-blocking).
 8. Commit: "Initialize project charter and lifecycle structure"
+9. Report hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
 Directories created after questions to avoid orphaned dirs if user abandons.
 ### /charter update
 **Step 1:** Read current CHARTER.md and Inception/Charter-Details.md
 **Step 2:** Ask what to update (Vision, Current Focus, Tech Stack, Scope, Milestones, Deployment Target)
 **Step 3:** Apply updates, sync to CHARTER.md if vision changes, update Last Updated date
-**Step 3a:** Regenerate `domain-entities.json` from updated charter using `generateFromCharter()`. Validate against schema. If `domain-entities.json` doesn't exist, generate it (migration).
+**Step 3a:** Regenerate `domain-entities.json` from updated charter using `generateFromCharter()`. Validate against schema. If `domain-entities.json` doesn't exist, generate it (migration). Include `"$schema"` as first property pointing to `.claude/metadata/domain-entities-schema.json`.
+**Step 3b:** Report hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
 **Step 4:** If Tech Stack modified, trigger skill and recipe suggestions (NEW items only). Detect new default skills not in current `projectSkills` (via `getDefaultSkills()` from `manage-skills.js`) and add additively.
 **Step 4b:** If Deployment Target selected: read existing `deploymentTarget`. If changing, uninstall old skill, install new one. Update config.
 ### /charter refresh
@@ -181,7 +184,8 @@ Directories created after questions to avoid orphaned dirs if user abandons.
 **Step 3:** Compare with existing Inception/ artifacts, identify differences
 **Step 4:** Present diff, ask for confirmation
 **Step 5:** Merge changes, commit "Charter refresh"
-**Step 5a:** Regenerate `domain-entities.json` from refreshed charter using `generateFromCharter()`. Validate and write.
+**Step 5a:** Regenerate `domain-entities.json` using `generateFromCharter()`. Run `verifyEntityCounts()` on result -- report mismatches between charter counts and filesystem counts. Ask user before updating charter counts. Validate and write. Include `"$schema"` as first property.
+**Step 5b:** Report hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
 **Step 6:** Trigger skill and recipe suggestions. Detect new default skills (via `getDefaultSkills()`) -- add additively. If tech stack changed, trigger keyword-based suggestions (NEW only).
 ### /charter validate
 **Step 1:** Load CHARTER.md and Inception/Scope-Boundaries.md
@@ -193,6 +197,25 @@ Directories created after questions to avoid orphaned dirs if user abandons.
 | Aligned | Proceed normally |
 | Possibly out of scope | Ask user to confirm intent |
 | Clearly out of scope | Suggest updating charter or revising work |
+### /charter --create-domain-entities
+Standalone regeneration of `domain-entities.json` from the current charter.
+**Step 1:** Check for `CHARTER.md`
+- **If exists:** Read, proceed to Step 2
+- **If missing:** Trigger full charter inception (`/charter` no args). After inception, `domain-entities.json` already generated. Report and **STOP**.
+**Step 2:** Generate `domain-entities.json`
+```javascript
+const { generateFromCharter, verifyEntityCounts } = require('.claude/scripts/shared/generate-domain-entities.js');
+const charter = fs.readFileSync('CHARTER.md', 'utf8');
+const entities = generateFromCharter(charter, version);
+```
+Write with `"$schema"` as first property pointing to `.claude/metadata/domain-entities-schema.json`.
+**Step 2b:** Verify entity counts against filesystem:
+```javascript
+const results = verifyEntityCounts(entities.entities);
+```
+For each `match: false`: report `"Warning: {entity}: charter says {charterCount}, found {actualCount} on disk"`. If mismatches, ask user to update charter counts. If yes, update CHARTER.md Key Entities table, re-run `generateFromCharter()`. If no, proceed as-is. **Never auto-modify charter without user consent.**
+**Step 3:** Validate against `.claude/metadata/domain-entities-schema.json`. If valid, write. If invalid, warn and write (non-blocking). If schema missing, warn and write.
+**Step 4:** Report: `"Generated domain-entities.json ({entity count} entities)"`. If count verification ran, append mismatch summary.
 ## Project Skills Selection
 After charter creation, suggest skills based on defaults and tech stack using `.claude/metadata/skill-keywords.json`.
 **Step 1:** Re-read `.claude/metadata/skill-keywords.json` from disk (contains `defaultSkills`, `skillKeywords`, `groupKeywords`). Also re-read `.claude/metadata/skill-registry.json` for descriptions. Use `getDefaultSkills()` from `manage-skills.js`.

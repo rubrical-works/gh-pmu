@@ -1,5 +1,5 @@
 ---
-version: "v0.80.0"
+version: "v0.81.1"
 description: Audit project command specs for LLM processing reliability (project)
 argument-hint: "[all|<command-name>|<group description>]"
 copyright: "Rubrical Works (c) 2026"
@@ -8,12 +8,10 @@ copyright: "Rubrical Works (c) 2026"
 # /audit-commands
 Audit command specs for formatting weaknesses impacting LLM processing reliability. Respects managed/extensible/local boundary.
 **Skill Dependency:** Loads `command-spec-audit` skill for evaluation rubric.
----
 ## Prerequisites
 - `gh pmu` extension installed
 - `.gh-pmu.json` configured
 - `framework-config.json` with `frameworkPath` set
----
 ## Arguments
 | Argument | Required | Description |
 |----------|----------|-------------|
@@ -21,13 +19,11 @@ Audit command specs for formatting weaknesses impacting LLM processing reliabili
 | `<command-name>` | No | Audit a single command |
 | `<group description>` | No | NL grouping (e.g., "review commands") |
 If no argument, prompt user for scope.
----
 ## Execution Instructions
 **REQUIRED:** Before executing:
 1. **Load Skill:** Read `command-spec-audit` skill's `SKILL.md`
 2. **Generate Todo List:** Use `TodoWrite` from workflow steps
 3. **Track Progress:** Mark todos `in_progress` -> `completed`
----
 ## Workflow
 ### Step 1: Load Manifest and Classify Commands
 Read `{frameworkPath}/framework-manifest.json`, extract `managedCommands` and `extensibleCommands`. List `.md` files in `.claude/commands/`. Classify:
@@ -46,7 +42,7 @@ Report classification summary.
 Managed -> report and skip. Not found -> STOP.
 ### Step 3: Audit Each Command
 #### Step 3a: Extensible Commands -- Extension Point Audit
-1. Read full command, extract `USER-EXTENSION-START/END` content
+1. Read full command, extract content within each `<!-- USER-EXTENSION-START: {point} -->` / `<!-- USER-EXTENSION-END: {point} -->` block
 2. All blocks empty -> skip
 3. Content exists -> evaluate against **Category 4: Extension Points** rubric: formatting, conflicts, size (>50 lines), marker integrity
 4. Record: criterion, severity, location, finding, recommendation
@@ -73,7 +69,6 @@ Audit Complete
   Severity breakdown: N High, N Medium, N Low
 ```
 **STOP.** Audit-only -- do not implement fixes.
----
 ## Error Handling
 | Situation | Response |
 |-----------|----------|
@@ -83,5 +78,4 @@ Audit Complete
 | Skill not loaded | Use inline criteria, continue |
 | `gh pmu create` fails | Report, continue |
 | Managed command requested | Report and skip |
----
 **End of /audit-commands Command**
