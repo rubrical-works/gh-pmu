@@ -1,5 +1,5 @@
 ---
-version: "v0.82.0"
+version: "v0.84.0"
 description: Add story to epic with charter compliance (project)
 argument-hint: "[epic-number] (e.g., 42 or #42)"
 copyright: "Rubrical Works (c) 2026"

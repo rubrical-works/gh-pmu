@@ -1,5 +1,5 @@
 ---
-version: "v0.82.0"
+version: "v0.84.0"
 description: View, create, or manage project charter
 argument-hint: "[update|refresh|validate|--create-domain-entities]"
 copyright: "Rubrical Works (c) 2026"
@@ -86,9 +86,9 @@ Where will this project be deployed?
 ```
 **After answer:**
 1. Write `deploymentTarget` to `framework-config.json`: Vercel->`"vercel"`, Railway->`"railway"`, DigitalOcean->`"digitalocean"`, Render->`"render"`, Other->`"other"`, Self-hosted->`null`
-2. If platform selected (not "other"/null), auto-install deployment skill:
+2. If platform selected (not "other"/null), copy deployment skill from hub:
    ```bash
-   node .claude/scripts/shared/install-skill.js <skill-name>
+   cp -r {frameworkPath}/.claude/skills/<skill-name>/ .claude/skills/<skill-name>/
    ```
    | Platform | Skill |
    |----------|-------|
@@ -96,6 +96,7 @@ Where will this project be deployed?
    | Railway | `railway-project-setup` |
    | DigitalOcean | `digitalocean-app-setup` |
    | Render | `render-project-setup` |
+   Add skill name to `framework-config.json` → `projectSkills` array (additive, sorted).
 3. Query `recipe-tech-mapping.json` for deployment recipes and display available ones
 #### Complexity-Triggered Questions
 | Trigger | Follow-Up |
@@ -115,6 +116,14 @@ Where will this project be deployed?
 | Simple (CLI, utility) | 4 essential only |
 | Medium (web app, API) | 4-6 questions |
 | Complex (multi-service) | 6-8 questions |
+#### Schema-Driven Domain Questions (After Complexity Triggers)
+After complexity-triggered questions, generate additional questions from the domain-entities schema.
+```javascript
+const { generateQuestions } = require('.claude/scripts/shared/lib/schema-driven-questions.js');
+const schemaQuestions = generateQuestions(answersCollectedSoFar);
+```
+For each returned question, use `AskUserQuestion` with the question's `header` and `question` fields. Answers feed into `domain-entities.json` generation. If schema not found or no questions generated, skip silently.
+**During `/charter update`:** Use `generateUpdateQuestions(currentDomainEntities)` instead — only asks about missing/empty fields. Existing `domain-entities.json` values are preserved.
 #### Review Mode Question (Always Asked)
 **ASK USER (single-select via AskUserQuestion):**
 ```
@@ -176,8 +185,8 @@ Directories created after questions to avoid orphaned dirs if user abandons.
 **Step 3:** Apply updates, sync to CHARTER.md if vision changes, update Last Updated date
 **Step 3a:** Regenerate `domain-entities.json` from updated charter using `generateFromCharter()`. Validate against schema. If `domain-entities.json` doesn't exist, generate it (migration). Include `"$schema"` as first property pointing to `.claude/metadata/domain-entities-schema.json`.
 **Step 3b:** Report hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
-**Step 4:** If Tech Stack modified, trigger skill and recipe suggestions (NEW items only). Detect new default skills not in current `projectSkills` (via `getDefaultSkills()` from `manage-skills.js`) and add additively.
-**Step 4b:** If Deployment Target selected: read existing `deploymentTarget`. If changing, uninstall old skill, install new one. Update config.
+**Step 4:** If Tech Stack modified, trigger skill and recipe suggestions (NEW items only). Detect new default skills not in current `projectSkills` (read `defaultSkills` from `.claude/metadata/skill-keywords.json`) — copy from `{frameworkPath}/.claude/skills/` and add additively to `projectSkills`.
+**Step 4b:** If Deployment Target selected: read existing `deploymentTarget`. If changing, remove old skill directory from `.claude/skills/`, copy new one from `{frameworkPath}/.claude/skills/<skill-name>/`. Update `deploymentTarget` and `projectSkills` in config.
 ### /charter refresh
 **Step 1:** Load `{frameworkPath}/Skills/codebase-analysis/SKILL.md`
 **Step 2:** Analyze codebase
@@ -186,7 +195,7 @@ Directories created after questions to avoid orphaned dirs if user abandons.
 **Step 5:** Merge changes, commit "Charter refresh"
 **Step 5a:** Regenerate `domain-entities.json` using `generateFromCharter()`. Run `verifyEntityCounts()` on result -- report mismatches between charter counts and filesystem counts. Ask user before updating charter counts. Validate and write. Include `"$schema"` as first property.
 **Step 5b:** Report hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
-**Step 6:** Trigger skill and recipe suggestions. Detect new default skills (via `getDefaultSkills()`) -- add additively. If tech stack changed, trigger keyword-based suggestions (NEW only).
+**Step 6:** Trigger skill and recipe suggestions. Detect new default skills (read `defaultSkills` from `.claude/metadata/skill-keywords.json`) — copy from `{frameworkPath}/.claude/skills/`, add additively to `projectSkills`. If tech stack changed, trigger keyword-based suggestions (NEW only).
 ### /charter validate
 **Step 1:** Load CHARTER.md and Inception/Scope-Boundaries.md
 **Step 2:** Identify current work (issue, recent commits, staged changes)
@@ -218,7 +227,7 @@ For each `match: false`: report `"Warning: {entity}: charter says {charterCount}
 **Step 4:** Report: `"Generated domain-entities.json ({entity count} entities)"`. If count verification ran, append mismatch summary.
 ## Project Skills Selection
 After charter creation, suggest skills based on defaults and tech stack using `.claude/metadata/skill-keywords.json`.
-**Step 1:** Re-read `.claude/metadata/skill-keywords.json` from disk (contains `defaultSkills`, `skillKeywords`, `groupKeywords`). Also re-read `.claude/metadata/skill-registry.json` for descriptions. Use `getDefaultSkills()` from `manage-skills.js`.
+**Step 1:** Re-read `.claude/metadata/skill-keywords.json` from disk (contains `defaultSkills`, `skillKeywords`, `groupKeywords`). Also re-read `.claude/metadata/skill-registry.json` for descriptions. Read `defaultSkills` array directly from `skill-keywords.json`.
 If `skill-keywords.json` missing: warn and skip (non-blocking).
 **Step 1b:** Read `defaultSkills` array -- universally applicable skills. Add all to candidate list before keyword matching. If missing/empty, continue without.
 **Step 2:** Match tech stack keywords (case-insensitive, whole-word). Also match `groupKeywords` -- add ALL group.skills. Merge with defaults. Deduplicate against existing `projectSkills`.
@@ -226,7 +235,7 @@ If tech stack unknown: still present defaults. If zero keyword matches: present 
 **Step 3:** Present via `AskUserQuestion` with multi-select. Show name + description. Default skills pre-selected, marked `[default]`. Users can deselect.
 **Step 3b: Existing Project:** Filter already-present candidates. If all relevant skills enabled, report and skip. Present only NEW candidates. Merge additively.
 **Step 4:** Store in `framework-config.json` `projectSkills` array, sorted alphabetically. Additive merge.
-**Step 4b:** Deploy: `node .claude/scripts/shared/install-skill.js <skill-names...>`
+**Step 4b:** Deploy by copying from hub: `cp -r {frameworkPath}/.claude/skills/<skill-name>/ .claude/skills/<skill-name>/` for each skill. Skills are COPIED (not symlinked). Skip if already exists (preserve customizations).
 **Step 5:** Report installed skills
 ## Extension Recipe Suggestions
 After skill selection, suggest relevant extension recipes.

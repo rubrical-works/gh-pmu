@@ -11,6 +11,8 @@ appliesTo:
 prerequisites:
   - Coverage tool configured (nyc, c8, jest --coverage, etc.)
   - Coverage threshold defined in package.json or config
+technology:
+  - node
 ---
 
 ### Coverage Gate

@@ -1,7 +1,7 @@
 ---
-version: "v0.82.0"
+version: "v0.84.0"
 description: Generate session statistics report with development velocity metrics
-argument-hint: "[--since YYYY-MM-DD] [--until YYYY-MM-DD] [--repos /path/a,/path/b] [--repos-edit] [--save]"
+argument-hint: "[--today] [--date YYYY-MM-DD] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--repos /path/a,/path/b] [--repos-edit] [--save]"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- MANAGED -->
@@ -15,6 +15,8 @@ Generate session statistics by analyzing git history, GitHub issues, and test co
 ## Arguments
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
+| `--today` | No | — | Explicit alias for default. Sets `since`=midnight local today, `until`=now. Cannot combine with `--since`/`--until`/`--date`. |
+| `--date` | No | — | Shortcut for a specific full day `YYYY-MM-DD`. Sets `since`=`T00:00:00`, `until`=`T23:59:59`. Deterministic. Cannot combine with `--since`/`--until`/`--today`. |
 | `--since` | No | Today (midnight) | Start date `YYYY-MM-DD` |
 | `--until` | No | Now | End date `YYYY-MM-DD` |
 | `--repos` | No | — | Comma-separated directories. No value = cached list. |
@@ -22,11 +24,24 @@ Generate session statistics by analyzing git history, GitHub issues, and test co
 | `--save` | No | — | Save report to `idpf-stats/YYYY-MM-DD.md` |
 **Examples:**
 - `/idpf-stats` — Today's session (single repo)
+- `/idpf-stats --today` — Same as above, explicit/self-documenting
+- `/idpf-stats --date 2026-04-06` — Specific full day (deterministic)
 - `/idpf-stats --since 2026-03-15` — Stats since March 15
 - `/idpf-stats --repos /path/a,/path/b` — Multi-repo stats
 - `/idpf-stats --repos` — Multi-repo using cached list
 - `/idpf-stats --repos-edit` — Edit cached directory list
 - `/idpf-stats --save` — Display and save report to `idpf-stats/`
+### How the Work Day is Calculated
+`/idpf-stats` treats the "work day" as a time range anchored to local timezone, not UTC. Four modes:
+| Mode | `since` | `until` | Notes |
+|---|---|---|---|
+| **Default** (no flags) | Midnight local today (00:00:00) | "now" | Range grows as you re-run later in the day. |
+| **`--today`** | Midnight local today (00:00:00) | "now" | Identical to default. Explicit/self-documenting. |
+| **`--date YYYY-MM-DD`** | `T00:00:00` local | `T23:59:59` local | Deterministic — same output regardless of when run. |
+| **`--since` / `--until`** | `T00:00:00` of given date | `T23:59:59` of given date (or "now" if omitted) | Multi-day ranges. |
+**Timezone:** Dates parsed/formatted in local timezone via `getTzOffset()`. A commit at 11:55 PM local on 2026-04-06 appears in `--date 2026-04-06`, not the next day.
+**Midnight boundaries:** `--date` uses `00:00:00`–`23:59:59`, so a commit exactly at midnight is counted in the day it starts. Default/`--today` use "now", so future-dated commits (clock skew) are excluded.
+**`--today` vs `--date <today>`:** `--today` at 3pm vs 6pm shows different counts (range grew). `--date 2026-04-06` is deterministic but misses commits after the run. Snapshot of "today so far" → `--today`. Full historical day → `--date` after the day ends.
 ## Workflow
 ### Step 1: Collect Metrics
 Run the stats collection script:

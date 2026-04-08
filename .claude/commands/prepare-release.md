@@ -1,5 +1,5 @@
 ---
-version: "v0.82.0"
+version: "v0.84.0"
 description: Prepare release with PR, merge to main, and tag
 argument-hint: "[version] [--skip-coverage] [--dry-run] [--help]"
 copyright: "Rubrical Works (c) 2026"
@@ -27,6 +27,29 @@ Validate, create PR to main, merge, and tag for deployment.
 **Todo Rules:** One todo per numbered phase/step; one todo per active extension; skip commented-out extensions.
 ---
 ## Pre-Checks
+### Check for Uncommitted Changes
+```bash
+git status --porcelain
+```
+**If clean:** Proceed silently.
+**If dirty:** Report changes, then `AskUserQuestion`:
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "Working tree has uncommitted changes. These could be lost when the branch is closed. How would you like to proceed?",
+    header: "Dirty tree",
+    options: [
+      { label: "Stage and commit all", description: "Run git add -A and commit with a message you provide" },
+      { label: "Let me review first", description: "Stop here so you can review and handle changes manually" },
+      { label: "Continue anyway", description: "Proceed with release preparation despite uncommitted changes" }
+    ],
+    multiSelect: false
+  }]
+});
+```
+- **"Stage and commit all":** Ask for message, `git add -A && git commit -m "<message>"`. Continue.
+- **"Let me review first":** `"Stopping. Review changes, then re-run /prepare-release."` → **STOP**
+- **"Continue anyway":** `"Warning: Proceeding with uncommitted changes."` Continue.
 ### Verify Current Branch
 ```bash
 git branch --show-current

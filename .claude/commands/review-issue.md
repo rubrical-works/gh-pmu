@@ -1,5 +1,5 @@
 ---
-version: "v0.82.0"
+version: "v0.84.0"
 description: Review issues with type-specific criteria (project)
 argument-hint: "#issue [#issue...] [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -83,17 +83,18 @@ Non-`--with` tip: Available extensions listed.
 <!-- USER-EXTENSION-END: post-review -->
 
 ### Step 3a: Interdependence Analysis (Multi-Issue Only)
-**Trigger:** 2+ issues reviewed AND all are bugs or enhancements (not proposals, PRDs, or epics).
+**Trigger:** 2+ issues reviewed AND all eligible per `typeFilter` in `.claude/metadata/review-interdependence.json`. Eligible: `bug`, `enhancement`, `prd`, `test-plan`. Excluded: `proposal`, `epic` (excluded takes precedence).
 After all individual reviews complete:
 ```javascript
-const { analyzeInterdependence } = require('.claude/scripts/shared/review-interdependence.js');
-const result = analyzeInterdependence(reviewedIssues);
+const { analyzeInterdependence, isEligibleForInterdependence } = require('.claude/scripts/shared/review-interdependence.js');
+const allEligible = reviewedIssues.every(i => isEligibleForInterdependence(i.labels));
+if (allEligible) { const result = analyzeInterdependence(reviewedIssues); }
 ```
 `reviewedIssues`: array of `{ number, title, type, labels, body }` from individual reviews.
 **Report:** Overlap (shared scope), Ordering (suggested order), Conflicts (contradictions), Shared Criteria (common ACs).
 **If findings exist**, offer to update issues with `Refs #N` cross-references.
 **If no findings**: report and continue.
-**Configuration**: Dimensions in `.claude/metadata/review-interdependence.json`, enable/disable per project.
+**Configuration**: Dimensions and type eligibility (`typeFilter`) in `.claude/metadata/review-interdependence.json`, enable/disable per project.
 **Single-issue reviews**: skip entirely.
 ### Step 4: Closing Notification
 Output `closingNotification`. Multi-issue: combine.
