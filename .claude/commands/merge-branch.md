@@ -1,53 +1,60 @@
 ---
-version: "v0.84.0"
+version: "v0.85.0"
 description: Merge branch to main with gated checks (project)
 argument-hint: "[--skip-gates] [--dry-run]"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- EXTENSIBLE -->
 # /merge-branch
-Merge current branch to main with gated validation. For non-versioned merges (features, refactoring). For versioned releases with tagging, use `/prepare-release`.
-**Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command merge-branch`
-
+Merge current branch to main with gated validation. For merges without version tags (features, refactoring). For versioned releases, use `/prepare-release`.
+**Extension Points:** `.claude/metadata/extension-points.json` or `/extensions list --command merge-branch`
+---
+## Arguments
 | Argument | Description |
 |----------|-------------|
-| `--skip-gates` | Emergency bypass - skip all gates |
-| `--dry-run` | Preview actions without executing |
+| `--skip-gates` | Emergency bypass (caution) |
+| `--dry-run` | Preview only |
+---
+## Execution
+**REQUIRED:**
+1. Parse phases+extensions → `TodoWrite`
+2. Todo per active `USER-EXTENSION` block
+3. Mark `in_progress` → `completed`
+4. **Post-Compaction:** re-read, regenerate todos
 
-## Execution Instructions
-**REQUIRED:** Before executing:
-1. **Generate Todo List:** Parse phases and extension points, use `TodoWrite` to create todos
-2. **Include Extensions:** Add todo for each non-empty `USER-EXTENSION` block
-3. **Track Progress:** Mark todos `in_progress` -> `completed`
-4. **Post-Compaction:** Re-read spec and regenerate todos
+**Rules:** One todo per numbered phase/step; one per active extension; skip commented-out; phase/step name as content.
+---
 ## Pre-Checks
-**Verify on feature branch:**
+### Verify Feature Branch
 ```bash
 BRANCH=$(git branch --show-current)
 ```
-Must NOT be on `main`. Typical: `feature/*`, `fix/*`, `idpf/*`, `patch/*`, `release/*`.
-**Check for tracker:**
+Must NOT be `main`. Typical: `feature/*`, `fix/*`, `idpf/*`, `patch/*`, `release/*`.
+### Check Tracker
 ```bash
 gh pmu branch current --json tracker
 ```
-If tracker exists, it will be closed at the end.
+If present, closed at end.
+---
 
 <!-- USER-EXTENSION-START: pre-gate -->
 <!-- Setup: prepare environment before gate checks -->
 <!-- USER-EXTENSION-END: pre-gate -->
 
-## Phase 1: Gate Checks
-**If `--skip-gates` passed, skip to Phase 2.**
+## Phase 1: Gates
+**If `--skip-gates`, skip to Phase 2.**
+### Default Gates (Framework-Provided)
+Always run (cannot disable):
 #### Gate 1.1: No Uncommitted Changes
 ```bash
 git status --porcelain
 ```
-**FAIL if output not empty.**
+**FAIL if output non-empty.**
 #### Gate 1.2: Tests Pass
 ```bash
 npm test 2>/dev/null || echo "No test script configured"
 ```
-**FAIL if tests fail.** Skip if no test script.
+**FAIL if tests fail.** Skip if no script.
 
 <!-- USER-EXTENSION-START: gates -->
 #### Gate 1.3: E2E Tests Pass
@@ -65,18 +72,23 @@ The script outputs JSON: `{"success": true/false, "testsRun": N, "testsPassed": 
 E2E tests validate complete workflows against the test project.
 <!-- USER-EXTENSION-END: gates -->
 
-**Gate Summary:** Report pass/fail with details. **If any gate fails, STOP.**
+### Summary
+- ✅ Passed
+- ❌ Failed (with details)
+
+**Any failure → STOP.**
 
 <!-- USER-EXTENSION-START: post-gate -->
 <!-- Post-gate: actions after all gates pass -->
 <!-- USER-EXTENSION-END: post-gate -->
 
+---
 ## Phase 2: Create and Merge PR
-### Step 2.1: Push Branch
+### 2.1: Push
 ```bash
 git push origin $(git branch --show-current)
 ```
-### Step 2.2: Create PR
+### 2.2: Create PR
 ```bash
 gh pr create --base main --head $(git branch --show-current) \
   --title "Merge: $(git branch --show-current)"
@@ -90,14 +102,14 @@ node .claude/scripts/framework/wait-for-ci.js
 ```
 <!-- USER-EXTENSION-END: post-pr-create -->
 
-### Step 2.3: Wait for PR Approval
+### 2.3: Wait for Approval
 **ASK USER:** Review and approve the PR.
 ```bash
 gh pr view --json reviewDecision
 ```
 #### Gate 2.4: PR Approved
-**FAIL if PR not approved** (unless `--skip-gates`).
-### Step 2.5: Merge PR
+**FAIL if not approved** (unless `--skip-gates`).
+### 2.5: Merge
 ```bash
 gh pr merge --merge
 git checkout main
@@ -108,25 +120,26 @@ git pull origin main
 <!-- Post-merge: actions after PR is merged -->
 <!-- USER-EXTENSION-END: post-merge -->
 
-### Step 2.6: Workstream Detection (Post-Merge)
-After merging, check if branch is part of a workstream:
-1. **Read metadata from disk:** Call `loadWorkstreamsMetadata('.workstreams.json')` -- if not found: skip
-2. **Check workstream:** Call `postMergeWorkstreamCheck(metadata, mergedBranch)` -- if `isWorkstream: false`: skip
-3. **Update metadata:** Write `updatedMetadata` to `.workstreams.json` (status -> `"merged"`)
+### 2.6: Workstream Detection (Post-Merge)
+After merge, check workstream plan:
+1. **Read from disk:** `loadWorkstreamsMetadata('.workstreams.json')`. Not found → skip.
+2. **Check:** `postMergeWorkstreamCheck(metadata, mergedBranch)`. `isWorkstream: false` → skip.
+3. **Update:** write `updatedMetadata` to `.workstreams.json` (status `"merged"`)
 4. **Commit:** `git add .workstreams.json && git commit -m "Update workstream metadata: $BRANCH merged"`
-5. **Sibling warning:** If `activeSiblings` non-empty, call `formatSiblingWarning(activeSiblings, sharedModules)` and display
-6. **All merged:** If `allMerged: true`: "All workstreams merged. Consider removing `.workstreams.json`."
+5. **Sibling warning:** `activeSiblings` non-empty → `formatSiblingWarning(activeSiblings, sharedModules)`, display
+6. **All merged:** `allMerged: true` → "All workstreams merged. Consider removing `.workstreams.json`."
+---
 ## Phase 3: Cleanup
-### Step 3.1: Close Tracker Issue (if exists)
+### 3.1: Close Tracker (if exists)
 ```bash
 node .claude/scripts/shared/lib/active-label.js remove [TRACKER_NUMBER]
 gh issue close [TRACKER_NUMBER] --comment "Branch merged to main"
 ```
-### Step 3.2: Close Branch in Project
+### 3.2: Close Branch in Project
 ```bash
 gh pmu branch close 2>/dev/null || echo "No branch to close"
 ```
-### Step 3.3: Delete Branch
+### 3.3: Delete Branch
 ```bash
 git push origin --delete $BRANCH
 git branch -d $BRANCH
@@ -136,9 +149,14 @@ git branch -d $BRANCH
 <!-- Post-close: notifications, announcements -->
 <!-- USER-EXTENSION-END: post-close -->
 
+---
 ## Completion
-Branch merge complete: all gates passed, PR created and merged, tracker closed (if applicable), branch deleted.
-## /merge-branch vs /prepare-release
+- ✅ All gates passed
+- ✅ PR created and merged
+- ✅ Tracker closed (if applicable)
+- ✅ Branch deleted
+---
+## Comparison: /merge-branch vs /prepare-release
 | Feature | /merge-branch | /prepare-release |
 |---------|---------------|------------------|
 | Version bump | No | Yes |
@@ -150,6 +168,7 @@ Branch merge complete: all gates passed, PR created and merged, tracker closed (
 | Close tracker | Yes | Yes |
 | Delete branch | Yes | Yes |
 
-**Use `/merge-branch` for:** Feature/fix branches, non-versioned work.
-**Use `/prepare-release` for:** Versioned releases with CHANGELOG and tags.
+**Use `/merge-branch`:** Feature, fix, non-versioned work.
+**Use `/prepare-release`:** Versioned releases with CHANGELOG + tags.
+---
 **End of Merge Branch**

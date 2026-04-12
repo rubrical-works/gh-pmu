@@ -1,44 +1,52 @@
 ---
-version: "v0.84.0"
+version: "v0.85.0"
 description: Create an enhancement issue with standard template (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- EXTENSIBLE -->
 # /enhancement
-Creates a properly labeled enhancement issue with standard template on the project board.
-**Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command enhancement`
-**Prerequisites:** `gh pmu` installed, `.gh-pmu.json` configured.
+Create a labeled enhancement issue with standard template and add to project board.
+**Extension Points:** `.claude/metadata/extension-points.json` or `/extensions list --command enhancement`
+---
+## Prerequisites
+- `gh pmu` extension installed
+- `.gh-pmu.json` configured
+---
+## Arguments
+| Argument | Description |
+|----------|-------------|
+| `<title>` | Enhancement title (e.g., `add dark mode`) |
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<title>` | No | Enhancement title (e.g., `add dark mode support`) |
+If not provided, prompt user.
+---
+## Execution
+**REQUIRED before executing:**
+1. Parse workflow steps → `TodoWrite`
+2. Include one todo per active (non-empty) `USER-EXTENSION` block
+3. Mark todos `in_progress` → `completed`
+4. **Post-Compaction:** re-read spec, regenerate todos
 
-If no title provided, prompt the user.
-## Execution Instructions
-**REQUIRED:** Before executing:
-1. **Generate Todo List:** Parse workflow steps, use `TodoWrite` to create todos
-2. **Include Extensions:** Add todo for each non-empty `USER-EXTENSION` block
-3. **Track Progress:** Mark todos `in_progress` -> `completed`
-4. **Post-Compaction:** Re-read spec and regenerate todos
+**Rules:** One todo per numbered step; one per active extension; skip commented-out; use step name as content.
+---
 ## Workflow
 ### Step 1: Parse Arguments
-Extract `<title>` from arguments.
-**If empty:** Ask user for enhancement title.
-**If special characters** (backticks, quotes): Escape for shell. On Windows, use temp file approach.
+Extract `<title>`.
+**Empty:** Ask user before proceeding.
+**Special chars** (backticks, quotes): Escape for shell. On Windows, use temp file per shell safety.
 ### Step 2: Gather Description
-Extract `<body>` from arguments. **IF** insufficient detail, **THEN** ask:
+Extract `<body>` from args.
+**IF insufficient detail**, THEN:
 ```
 Describe the enhancement (what it does, why it's useful):
 ```
-**If description provided:** Use as issue body.
-**If user declines or "skip":** Create with minimal body.
+**Description provided:** use as body. **Declined/"skip":** minimal body.
 
 <!-- USER-EXTENSION-START: pre-create -->
 <!-- USER-EXTENSION-END: pre-create -->
 
 ### Step 3: Create Issue
-Build issue body with standard template:
+Body template:
 ```markdown
 ## Enhancement
 
@@ -60,15 +68,17 @@ Build issue body with standard template:
 **Acceptance Criteria:**
 - [ ] {infer from description, or "To be documented"}
 ```
-Populate from user's description where possible. Use "To be documented" only for sections without enough input.
+Populate from user input where possible. Use "To be documented" only where insufficient.
+
+Create:
 ```bash
 gh pmu create --title "[Enhancement]: {title}" --label enhancement --status backlog --priority p2 --assignee @me -F .tmp-body.md
 rm .tmp-body.md
 ```
-Always use `-F .tmp-body.md` (never inline `--body`).
+**Note:** Always `-F .tmp-body.md` (never inline `--body`).
 ### Step 4: Report and STOP
 ```
-Created: Issue #$ISSUE_NUM -- [Enhancement]: {title}
+Created: Issue #$ISSUE_NUM — [Enhancement]: {title}
 Status: Backlog
 Label: enhancement
 
@@ -78,12 +88,14 @@ Say "/review-issue #$ISSUE_NUM" then "/assign-branch #$ISSUE_NUM" then "work #$I
 <!-- USER-EXTENSION-START: post-create -->
 <!-- USER-EXTENSION-END: post-create -->
 
-**STOP.** Do not begin work unless user explicitly says "work", "fix that", or "implement that".
+**STOP.** Do NOT begin work unless user says "work", "fix that", or "implement that".
+---
 ## Error Handling
 | Situation | Response |
 |-----------|----------|
-| No title provided | Prompt user for title |
-| Empty title after prompt | "An enhancement title is required." -> STOP |
-| `gh pmu create` fails | "Failed to create issue: {error}" -> STOP |
-| Special characters in title | Escape for shell safety |
+| No title | Prompt user |
+| Empty after prompt | "An enhancement title is required." → STOP |
+| `gh pmu create` fails | "Failed to create issue: {error}" → STOP |
+| Special chars | Escape for shell safety |
+---
 **End of /enhancement Command**

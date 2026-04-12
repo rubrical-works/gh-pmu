@@ -1,57 +1,49 @@
 ---
-version: "v0.84.0"
+version: "v0.85.0"
 description: View, create, or manage project charter
 argument-hint: "[update|refresh|validate|--create-domain-entities]"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- MANAGED -->
 # /charter
-Context-aware charter command. Shows summary if exists, starts creation if missing.
+Context-aware. Shows summary if exists, starts creation if missing.
 ## Usage
 | Command | Description |
 |---------|-------------|
-| `/charter` | Show charter summary (if exists) or start creation (if missing) |
-| `/charter update` | Update specific charter sections |
-| `/charter refresh` | Re-extract from code, merge with existing |
-| `/charter validate` | Check current work against charter scope |
-| `/charter --create-domain-entities` | Regenerate `domain-entities.json` from current charter |
-## Execution Instructions
-**REQUIRED:** Before executing:
-1. **Generate Todo List:** Parse workflow steps, use `TodoWrite` to create todos
-2. **Track Progress:** Mark todos `in_progress` -> `completed`
-3. **Post-Compaction:** Re-read this spec and regenerate todos
+| `/charter` | Show summary or start creation |
+| `/charter update` | Update specific sections |
+| `/charter refresh` | Re-extract from code, merge |
+| `/charter validate` | Check current work against scope |
+| `/charter --create-domain-entities` | Regenerate `domain-entities.json` |
+## Execution
+**REQUIRED:** `TodoWrite` todos from workflow steps; mark `in_progress`→`completed`. After compaction, re-read spec and regenerate todos.
+
+## framework-config.json Writes — Use the Helper
+ALL writes to `framework-config.json` (incl. `update`/`refresh`/`validate`) MUST go through `framework-config.js`. Covers `deploymentTarget`, `projectSkills`, `reviewMode`, `activeDomains`, any other field. Raw `fs.writeFileSync` is forbidden — helper validates against `.claude/metadata/framework-config.schema.json` (ajv draft-07) and rejects schema-invalid output.
+```javascript
+const fwconfig = require('./.claude/scripts/shared/lib/framework-config.js');
+const config = fwconfig.read(process.cwd());
+config.deploymentTarget = 'vercel';
+config.projectSkills = [...new Set([...(config.projectSkills || []), ...newSkills])].sort();
+fwconfig.write(process.cwd(), config); // throws on validation failure
+```
+If `fwconfig.write` throws, surface validation error and stop — do NOT retry with raw file I/O.
 ## Template Detection
-**Pattern:** `/{[a-z][a-z0-9-]*}/`
-| Scenario | Handling |
-|----------|----------|
-| ANY placeholder present | Treat as template |
-| Empty sections, no placeholders | Treat as complete |
+Pattern: `/{[a-z][a-z0-9-]*}/`. ANY placeholder → template. No placeholders → complete.
 ## Workflow
-### /charter (No Arguments)
-**Step 1: Check for charter**
-```bash
-test -f CHARTER.md
-```
-**Step 2: If exists, check for template placeholders**
-```bash
-grep -E '\{[a-z][a-z0-9-]*\}' CHARTER.md
-```
-**If TEMPLATE (has placeholders):** -> Proceed to Step 3 (Extraction/Inception)
-**If COMPLETE (no placeholders):**
-1. Read and display charter summary (name, vision, focus, tech stack)
-2. Mention: "Run `/charter update` to modify, `/charter validate` to check scope"
-**Step 3: If no charter OR template detected**
-Charter is mandatory. Automatically proceed:
-1. Check if codebase has existing code
-2. Has code -> extraction mode; empty -> inception mode
-3. Proceed directly (no skip option)
-### Extraction Mode (Existing Projects)
-**Step 1:** Load `{frameworkPath}/Skills/codebase-analysis/SKILL.md`
-**Step 2:** Analyze codebase (tech stack, architecture, test parsing, NFR detection)
-**Step 3:** Present findings, ask user to confirm/adjust
-**Step 4:** Generate CHARTER.md and Inception/ artifacts from confirmed findings
-### Inception Mode (New Projects)
-#### Essential Questions (Always Asked)
+### /charter (No Args)
+1. `test -f CHARTER.md`
+2. If exists, check placeholders: `grep -E '\{[a-z][a-z0-9-]*\}' CHARTER.md`
+   - **TEMPLATE:** → Step 3
+   - **COMPLETE:** Display summary (name, vision, current focus, tech stack). Mention `/charter update` and `/charter validate`.
+3. **No charter OR template:** Charter is mandatory. Has code → extraction mode; empty → inception mode. Proceed directly (no skip).
+### Extraction Mode (Existing)
+1. Load `{frameworkPath}/Skills/codebase-analysis/SKILL.md`
+2. Analyze codebase (tech stack, architecture, test parsing, NFR detection)
+3. Present findings, ask user to confirm/adjust
+4. Generate CHARTER.md and Inception/ artifacts
+### Inception Mode (New)
+#### Essential Questions (always)
 | # | Question | Maps To |
 |---|----------|---------|
 | 1 | What are you building? (1-2 sentences) | CHARTER.md Vision |
@@ -59,8 +51,9 @@ Charter is mandatory. Automatically proceed:
 | 3 | What technology/language? | CHARTER.md Tech Stack |
 | 4 | What's in scope for v1? (3-5 items) | CHARTER.md In Scope |
 | 5 | What testing framework? (conditional) | Inception/Test-Strategy.md Framework |
-Q5 only asked for testable projects (skip for docs/config repos).
-#### Testing Framework Question (Conditional)
+
+Q5 only for testable projects (skip docs/config repos).
+#### Testing Framework (conditional)
 | Tech Stack | Ask? | Options |
 |------------|:----:|---------|
 | TypeScript/JS/Node | Yes | Jest, Vitest, Bun test |
@@ -70,23 +63,24 @@ Q5 only asked for testable projects (skip for docs/config repos).
 | Java/Kotlin | Yes | JUnit, TestNG |
 | C#/.NET | Yes | xUnit, NUnit, MSTest |
 | Documentation-only | Skip | N/A |
-**Skip Detection:** If Q3 contains "documentation", "docs", "config", "terraform", "ansible" -> skip Q5, set "N/A - non-code project"
-#### Deployment Platform Question (Q3a -- Conditional)
-**Trigger:** Deployable project detected (web framework, Docker, "web app", "API", "service", "site").
-**Skip:** CLI tools, libraries, docs-only, infrastructure repos.
+
+**Skip:** Q3 contains "documentation", "docs", "config", "terraform", "ansible" → skip Q5, framework = "N/A - non-code project".
+#### Deployment Platform (Q3a — conditional)
+**Trigger:** Deployable from Q3 — web framework (React, Next.js, Express, Flask, Rails, Django, etc.), frontend build tool, Docker, or description containing "web app"/"API"/"service"/"site".
+**Skip:** CLI, libraries, docs-only, infra repos (terraform, ansible, pulumi).
 **ASK USER (single-select via AskUserQuestion):**
 ```
 Where will this project be deployed?
-- Vercel -- Best for frontend, Next.js, static sites
-- Railway -- Best for full-stack apps, background workers
-- DigitalOcean (App Platform) -- Best for multi-component apps with databases
-- Render -- Best for web services with managed infrastructure
-- Other/Not decided -- No deployment skill installed
-- Self-hosted/Not applicable -- No deployment skill installed
+- Vercel — Best for frontend, Next.js, static sites
+- Railway — Best for full-stack apps, background workers
+- DigitalOcean (App Platform) — Best for multi-component apps with databases
+- Render — Best for web services with managed infrastructure
+- Other/Not decided — No deployment skill installed
+- Self-hosted/Not applicable — No deployment skill installed
 ```
 **After answer:**
-1. Write `deploymentTarget` to `framework-config.json`: Vercel->`"vercel"`, Railway->`"railway"`, DigitalOcean->`"digitalocean"`, Render->`"render"`, Other->`"other"`, Self-hosted->`null`
-2. If platform selected (not "other"/null), copy deployment skill from hub:
+1. Write `deploymentTarget`: Vercel→`"vercel"`, Railway→`"railway"`, DigitalOcean→`"digitalocean"`, Render→`"render"`, Other→`"other"`, Self-hosted→`null`.
+2. If platform selected (not "other"/null), copy skill from hub:
    ```bash
    cp -r {frameworkPath}/.claude/skills/<skill-name>/ .claude/skills/<skill-name>/
    ```
@@ -96,9 +90,10 @@ Where will this project be deployed?
    | Railway | `railway-project-setup` |
    | DigitalOcean | `digitalocean-app-setup` |
    | Render | `render-project-setup` |
-   Add skill name to `framework-config.json` → `projectSkills` array (additive, sorted).
-3. Query `recipe-tech-mapping.json` for deployment recipes and display available ones
-#### Complexity-Triggered Questions
+
+   Add skill to `projectSkills` (additive merge, sorted alphabetically).
+3. Query `recipe-tech-mapping.json` for matching deployment recipes; display.
+#### Complexity-Triggered
 | Trigger | Follow-Up |
 |---------|-----------|
 | **Web app** | "Will users need to log in?" / "What data will you store?" |
@@ -106,37 +101,40 @@ Where will this project be deployed?
 | **Multi-user** | "What access levels are needed?" |
 | **Data handling** | "Any sensitive/personal data?" / "Compliance requirements?" |
 | **External integrations** | "What external services?" / "Any constraints?" |
-**Max 1-2 complexity questions to avoid overwhelming user.**
-#### Dynamic Follow-Up Generation
-- Analyze baseline answers for gaps/ambiguities
-- Simple projects: 0-1 follow-ups; Complex: 2-4
-- Skip questions already answered indirectly
-| Project Complexity | Total Questions |
+
+Max 1-2 to avoid overwhelm.
+#### Dynamic Follow-Up
+- Analyze baselines for gaps/ambiguities
+- Simple: 0-1; Complex: 2-4
+- Skip questions answered indirectly
+
+| Complexity | Total Questions |
 |--------------------|-----------------|
 | Simple (CLI, utility) | 4 essential only |
-| Medium (web app, API) | 4-6 questions |
-| Complex (multi-service) | 6-8 questions |
-#### Schema-Driven Domain Questions (After Complexity Triggers)
-After complexity-triggered questions, generate additional questions from the domain-entities schema.
+| Medium (web app, API) | 4-6 |
+| Complex (multi-service) | 6-8 |
+#### Schema-Driven Domain Questions (after complexity triggers)
 ```javascript
 const { generateQuestions } = require('.claude/scripts/shared/lib/schema-driven-questions.js');
 const schemaQuestions = generateQuestions(answersCollectedSoFar);
 ```
-For each returned question, use `AskUserQuestion` with the question's `header` and `question` fields. Answers feed into `domain-entities.json` generation. If schema not found or no questions generated, skip silently.
-**During `/charter update`:** Use `generateUpdateQuestions(currentDomainEntities)` instead — only asks about missing/empty fields. Existing `domain-entities.json` values are preserved.
-#### Review Mode Question (Always Asked)
-**ASK USER (single-select via AskUserQuestion):**
+Use `AskUserQuestion` with each question's `header`/`question` fields. Answers feed `domain-entities.json` (Step 7). If schema not found / no questions, skip silently.
+
+**During `/charter update`:** Use `generateUpdateQuestions(currentDomainEntities)` — only missing/empty fields; existing values preserved.
+#### Review Mode (always)
+**ASK USER (single-select):**
 ```
 What review mode should be used for this project?
 - Solo: Single developer - skip team-oriented criteria
 - Team (Recommended): 2-10 developers - include sizing, priorities, dependencies
 - Enterprise: Large teams - all criteria plus effort estimation and risk assessment
 ```
-**Default:** "team" if not selected.
-**After answer:** Write `reviewMode` to `framework-config.json` (lowercase). Show confirmation.
-#### Domain Profiling Question (Conditional)
+**Default:** "team" if not selected / non-interactive.
+**After:** Write `reviewMode` (lowercase: "solo"/"team"/"enterprise"). Show mode-specific confirmation.
+#### Domain Profiling (conditional)
 **Trigger:** Any project type except documentation-only.
-**Step 1: Auto-detect relevant domains:**
+
+**Step 1: Auto-detect** from tech stack and project type:
 | Project Signal | Pre-check Domains |
 |----------------|------------------|
 | Web app / frontend / API | Security, Accessibility, SEO, API-Design |
@@ -146,104 +144,138 @@ What review mode should be used for this project?
 | Performance-sensitive | Performance |
 | Chaos/resilience mentioned | Chaos |
 | Automated testing mentioned | QA-Automation |
-**Step 2: ASK USER (multi-select):** Present all 11 domains with pre-checked ones based on auto-detection.
-**Step 3:** Write `activeDomains` array to `framework-config.json` (lowercase domain IDs: `"security"`, `"accessibility"`, `"seo"`, `"privacy"`, `"observability"`, `"i18n"`, `"api-design"`, `"performance"`, `"chaos"`, `"contract"`, `"qa"`).
-**Step 4:** `/charter refresh`: Re-evaluate domain relevance when codebase changes.
-**Step 5:** `/charter update`: Allow adding/removing active domains via multi-select.
-#### Artifact Generation from Answers
+
+**Step 2: ASK USER (multi-select):**
+```
+Which domain review criteria should auto-apply to this project?
+Pre-checked domains are based on your tech stack. Adjust as needed.
+```
+Present all 11 domains pre-checked per detection.
+
+**Step 3: After answer:**
+1. Write `activeDomains` (lowercase IDs: `"security"`, `"accessibility"`, `"seo"`, `"privacy"`, `"observability"`, `"i18n"`, `"api-design"`, `"performance"`, `"chaos"`, `"contract"`, `"qa"`)
+2. Report: `"Active domains: {list}. These will auto-apply to review commands."`
+
+**Step 4 (`/charter refresh`):** Re-evaluate vs auto-detection from updated tech stack.
+**Step 5 (`/charter update`):** Allow add/remove via multi-select.
+#### Artifact Generation
 | Answer | Primary Artifact |
 |--------|------------------|
-| What building? | CHARTER.md -> Vision |
-| What problem? | Inception/Charter-Details.md -> Problem Statement |
-| What technology? | CHARTER.md -> Tech Stack |
-| What's in scope? | CHARTER.md -> In Scope |
-| Testing framework? | Inception/Test-Strategy.md -> Framework |
-| Review mode? | framework-config.json -> reviewMode |
-| Active domains? | framework-config.json -> activeDomains |
-**Generation Process:**
-1. Create lifecycle directories:
+| What building? | CHARTER.md → Vision |
+| What problem? | Inception/Charter-Details.md → Problem Statement |
+| What technology? | CHARTER.md → Tech Stack |
+| What's in scope? | CHARTER.md → In Scope |
+| Testing framework? | Inception/Test-Strategy.md → Framework |
+| Review mode? | framework-config.json → reviewMode |
+| Active domains? | framework-config.json → activeDomains |
+
+**Process:**
+1. Create lifecycle dirs:
    ```bash
    mkdir -p Inception Construction/Test-Plans Construction/Design-Decisions Construction/Tech-Debt Transition
    ```
 2. Generate CHARTER.md (Vision, Tech Stack, In Scope, Status: Draft)
 3. Generate Inception/ artifacts (Charter-Details, Tech-Stack, Scope-Boundaries, Constraints, Architecture, Test-Strategy, Milestones)
-4. Create Construction/ structure with .gitkeep and README.md
-5. Create Transition/ artifacts (Deployment-Guide, Runbook, User-Documentation)
-6. Use "TBD" for sections without answers
+4. Construction/ structure with .gitkeep and README.md
+5. Transition/ artifacts (Deployment-Guide, Runbook, User-Documentation)
+6. Use "TBD" where unanswered
 7. Generate `domain-entities.json` at project root:
    ```javascript
    const { generateFromCharter } = require('.claude/scripts/shared/generate-domain-entities.js');
+   const charter = fs.readFileSync('CHARTER.md', 'utf8');
+   const entities = generateFromCharter(charter, version);
    // Validate against .claude/metadata/domain-entities-schema.json before writing
+   // If validation fails, warn and skip (non-blocking)
    ```
-   If validation fails, warn and skip (non-blocking).
 8. Commit: "Initialize project charter and lifecycle structure"
-9. Report hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
-Directories created after questions to avoid orphaned dirs if user abandons.
+9. Hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
+
+**Note:** Dirs created after questions to avoid orphans if user abandons.
 ### /charter update
-**Step 1:** Read current CHARTER.md and Inception/Charter-Details.md
-**Step 2:** Ask what to update (Vision, Current Focus, Tech Stack, Scope, Milestones, Deployment Target)
-**Step 3:** Apply updates, sync to CHARTER.md if vision changes, update Last Updated date
-**Step 3a:** Regenerate `domain-entities.json` from updated charter using `generateFromCharter()`. Validate against schema. If `domain-entities.json` doesn't exist, generate it (migration). Include `"$schema"` as first property pointing to `.claude/metadata/domain-entities-schema.json`.
-**Step 3b:** Report hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
-**Step 4:** If Tech Stack modified, trigger skill and recipe suggestions (NEW items only). Detect new default skills not in current `projectSkills` (read `defaultSkills` from `.claude/metadata/skill-keywords.json`) — copy from `{frameworkPath}/.claude/skills/` and add additively to `projectSkills`.
-**Step 4b:** If Deployment Target selected: read existing `deploymentTarget`. If changing, remove old skill directory from `.claude/skills/`, copy new one from `{frameworkPath}/.claude/skills/<skill-name>/`. Update `deploymentTarget` and `projectSkills` in config.
+1. Read current CHARTER.md and Inception/Charter-Details.md
+2. Ask what to update (Vision, Current Focus, Tech Stack, Scope, Milestones, Deployment Target)
+3. Apply, sync to CHARTER.md if vision changes, update Last Updated date
+3a. Regenerate `domain-entities.json` via `generateFromCharter()` from `.claude/scripts/shared/generate-domain-entities.js`. Validate before writing. If missing, generate it (existing project migration). Include `"$schema"` first property pointing to `.claude/metadata/domain-entities-schema.json`.
+3b. Hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
+4. If Tech Stack modified: trigger skill and recipe suggestions (NEW only). Detect new default skills not in current `projectSkills` (read `defaultSkills` from `.claude/metadata/skill-keywords.json`, cross-referenced with `.claude/metadata/skill-registry.json`) — copy from `{frameworkPath}/.claude/skills/`, add additively.
+4b. If Deployment Target selected: read existing `deploymentTarget`. If platform changed, remove old deployment skill dir and copy new one from `{frameworkPath}/.claude/skills/<skill-name>/`. Update `deploymentTarget` and `projectSkills` (remove old, add new). No prior target → fresh install.
 ### /charter refresh
-**Step 1:** Load `{frameworkPath}/Skills/codebase-analysis/SKILL.md`
-**Step 2:** Analyze codebase
-**Step 3:** Compare with existing Inception/ artifacts, identify differences
-**Step 4:** Present diff, ask for confirmation
-**Step 5:** Merge changes, commit "Charter refresh"
-**Step 5a:** Regenerate `domain-entities.json` using `generateFromCharter()`. Run `verifyEntityCounts()` on result -- report mismatches between charter counts and filesystem counts. Ask user before updating charter counts. Validate and write. Include `"$schema"` as first property.
-**Step 5b:** Report hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
-**Step 6:** Trigger skill and recipe suggestions. Detect new default skills (read `defaultSkills` from `.claude/metadata/skill-keywords.json`) — copy from `{frameworkPath}/.claude/skills/`, add additively to `projectSkills`. If tech stack changed, trigger keyword-based suggestions (NEW only).
+1. Load `{frameworkPath}/Skills/codebase-analysis/SKILL.md`
+2. Analyze codebase
+3. Compare with existing Inception/ artifacts, identify differences
+4. Present diff, ask for confirmation
+5. Merge changes, commit "Charter refresh"
+5a. Regenerate `domain-entities.json` via `generateFromCharter()`. Run `verifyEntityCounts()` — report mismatches between charter counts and filesystem counts. Ask before updating charter counts. Validate and write. Include `"$schema"` first property.
+5b. Hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
+6. Trigger skill/recipe suggestions. Detect new default skills not in current `projectSkills` (read `defaultSkills` from `.claude/metadata/skill-keywords.json`) — copy from `{frameworkPath}/.claude/skills/`, add additively, report. If tech stack changed, trigger keyword-based skill suggestions (NEW only).
 ### /charter validate
-**Step 1:** Load CHARTER.md and Inception/Scope-Boundaries.md
-**Step 2:** Identify current work (issue, recent commits, staged changes)
-**Step 3:** Compare against in-scope/out-of-scope items
-**Step 4:** Report
+1. Load CHARTER.md and Inception/Scope-Boundaries.md
+2. Identify current work (issue, recent commits, staged changes)
+3. Compare against in-scope/out-of-scope
+4. Report
+
 | Finding | Action |
 |---------|--------|
 | Aligned | Proceed normally |
 | Possibly out of scope | Ask user to confirm intent |
 | Clearly out of scope | Suggest updating charter or revising work |
 ### /charter --create-domain-entities
-Standalone regeneration of `domain-entities.json` from the current charter.
-**Step 1:** Check for `CHARTER.md`
-- **If exists:** Read, proceed to Step 2
-- **If missing:** Trigger full charter inception (`/charter` no args). After inception, `domain-entities.json` already generated. Report and **STOP**.
-**Step 2:** Generate `domain-entities.json`
+Standalone regeneration of `domain-entities.json` from current charter.
+
+**Step 1:** Check `CHARTER.md`
+- **Exists:** Read, → Step 2
+- **Missing:** Trigger full inception flow (`/charter` no args). After completion, `domain-entities.json` is generated as part of Step 7. Report: "Charter created. `domain-entities.json` generated." → **STOP**
+
+**Step 2:** Generate
 ```javascript
 const { generateFromCharter, verifyEntityCounts } = require('.claude/scripts/shared/generate-domain-entities.js');
 const charter = fs.readFileSync('CHARTER.md', 'utf8');
 const entities = generateFromCharter(charter, version);
 ```
-Write with `"$schema"` as first property pointing to `.claude/metadata/domain-entities-schema.json`.
-**Step 2b:** Verify entity counts against filesystem:
+Write to same dir as `CHARTER.md` with `"$schema"` first property pointing to `.claude/metadata/domain-entities-schema.json` (relative path from file location).
+
+**Step 2b:** Verify entity counts vs filesystem
 ```javascript
 const results = verifyEntityCounts(entities.entities);
 ```
-For each `match: false`: report `"Warning: {entity}: charter says {charterCount}, found {actualCount} on disk"`. If mismatches, ask user to update charter counts. If yes, update CHARTER.md Key Entities table, re-run `generateFromCharter()`. If no, proceed as-is. **Never auto-modify charter without user consent.**
-**Step 3:** Validate against `.claude/metadata/domain-entities-schema.json`. If valid, write. If invalid, warn and write (non-blocking). If schema missing, warn and write.
-**Step 4:** Report: `"Generated domain-entities.json ({entity count} entities)"`. If count verification ran, append mismatch summary.
+For each `match: false`, report:
+```
+⚠️ {entity}: charter says {charterCount}, found {actualCount} on disk
+```
+If mismatches, ask: `"Update charter counts before writing? (y/n)"`. Yes → update `CHARTER.md` Key Entities table with actual counts, re-run `generateFromCharter()`. No → proceed with charter counts as-is. **Never auto-modify charter without user consent.**
+
+**Step 3:** Validate against schema
+- **Schema exists:** Validate. Valid → write. Invalid → warn and write anyway (non-blocking).
+- **Missing:** Warn "Schema not found — skipping validation" and write.
+
+**Step 4:** Report
+```
+Generated domain-entities.json ({entity count} entities)
+```
+If verification ran, append: `"Count verification: {N} entities checked, {M} mismatches"`
+
 ## Project Skills Selection
-After charter creation, suggest skills based on defaults and tech stack using `.claude/metadata/skill-keywords.json`.
-**Step 1:** Re-read `.claude/metadata/skill-keywords.json` from disk (contains `defaultSkills`, `skillKeywords`, `groupKeywords`). Also re-read `.claude/metadata/skill-registry.json` for descriptions. Read `defaultSkills` array directly from `skill-keywords.json`.
-If `skill-keywords.json` missing: warn and skip (non-blocking).
-**Step 1b:** Read `defaultSkills` array -- universally applicable skills. Add all to candidate list before keyword matching. If missing/empty, continue without.
-**Step 2:** Match tech stack keywords (case-insensitive, whole-word). Also match `groupKeywords` -- add ALL group.skills. Merge with defaults. Deduplicate against existing `projectSkills`.
-If tech stack unknown: still present defaults. If zero keyword matches: present defaults only.
-**Step 3:** Present via `AskUserQuestion` with multi-select. Show name + description. Default skills pre-selected, marked `[default]`. Users can deselect.
-**Step 3b: Existing Project:** Filter already-present candidates. If all relevant skills enabled, report and skip. Present only NEW candidates. Merge additively.
-**Step 4:** Store in `framework-config.json` `projectSkills` array, sorted alphabetically. Additive merge.
-**Step 4b:** Deploy by copying from hub: `cp -r {frameworkPath}/.claude/skills/<skill-name>/ .claude/skills/<skill-name>/` for each skill. Skills are COPIED (not symlinked). Skip if already exists (preserve customizations).
-**Step 5:** Report installed skills
+After charter creation, suggest skills via `.claude/metadata/skill-keywords.json`.
+**Step 1:** Re-read `skill-keywords.json` from disk (not memory) — `defaultSkills`, `skillKeywords`, `groupKeywords`. Re-read `skill-registry.json` from disk for descriptions. **If `skill-keywords.json` missing:** warn, skip (non-blocking).
+**Step 1b:** Read `defaultSkills` — universally applicable regardless of stack. Add to candidates before keyword matching. Missing/empty → continue (non-blocking).
+**Step 2:** Match tech stack keywords against skillKeywords (case-insensitive, whole-word). Collect skills with ≥1 keyword match — no false positives from partial string matching. Match groupKeywords — if matched, add ALL group.skills. Merge with defaults. Deduplicate against existing `projectSkills`.
+**Tech stack unknown:** Still present defaults. **Zero matches:** Defaults only.
+**Step 3:** Present via `AskUserQuestion` multi-select. Show name and description. **Defaults pre-selected** (can deselect). Mark with `[default]` in description.
+**Step 3b: Existing project — additive merge:** Read existing `projectSkills`, filter already-present. All relevant (incl. defaults) enabled → report and skip. Present only NEW. Merge additively.
+**Step 4:** Store in `projectSkills`, sorted alphabetically. Additive merge.
+**Step 4b:** Deploy by copy:
+```bash
+cp -r {frameworkPath}/.claude/skills/<skill-name>/ .claude/skills/<skill-name>/
+```
+COPIED (not symlinked) for per-project customization. Existing dir → skip (preserve customizations).
+**Step 5:** Report installed skills.
 ## Extension Recipe Suggestions
-After skill selection, suggest relevant extension recipes.
+After skill selection, suggest relevant recipes.
 **Triggers:** `/charter` (creation), `/charter update` (if Tech Stack modified), `/charter refresh`
 **Skip if:** `"extensionSuggestions": false` or no release commands installed
-**Step 1:** Re-read `.claude/metadata/recipe-tech-mapping.json` from disk
+**Step 1:** Re-read `.claude/metadata/recipe-tech-mapping.json` from disk (not memory)
 **Step 2:** Match tech stack against indicators and groupMappings
-**Step 3:** Filter already-installed recipes
+**Step 3:** Filter already-installed (check extension points for content)
 **Step 4: ASK USER:**
 ```
 Extension Recipes Available:
@@ -251,22 +283,13 @@ Extension Recipes Available:
 - dependency-audit: Check for vulnerabilities
 Install? (y/n/select)
 ```
-**Step 5:** Implement selected recipes (insert between `USER-EXTENSION-START/END` markers)
-**Step 6:** Report results
+**Step 5:** Insert template between `USER-EXTENSION-START/END` markers
+**Step 6:** Report
+
 | Edge Case | Handling |
 |-----------|----------|
 | Extension point has content | Skip: "{point} already configured" |
 | No release commands | Skip: "Extension recipes require release commands" |
-| All suggestions installed | Report: "Extension recipes are up to date" |
-## Token Budget
-| Artifact | Tokens |
-|----------|--------|
-| CHARTER.md | ~150-200 |
-| Charter-Details.md | ~1,200-1,500 |
-| Scope-Boundaries.md | ~500-800 |
-| skill-keywords.json | ~300-500 |
-## Related Commands
-- `/charter update` - Modify charter sections
-- `/charter refresh` - Sync charter with codebase
-- `/charter validate` - Check scope alignment
+| All installed | Report: "Extension recipes are up to date" |
+
 **End of /charter Command**
