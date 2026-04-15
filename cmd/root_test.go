@@ -94,3 +94,50 @@ func TestRootCommandVersionFormat(t *testing.T) {
 		t.Errorf("Expected second line to be 'Rubrical Works (c) 2026', got: %q", lines[1])
 	}
 }
+
+// TestSubcommandUsageLinePrefix verifies that `gh pmu <cmd> --help` renders
+// `Usage: gh pmu <cmd>...` rather than the buggy `Usage: gh <cmd>...`.
+func TestSubcommandUsageLinePrefix(t *testing.T) {
+	subcommands := []string{"board", "view", "move", "create"}
+
+	for _, sub := range subcommands {
+		t.Run(sub, func(t *testing.T) {
+			cmd := NewRootCommand()
+			buf := new(bytes.Buffer)
+			cmd.SetOut(buf)
+			cmd.SetArgs([]string{sub, "--help"})
+
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("Expected no error running %q --help, got: %v", sub, err)
+			}
+
+			output := buf.String()
+			want := "Usage:\n  gh pmu " + sub
+			if !strings.Contains(output, want) {
+				t.Errorf("Expected output to contain %q for subcommand %q.\nFull output:\n%s", want, sub, output)
+			}
+			bad := "Usage:\n  gh " + sub
+			if strings.Contains(output, bad) {
+				t.Errorf("Output still contains buggy usage %q for subcommand %q.\nFull output:\n%s", bad, sub, output)
+			}
+		})
+	}
+}
+
+// TestRootCommandUsageLinePrefix verifies that `gh pmu --help` renders
+// `Usage: gh pmu [command]`.
+func TestRootCommandUsageLinePrefix(t *testing.T) {
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "gh pmu [command]") {
+		t.Errorf("Expected root usage to contain 'gh pmu [command]', got:\n%s", output)
+	}
+}

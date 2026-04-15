@@ -31,7 +31,10 @@ var exemptCommands = map[string]bool{
 
 func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "gh pmu",
+		Use: "pmu",
+		Annotations: map[string]string{
+			cobra.CommandDisplayNameAnnotation: "gh pmu",
+		},
 		Short: "GitHub Praxis Management Utility",
 		Long: `gh pmu — GitHub Praxis Management Utility.
 
@@ -57,7 +60,7 @@ Use 'gh pmu <command> --help' for more information about a command.`,
 		},
 	}
 
-	cmd.SetVersionTemplate("{{.Use}} version {{.Version}}\nRubrical Works (c) 2026\n")
+	cmd.SetVersionTemplate("{{.CommandPath}} version {{.Version}}\nRubrical Works (c) 2026\n")
 
 	cmd.AddCommand(newInitCommand())
 	cmd.AddCommand(newListCommand())
