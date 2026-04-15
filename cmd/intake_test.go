@@ -29,6 +29,14 @@ type mockIntakeClient struct {
 	searchRepositoryIssuesErr error
 	addIssueToProjectErr      error
 	setProjectItemFieldErr    error
+	getProjectFieldsErr       error
+
+	// Bulk field-setting tracking (#833)
+	projectFields                     []api.ProjectField
+	getProjectFieldsCalls             int
+	setProjectItemFieldCalls          int
+	setProjectItemFieldWithFieldsCalls int
+	lastFieldsPassed                  []api.ProjectField
 }
 
 type getProjectItemsCallIntake struct {
@@ -83,6 +91,21 @@ func (m *mockIntakeClient) AddIssueToProject(projectID, issueID string) (string,
 }
 
 func (m *mockIntakeClient) SetProjectItemField(projectID, itemID, fieldName, value string) error {
+	m.setProjectItemFieldCalls++
+	return m.setProjectItemFieldErr
+}
+
+func (m *mockIntakeClient) GetProjectFields(projectID string) ([]api.ProjectField, error) {
+	m.getProjectFieldsCalls++
+	if m.getProjectFieldsErr != nil {
+		return nil, m.getProjectFieldsErr
+	}
+	return m.projectFields, nil
+}
+
+func (m *mockIntakeClient) SetProjectItemFieldWithFields(projectID, itemID, fieldName, value string, fields []api.ProjectField) error {
+	m.setProjectItemFieldWithFieldsCalls++
+	m.lastFieldsPassed = fields
 	return m.setProjectItemFieldErr
 }
 
@@ -964,6 +987,93 @@ func TestRunIntakeWithDeps_ApplyWithExplicitFields(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "Added 1 issue") {
 		t.Errorf("expected 'Added 1 issue' message, got: %s", output)
+	}
+}
+
+// =============================================================================
+// #833: Bulk Field-Setting Tests
+// =============================================================================
+
+// TestRunIntakeWithDeps_ApplyFetchesProjectFieldsOnce asserts that `intake --apply`
+// fetches project fields exactly once regardless of issue count.
+func TestRunIntakeWithDeps_ApplyFetchesProjectFieldsOnce(t *testing.T) {
+	mock := newMockIntakeClient()
+	mock.projectFields = []api.ProjectField{
+		{ID: "f1", Name: "Status", DataType: "SINGLE_SELECT"},
+		{ID: "f2", Name: "Priority", DataType: "SINGLE_SELECT"},
+	}
+	// 20 untracked issues
+	for i := 1; i <= 20; i++ {
+		mock.repositoryIssues = append(mock.repositoryIssues, api.Issue{
+			ID:     "issue-" + string(rune('a'+i%26)),
+			Number: i,
+			Title:  "Issue",
+			State:  "OPEN",
+		})
+	}
+
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"owner/repo"},
+		Defaults: config.Defaults{
+			Status:   "backlog",
+			Priority: "p2",
+		},
+	}
+
+	cmd := newIntakeCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	_ = cmd.Flags().Set("apply", " ")
+	opts := &intakeOptions{apply: " "}
+
+	if err := runIntakeWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.getProjectFieldsCalls != 1 {
+		t.Errorf("GetProjectFields should be called exactly once for 20 issues, got %d", mock.getProjectFieldsCalls)
+	}
+	if mock.setProjectItemFieldCalls != 0 {
+		t.Errorf("SetProjectItemField (non-bulk) should not be called during apply, got %d", mock.setProjectItemFieldCalls)
+	}
+	// 20 issues × 2 default fields (status + priority) = 40 bulk calls
+	if mock.setProjectItemFieldWithFieldsCalls != 40 {
+		t.Errorf("SetProjectItemFieldWithFields should be called 40 times (20 issues × 2 fields), got %d", mock.setProjectItemFieldWithFieldsCalls)
+	}
+}
+
+// TestRunIntakeWithDeps_ApplyPassesPrefetchedFields asserts bulk calls receive the prefetched fields.
+func TestRunIntakeWithDeps_ApplyPassesPrefetchedFields(t *testing.T) {
+	mock := newMockIntakeClient()
+	mock.projectFields = []api.ProjectField{
+		{ID: "f1", Name: "Status", DataType: "SINGLE_SELECT"},
+	}
+	mock.repositoryIssues = []api.Issue{
+		{ID: "issue-1", Number: 1, Title: "One", State: "OPEN"},
+	}
+
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"owner/repo"},
+	}
+
+	cmd := newIntakeCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	_ = cmd.Flags().Set("apply", "status:backlog")
+	opts := &intakeOptions{apply: "status:backlog"}
+
+	if err := runIntakeWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.setProjectItemFieldWithFieldsCalls != 1 {
+		t.Fatalf("expected 1 bulk field call, got %d", mock.setProjectItemFieldWithFieldsCalls)
+	}
+	if len(mock.lastFieldsPassed) != 1 || mock.lastFieldsPassed[0].Name != "Status" {
+		t.Errorf("expected prefetched Status field to be passed, got: %+v", mock.lastFieldsPassed)
 	}
 }
 

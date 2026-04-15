@@ -20,6 +20,8 @@ type intakeClient interface {
 	SearchRepositoryIssues(owner, repo string, filters api.SearchFilters, limit int) ([]api.Issue, error)
 	AddIssueToProject(projectID, issueID string) (string, error)
 	SetProjectItemField(projectID, itemID, fieldName, value string) error
+	GetProjectFields(projectID string) ([]api.ProjectField, error)
+	SetProjectItemFieldWithFields(projectID, itemID, fieldName, value string, fields []api.ProjectField) error
 }
 
 type intakeOptions struct {
@@ -199,6 +201,14 @@ func runIntakeWithDeps(cmd *cobra.Command, opts *intakeOptions, cfg *config.Conf
 		// Parse key:value pairs from apply string
 		applyFields := parseApplyFields(opts.apply)
 
+		// Fetch project fields ONCE before the issue loop (#833).
+		// Previously each SetProjectItemField call internally fetched fields,
+		// causing 1 + 3N API calls for N issues.
+		projectFields, err := client.GetProjectFields(project.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get project fields: %w", err)
+		}
+
 		var added []api.Issue
 		var failed []api.Issue
 
@@ -219,21 +229,21 @@ func runIntakeWithDeps(cmd *cobra.Command, opts *intakeOptions, cfg *config.Conf
 				fieldLower := strings.ToLower(field)
 				if fieldLower == "status" {
 					statusValue := cfg.ResolveFieldValue("status", value)
-					if err := client.SetProjectItemField(project.ID, itemID, "Status", statusValue); err != nil {
+					if err := client.SetProjectItemFieldWithFields(project.ID, itemID, "Status", statusValue, projectFields); err != nil {
 						cmd.PrintErrf("Warning: failed to set status on #%d: %v\n", issue.Number, err)
 					} else {
 						statusSet = true
 					}
 				} else if fieldLower == "priority" {
 					priorityValue := cfg.ResolveFieldValue("priority", value)
-					if err := client.SetProjectItemField(project.ID, itemID, "Priority", priorityValue); err != nil {
+					if err := client.SetProjectItemFieldWithFields(project.ID, itemID, "Priority", priorityValue, projectFields); err != nil {
 						cmd.PrintErrf("Warning: failed to set priority on #%d: %v\n", issue.Number, err)
 					} else {
 						prioritySet = true
 					}
 				} else {
 					// Generic field
-					if err := client.SetProjectItemField(project.ID, itemID, field, value); err != nil {
+					if err := client.SetProjectItemFieldWithFields(project.ID, itemID, field, value, projectFields); err != nil {
 						cmd.PrintErrf("Warning: failed to set %s on #%d: %v\n", field, issue.Number, err)
 					}
 				}
@@ -242,13 +252,13 @@ func runIntakeWithDeps(cmd *cobra.Command, opts *intakeOptions, cfg *config.Conf
 			// Fall back to config defaults if not set via --apply
 			if !statusSet && cfg.Defaults.Status != "" {
 				statusValue := cfg.ResolveFieldValue("status", cfg.Defaults.Status)
-				if err := client.SetProjectItemField(project.ID, itemID, "Status", statusValue); err != nil {
+				if err := client.SetProjectItemFieldWithFields(project.ID, itemID, "Status", statusValue, projectFields); err != nil {
 					cmd.PrintErrf("Warning: failed to set status on #%d: %v\n", issue.Number, err)
 				}
 			}
 			if !prioritySet && cfg.Defaults.Priority != "" {
 				priorityValue := cfg.ResolveFieldValue("priority", cfg.Defaults.Priority)
-				if err := client.SetProjectItemField(project.ID, itemID, "Priority", priorityValue); err != nil {
+				if err := client.SetProjectItemFieldWithFields(project.ID, itemID, "Priority", priorityValue, projectFields); err != nil {
 					cmd.PrintErrf("Warning: failed to set priority on #%d: %v\n", issue.Number, err)
 				}
 			}
