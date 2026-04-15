@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Merge branch to main with gated checks (project)
 argument-hint: "[--skip-gates] [--dry-run]"
 copyright: "Rubrical Works (c) 2026"
@@ -17,12 +17,12 @@ Merge current branch to main with gated validation. For merges without version t
 ---
 ## Execution
 **REQUIRED:**
-1. Parse phases+extensions → `TodoWrite`
-2. Todo per active `USER-EXTENSION` block
+1. Parse phases+extensions → `TaskCreate`
+2. Task per active `USER-EXTENSION` block
 3. Mark `in_progress` → `completed`
-4. **Post-Compaction:** re-read, regenerate todos
+4. **Post-Compaction:** re-read, regenerate tasks
 
-**Rules:** One todo per numbered phase/step; one per active extension; skip commented-out; phase/step name as content.
+**Rules:** One task per numbered phase/step; one per active extension; skip commented-out; phase/step name as content.
 ---
 ## Pre-Checks
 ### Verify Feature Branch

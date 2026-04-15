@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Split story into smaller stories (project)
 argument-hint: "<story-number> (e.g., 123)"
 copyright: "Rubrical Works (c) 2026"
@@ -15,9 +15,9 @@ Split a story into smaller stories while maintaining charter compliance and test
 ---
 ## Execution
 **REQUIRED:**
-1. `TodoWrite` from phases below
+1. `TaskCreate` from phases below
 2. Mark `in_progress` → `completed`
-3. Interrupted → todos show resume point
+3. Interrupted → tasks show resume point
 
 **Example:**
 ```

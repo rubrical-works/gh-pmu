@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Collaborative path analysis for proposals and enhancements (project)
 argument-hint: "#issue"
 copyright: "Rubrical Works (c) 2026"
@@ -20,7 +20,7 @@ Turn-based collaborative scenario path discovery on proposals/enhancements. AI a
 | `--categories IDs` | No | CSV IDs for selective re-run. Valid: `nominal`, `alternative`, `exception`, `edge`, `corner`, `negative` |
 | `--from-code [path]` | No | Delegate to `code-path-discovery` skill |
 ## Execution
-**REQUIRED:** `TodoWrite` todos from steps + one per non-empty `USER-EXTENSION` block; mark `in_progress`→`completed`; post-compaction re-read and regenerate.
+**REQUIRED:** `TaskCreate` tasks from steps + one per non-empty `USER-EXTENSION` block; mark `in_progress`→`completed`; post-compaction re-read and regenerate.
 ## Workflow
 
 <!-- USER-EXTENSION-START: pre-paths -->

@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Start working on issues with validation and auto-task extraction (project)
 argument-hint: "#issue [#issue...] [--assign] [--nonstop] [--wait] | all in <status>"
 copyright: "Rubrical Works (c) 2026"
@@ -151,6 +151,8 @@ Issue #$ISSUE: $TITLE — In Review
 Say "done" or run /done #$ISSUE to close this issue.
 ```
 **STOP.** Wait for "done". Do NOT close.
+
+**Post-STOP Cleanup:** Clear the task list after presenting the STOP message. Tasks have served their purpose (progress tracking + compaction recovery). Ensures the next command — `/work`, `/review-issue`, `/assign-branch`, etc. — starts clean. Applies to standard, epic, and branch tracker paths alike. Step 0's conditional clear remains as a safety net for crashed/interrupted sessions.
 
 **CRITICAL — Autonomous Epic/Branch processing:** For `context.type == "epic"`/`"branch"`, process sub-issues in ascending numeric order (default) or custom **Processing Order:** from epic body. Skip sub-issues already in `in_review` or `done`.
 

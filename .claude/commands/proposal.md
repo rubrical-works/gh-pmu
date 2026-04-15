@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Create a proposal document and tracking issue (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -29,12 +29,10 @@ If no title provided, prompt the user. **Alias:** `idea:` is identical to `propo
 
 **REQUIRED:** Before executing:
 
-1. **Generate Todo List:** Parse workflow steps, use `TodoWrite` to create todos
-2. **Include Extensions:** For each non-empty `USER-EXTENSION` block, add a todo
-3. **Track Progress:** Mark todos `in_progress` → `completed`
-4. **Post-Compaction:** Re-read spec and regenerate todos
-
-**Todo Rules:** One todo per numbered step; one per active extension; skip commented-out extensions; use step name as todo content.
+1. Use `TaskCreate` for one task per step below. No routing → bulk create upfront (see rule `07-task-creation-timing.md`).
+2. Include one task per active (non-empty) `USER-EXTENSION` block.
+3. Mark tasks `in_progress` → `completed` via `TaskUpdate`.
+4. **Post-Compaction:** Re-read spec, call `TaskList`, resume from first incomplete task.
 
 ## Workflow
 

@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Transform proposal into Agile PRD
 argument-hint: "<issue-number> | extract [<directory>]"
 copyright: "Rubrical Works (c) 2026"
@@ -28,7 +28,7 @@ Load shared from `.claude/metadata/command-boilerplate.json` -> `prerequisites.c
 | **Interactive** | `/create-prd` | Prompt for mode selection |
 
 ## Execution Instructions
-**REQUIRED:** Load from `.claude/metadata/command-boilerplate.json` -> `executionInstructions.steps` and `executionInstructions.todoRules`. Defaults if missing: generate TodoWrite todos from phases/steps, include extension point todos, track progress, re-read spec after compaction.
+**REQUIRED:** Load from `.claude/metadata/command-boilerplate.json` -> `executionInstructions.steps` and `executionInstructions.todoRules`. Defaults if missing: generate TaskCreate tasks from phases/steps, include extension point todos, track progress, re-read spec after compaction.
 
 ## Workflow (Issue-Driven Mode)
 

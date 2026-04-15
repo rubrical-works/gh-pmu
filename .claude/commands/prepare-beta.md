@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Tag beta from feature branch (no merge to main)
 argument-hint: "[--skip-coverage] [--dry-run] [--help]"
 copyright: "Rubrical Works (c) 2026"
@@ -21,12 +21,12 @@ Tag a beta release from feature branch without merging to main.
 
 ## Execution Instructions
 **REQUIRED:** Before executing:
-1. **Generate Todo List:** Parse phases and extension points, use `TodoWrite`
-2. **Include Extensions:** Add todo for each non-empty `USER-EXTENSION` block
-3. **Track Progress:** Mark todos `in_progress` → `completed`
-4. **Post-Compaction:** Re-read spec and regenerate todos
+1. **Create Task List:** Parse phases and extension points, use `TaskCreate`
+2. **Include Extensions:** Add task for each non-empty `USER-EXTENSION` block
+3. **Track Progress:** Mark tasks `in_progress` → `completed`
+4. **Post-Compaction:** Re-read spec and regenerate tasks
 
-**Todo Rules:** One todo per numbered phase/step; one per active extension; skip commented-out extensions.
+**Task Rules:** One task per numbered phase/step; one per active extension; skip commented-out extensions.
 
 ## Pre-Checks
 

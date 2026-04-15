@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Create text-based or diagrammatic screen mockups (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -29,7 +29,7 @@ Creates text-based or diagrammatic screen mockups. Fully interactive via `AskUse
 
 ## Execution Instructions
 
-**REQUIRED:** Parse workflow steps and create todos via `TodoWrite`. Add a todo per non-empty `USER-EXTENSION` block. Mark `in_progress` → `completed`. Re-read spec and regenerate todos after compaction.
+**REQUIRED:** Parse workflow steps and create tasks via `TaskCreate`. Add a task per non-empty `USER-EXTENSION` block. Mark `in_progress` → `completed`. Re-read spec and regenerate tasks after compaction.
 
 ## Workflow
 
@@ -131,7 +131,7 @@ If supported framework detected (exit 0), add "Framework-native components" as f
 
 **Without `#NN`:** All questions start fresh. Flow begins at Q1 (or skips Q1 if no existing mockups).
 
-**Per-screen progress tracking:** After Q4 resolves the screen list, create one todo per screen for compaction recovery ("resume from screen N") and visible progress.
+**Per-screen progress tracking:** After Q4 resolves the screen list, create one task per screen for compaction recovery ("resume from screen N") and visible progress.
 
 Post-compaction: re-read spec, check `Mockups/{Name}/` for partially created files, resume from first unwritten screen.
 

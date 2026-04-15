@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Comprehensive code review with manifest-driven incremental tracking (project)
 argument-hint: "[--full] [--status] [--scope <globs>] [--batch <N>] [--with <domains>] [--suggest]"
 copyright: "Rubrical Works (c) 2026"
@@ -25,9 +25,9 @@ Methodical charter-aligned code review with manifest-driven incremental tracking
 Combinable: `--scope "src/**/*.js" --batch 10 --with security`
 ## Execution
 **REQUIRED before executing:**
-1. Parse workflow steps → `TodoWrite`
-2. Mark todos `in_progress` → `completed`
-3. **Post-Compaction:** re-read this spec, regenerate todos
+1. Parse workflow steps → `TaskCreate`
+2. Mark tasks `in_progress` → `completed`
+3. **Post-Compaction:** re-read this spec, regenerate tasks
 ## Workflow
 ### Step 1: Parse Arguments
 Accept: none, `--full`, `--status`, `--scope`, `--batch N`, `--with`, `--suggest`. `--suggest` and `--with` mutually exclusive → error+STOP. Invalid → error+STOP.

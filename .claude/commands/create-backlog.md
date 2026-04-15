@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Create GitHub epics/stories from PRD (project)
 argument-hint: "<issue-number> (e.g., 151)"
 copyright: "Rubrical Works (c) 2026"
@@ -16,7 +16,7 @@ Create GitHub epics and stories from an approved PRD with embedded TDD test case
 
 ## Execution
 
-Use `TodoWrite` to create todos from phases below; mark `in_progress` → `completed`. Phases: 1 fetch/validate → 1c PRD review gate → 2 test plan approval gate → 3 parse PRD → 4 load test cases → 5 epics → 6 stories → 7 update PRD status → 8 skill suggestions (optional).
+Use `TaskCreate` to create tasks from phases below; mark `in_progress` → `completed`. Phases: 1 fetch/validate → 1c PRD review gate → 2 test plan approval gate → 3 parse PRD → 4 load test cases → 5 epics → 6 stories → 7 update PRD status → 8 skill suggestions (optional).
 
 ## Prerequisites
 

@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Plan concurrent workstreams for parallel epic development
 argument-hint: "<epic-numbers> [--streams N] [--dry-run] [--prefix <prefix>] [--cancel]"
 copyright: "Rubrical Works (c) 2026"
@@ -36,8 +36,8 @@ Plan concurrent workstreams for parallel development across multiple epics. Anal
 ## Execution Instructions
 
 **REQUIRED:** Before executing:
-1. **Generate Todo List:** Parse workflow steps, use `TodoWrite` to create todos
-2. **Track Progress:** Mark todos `in_progress` → `completed`
+1. **Create Task List:** Parse workflow steps, use `TaskCreate` to create tasks
+2. **Track Progress:** Mark tasks `in_progress` → `completed`
 
 ## Workflow
 

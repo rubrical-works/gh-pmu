@@ -1,5 +1,5 @@
 ---
-version: "v0.85.0"
+version: "v0.86.0"
 description: Create an enhancement issue with standard template (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -22,12 +22,10 @@ If not provided, prompt user.
 ---
 ## Execution
 **REQUIRED before executing:**
-1. Parse workflow steps → `TodoWrite`
-2. Include one todo per active (non-empty) `USER-EXTENSION` block
-3. Mark todos `in_progress` → `completed`
-4. **Post-Compaction:** re-read spec, regenerate todos
-
-**Rules:** One todo per numbered step; one per active extension; skip commented-out; use step name as content.
+1. Use `TaskCreate` for one task per step below. No routing → bulk create upfront (see rule `07-task-creation-timing.md`).
+2. Include one task per active (non-empty) `USER-EXTENSION` block.
+3. Mark tasks `in_progress` → `completed` via `TaskUpdate`.
+4. **Post-Compaction:** re-read spec, call `TaskList`, resume from first incomplete task.
 ---
 ## Workflow
 ### Step 1: Parse Arguments
