@@ -381,6 +381,9 @@ type ProjectV2FieldValue struct {
 
 // GetRepositoryID returns the node ID for a repository.
 func (c *Client) GetRepositoryID(owner, repo string) (string, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return "", err
+	}
 	var query struct {
 		Repository struct {
 			ID string

@@ -225,6 +225,9 @@ func (c *Client) getProjectFieldsPage(projectID string, cursor *string) ([]Proje
 
 // GetIssue fetches an issue by repository and number
 func (c *Client) GetIssue(owner, repo string, number int) (*Issue, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
 
 	var query struct {
 		Repository struct {
@@ -1636,6 +1639,14 @@ func (c *Client) getRepositoryIssuesPage(owner, repo string, states []IssueState
 // This is more efficient than fetching all issues when filtering by state, labels, or text.
 // The limit parameter controls maximum results (0 = no limit, uses pagination).
 func (c *Client) SearchRepositoryIssues(owner, repo string, filters SearchFilters, limit int) ([]Issue, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
+	for i, label := range filters.Labels {
+		if err := validateLabelName(label); err != nil {
+			return nil, fmt.Errorf("filters.Labels[%d]: %w", i, err)
+		}
+	}
 
 	// Build the search query string
 	queryParts := []string{
@@ -2703,6 +2714,12 @@ func (c *Client) ListLabels(owner, repo string) ([]RepoLabel, error) {
 
 // GetLabel fetches a single label from a repository with full metadata.
 func (c *Client) GetLabel(owner, repo, labelName string) (*RepoLabel, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
+	if err := validateLabelName(labelName); err != nil {
+		return nil, err
+	}
 
 	var query struct {
 		Repository struct {
