@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.6] - 2026-04-15
+
+### Fixed
+- Subcommand `--help` usage line now renders `gh pmu <cmd>` instead of `gh <cmd>` (#831)
+
+### Security
+- Validate `owner`, `repo`, `label`, and GraphQL node-ID inputs before interpolation into raw GraphQL query strings; reject characters outside the GitHub-permitted alphabet at the API-client boundary rather than relying on coincidental Go/GraphQL escape overlap (#832, #835)
+- Applied boundary validation across `SearchRepositoryIssues`, `GetRepositoryID`, `GetIssue`, `GetLabel`, `GetSubIssues`, `GetSubIssueCounts`, `GetSubIssuesBatch`, `GetRepositoryIssues`, `GetOpenIssuesByLabel(s)`, `GetClosedIssuesByLabel`, `GetParentIssue(Batch)`, `GetIssueComments`, `GetIssuesWithProjectFieldsBatch`, `GetProjectItemsByIssues`, `ListLabels`, `getLabelID(s)`, `CreateLabel`, `UpdateLabel` (#835)
+
+### Performance
+- `gh pmu intake --apply` now pre-fetches project fields once per invocation and uses `SetProjectItemFieldWithFields` instead of the N×3 `SetProjectItemField` pattern; API calls scale with `1 + 2N` instead of `1 + 3N` for N issues with status + priority defaults (#833)
+
+### Changed
+- `gh pmu config verify` surfaces `ComputeChecksum` / `LoadChecksum` I/O errors to stderr instead of silently discarding them; remote critical-alert path now writes to `cmd.ErrOrStderr()` so alerts are captured by test fixtures that respect cobra's stderr redirection (#834)
+
 ## [1.4.5] - 2026-03-27
 
 ### Fixed
