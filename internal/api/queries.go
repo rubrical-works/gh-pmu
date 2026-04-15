@@ -883,6 +883,15 @@ func (c *Client) GetProjectItemsByIssues(projectID string, refs []IssueRef) ([]P
 		return []ProjectItem{}, nil
 	}
 
+	if err := validateNodeID(projectID); err != nil {
+		return nil, fmt.Errorf("projectID: %w", err)
+	}
+	for _, ref := range refs {
+		if err := validateOwnerRepo(ref.Owner, ref.Repo); err != nil {
+			return nil, err
+		}
+	}
+
 	// Group issues by repository for efficient querying
 	type repoKey struct {
 		owner string
@@ -1330,6 +1339,10 @@ func (c *Client) GetSubIssueCounts(owner, repo string, numbers []int) (map[int]i
 		return make(map[int]int), nil
 	}
 
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
+
 	// Build a GraphQL query with aliases for each issue
 	// Example: query { repository(owner:"o", name:"r") { i1: issue(number:1) { subIssues { totalCount } } } }
 	var queryParts []string
@@ -1387,6 +1400,10 @@ func parseSubIssueCountsResponse(data []byte, numbers []int) (map[int]int, error
 func (c *Client) GetSubIssuesBatch(owner, repo string, numbers []int) (map[int][]SubIssue, error) {
 	if len(numbers) == 0 {
 		return make(map[int][]SubIssue), nil
+	}
+
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
 	}
 
 	// Build a GraphQL query with aliases for each issue
@@ -1723,6 +1740,12 @@ func (c *Client) GetProjectFieldsForIssues(projectID string, issueIDs []string) 
 
 // getProjectFieldsForIssuesBatch fetches project fields for a batch of issues using aliases
 func (c *Client) getProjectFieldsForIssuesBatch(projectID string, issueIDs []string) (map[string][]FieldValue, error) {
+	for i, id := range issueIDs {
+		if err := validateNodeID(id); err != nil {
+			return nil, fmt.Errorf("issueIDs[%d]: %w", i, err)
+		}
+	}
+
 	// Build a GraphQL query with aliases for each issue
 	var queryParts []string
 	for i, id := range issueIDs {
@@ -2340,6 +2363,10 @@ func (c *Client) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []i
 		return issues, fieldValues, issueErrors, nil
 	}
 
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, nil, nil, err
+	}
+
 	var queryParts []string
 	for i, num := range numbers {
 		queryParts = append(queryParts, fmt.Sprintf(`i%d: issue(number: %d) {
@@ -2531,6 +2558,10 @@ func (c *Client) GetParentIssueBatch(owner, repo string, numbers []int) (map[int
 	result := make(map[int]*Issue)
 	if len(numbers) == 0 {
 		return result, nil
+	}
+
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
 	}
 
 	var queryParts []string

@@ -833,6 +833,13 @@ func (c *Client) getLabelIDs(owner, repo string, labelNames []string) (map[strin
 		return make(map[string]string), nil
 	}
 
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
+	if err := validateLabelNames(labelNames); err != nil {
+		return nil, err
+	}
+
 	// Build a GraphQL query with aliases for each label
 	// Example: query { repository(owner:"o", name:"r") { l0: label(name:"bug") { id } l1: label(name:"help") { id } } }
 	var queryParts []string
