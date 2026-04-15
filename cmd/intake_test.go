@@ -32,11 +32,11 @@ type mockIntakeClient struct {
 	getProjectFieldsErr       error
 
 	// Bulk field-setting tracking (#833)
-	projectFields                     []api.ProjectField
-	getProjectFieldsCalls             int
-	setProjectItemFieldCalls          int
+	projectFields                      []api.ProjectField
+	getProjectFieldsCalls              int
+	setProjectItemFieldCalls           int
 	setProjectItemFieldWithFieldsCalls int
-	lastFieldsPassed                  []api.ProjectField
+	lastFieldsPassed                   []api.ProjectField
 }
 
 type getProjectItemsCallIntake struct {
