@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "lastRun": "2026-03-26",
+  "lastRun": "2026-04-15",
   "charter": {
-    "contentHash": "sha256:1bbd503b423c1cd2818c0de3cec6a8938874270845e99f48bb6b03ae19b5ba89"
+    "contentHash": "sha256:97b67a51f7621f93d57a92430ade19abb17be3d5268e8dcbecdc21b1cc3c5ed4"
   },
   "files": {
     "main.go": {
@@ -19,14 +19,18 @@
     },
     "cmd/accept.go": {
       "contentHash": "sha256:6af783f4de41a3c43cbd03b1d372f4a54977a06421f8a453de1339c7096497ed",
-      "status": "approved",
-      "reviewedAt": "2026-03-26",
-      "findingCount": 0,
+      "status": "flagged",
+      "reviewedAt": "2026-04-15",
+      "findingCount": 1,
       "findings": [],
       "issueRefs": [],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "cmd/board.go": {
@@ -79,14 +83,20 @@
     },
     "cmd/config.go": {
       "contentHash": "sha256:0edf15093efc5fda9732e2d7b81cda852bde844f449901c280e7244dba94eeaf",
-      "status": "approved",
-      "reviewedAt": "2026-03-26",
-      "findingCount": 0,
+      "status": "flagged",
+      "reviewedAt": "2026-04-15",
+      "findingCount": 3,
       "findings": [],
-      "issueRefs": [],
+      "issueRefs": [
+        834
+      ],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "cmd/create.go": {
@@ -176,13 +186,19 @@
     "cmd/intake.go": {
       "contentHash": "sha256:74dfbb28a4229fb64e4213021290c5b05e082028e808358d269afb7d826b9808",
       "status": "flagged",
-      "reviewedAt": "2026-03-26",
+      "reviewedAt": "2026-04-15",
       "findingCount": 2,
       "findings": [],
-      "issueRefs": [],
+      "issueRefs": [
+        833
+      ],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "cmd/integrity_check.go": {
@@ -234,15 +250,21 @@
       ]
     },
     "cmd/root.go": {
-      "contentHash": "sha256:8a1c6eabef5639637cd798cf8f9546a3202d91118ef8af005bcbcaf6da847e1c",
+      "contentHash": "sha256:0c06522b903b8f39d209d112e2f8a575172ca2b0e7c4b71b0d42c3c4a8e4ab22",
       "status": "flagged",
-      "reviewedAt": "2026-03-26",
-      "findingCount": 2,
+      "reviewedAt": "2026-04-15",
+      "findingCount": 1,
       "findings": [],
-      "issueRefs": [],
+      "issueRefs": [
+        831
+      ],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "cmd/split.go": {
@@ -306,15 +328,19 @@
       ]
     },
     "internal/api/client.go": {
-      "contentHash": "sha256:e2b800d03484aa5fbc3cbc5d28659ee9b6cb05717871f499200863bf9f10fb44",
-      "status": "flagged",
-      "reviewedAt": "2026-03-26",
-      "findingCount": 3,
+      "contentHash": "sha256:593f3023aca18baabd63ab89871413694c9be2d23bb9bb6081895edec03719c3",
+      "status": "approved",
+      "reviewedAt": "2026-04-15",
+      "findingCount": 0,
       "findings": [],
       "issueRefs": [],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "internal/api/errors.go": {
@@ -330,27 +356,40 @@
       ]
     },
     "internal/api/mutations.go": {
-      "contentHash": "sha256:7fccb16797aa91594618d0ed2a58da33950f6115ed93b35df574cb6930330f8c",
+      "contentHash": "sha256:0a53b8229acc9e17edd1907cac0c119e8aa2414ff1038ac70568226583b0719f",
       "status": "flagged",
-      "reviewedAt": "2026-03-26",
-      "findingCount": 3,
+      "reviewedAt": "2026-04-15",
+      "findingCount": 1,
       "findings": [],
-      "issueRefs": [],
+      "issueRefs": [
+        832
+      ],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "internal/api/queries.go": {
-      "contentHash": "sha256:440cfd1f133d463a7868c814a784a70b31dd070ea7c6494d0138b6f002a5b0d4",
+      "contentHash": "sha256:5a9ba28252f487d2a7f199575eede9aba21d0dcd49051e92c7940868808865d7",
       "status": "flagged",
-      "reviewedAt": "2026-03-26",
-      "findingCount": 1,
+      "reviewedAt": "2026-04-15",
+      "findingCount": 3,
       "findings": [],
-      "issueRefs": [],
+      "issueRefs": [
+        832,
+        835
+      ],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "internal/api/retry.go": {
@@ -380,25 +419,33 @@
     "internal/config/acceptance.go": {
       "contentHash": "sha256:5f390d75cd75997a7cae619f62468584417e6466f5fc6be7782cd0d078f276bd",
       "status": "approved",
-      "reviewedAt": "2026-03-26",
+      "reviewedAt": "2026-04-15",
       "findingCount": 0,
       "findings": [],
       "issueRefs": [],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "internal/config/config.go": {
-      "contentHash": "sha256:92962e62958fea6b89c594f3b108d31f240fc60c2cd1b3e0f9dc819086af3cc7",
+      "contentHash": "sha256:b6710867b0aabe80ace4bb0fa1a3b26142d9c0a7b0a1d4d3966b1ed9c303575d",
       "status": "flagged",
-      "reviewedAt": "2026-03-26",
-      "findingCount": 1,
+      "reviewedAt": "2026-04-15",
+      "findingCount": 0,
       "findings": [],
       "issueRefs": [],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "internal/defaults/embed.go": {
@@ -427,14 +474,18 @@
     },
     "internal/integrity/integrity.go": {
       "contentHash": "sha256:73a54ed5fa7ff8cf445c77486cfedb8984d4d62d496ee758c3f650bd503ff7fe",
-      "status": "approved",
-      "reviewedAt": "2026-03-26",
-      "findingCount": 0,
+      "status": "flagged",
+      "reviewedAt": "2026-04-15",
+      "findingCount": 1,
       "findings": [],
       "issueRefs": [],
       "domains": [
-        "security",
-        "performance"
+        "api-design",
+        "contract",
+        "observability",
+        "performance",
+        "privacy",
+        "security"
       ]
     },
     "internal/testutil/testutil.go": {

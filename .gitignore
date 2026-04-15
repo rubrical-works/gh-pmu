@@ -100,3 +100,6 @@ runp_claude
 
 # IDPF Framework (managed by Praxis Hub Manager)
 .claude/commands/audit-commands.md
+
+# IDPF Framework (managed by Praxis Hub Manager)
+.claude/commands/workit.md
