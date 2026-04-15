@@ -1,5 +1,5 @@
 ---
-version: "v0.74.0"
+version: "v0.87.0"
 description: Review stories for direction change (project)
 argument-hint: "[epic-number|prd-name]"
 copyright: "Rubrical Works (c) 2026"
@@ -8,29 +8,22 @@ copyright: "Rubrical Works (c) 2026"
 <!-- MANAGED -->
 # /pivot
 
-Review and triage stories when project direction changes. Helps manage scope realignment by reviewing each story and deciding whether to keep, archive, or close it.
-
----
+Review and triage stories when project direction changes: keep, archive, or close each story.
 
 ## Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `[epic-number]` | Epic issue number to pivot (e.g., `42` or `#42`) |
+| `[epic-number]` | Epic issue number (e.g., `42` or `#42`) |
 | `[prd-name]` | PRD name to pivot all related stories |
-
----
 
 ## Usage
 
 ```bash
 /pivot 42           # Pivot stories under Epic #42
-/pivot #42          # Same, with hash prefix
 /pivot Auth-System  # Pivot all stories from Auth-System PRD
 /pivot              # Interactive - prompts for selection
 ```
-
----
 
 ## Workflow
 
@@ -38,58 +31,39 @@ Review and triage stories when project direction changes. Helps manage scope rea
 
 **Step 1: Determine pivot target**
 
-If argument provided:
-- Number → Treat as epic issue number
-- Text → Treat as PRD name
+If argument provided: number → epic; text → PRD name.
 
-If no argument:
-**ASK USER:** What would you like to pivot?
-1. An epic (enter issue number)
-2. A PRD's stories (enter PRD name)
+If no argument, **ASK USER:** What would you like to pivot? (1) epic number, (2) PRD name.
 
 **Step 2: Validate target**
 
-For epic:
+Epic:
 ```bash
 gh issue view $epic_num --json labels --jq '.labels[].name' | grep -q "epic"
 ```
 
-For PRD:
+PRD:
 ```bash
 ls PRD/*/$1* 2>/dev/null || ls PRD/$1* 2>/dev/null
 ```
 
 ### Phase 2: Document Pivot Reason
 
-**ASK USER:** What is the new direction or reason for the pivot?
-
-Record response for documentation.
+**ASK USER:** What is the new direction or reason for the pivot? Record for documentation.
 
 ### Phase 3: List Stories
 
-**Step 1: Gather stories**
-
-For epic:
+Epic:
 ```bash
 gh pmu sub list $epic_num --json number,title,state
 ```
 
-For PRD:
+PRD:
 ```bash
 gh issue list --label "story" --search "PRD:$prd_name" --json number,title,state
 ```
 
-**Step 2: Display stories**
-
-```
-Stories to review:
-
-| # | Issue | Title | Status |
-|---|-------|-------|--------|
-| 1 | #101 | User login | In Progress |
-| 2 | #102 | Password reset | Backlog |
-| 3 | #103 | OAuth integration | Backlog |
-```
+Display as table (#, Issue, Title, Status).
 
 ### Phase 4: Review Each Story
 
@@ -104,15 +78,11 @@ Options:
 2. Archive - May be relevant later (parking lot)
 3. Close - No longer needed (close as not planned)
 4. Skip - Decide later
-
-Your choice: ___
 ```
 
-**Record decision for each story.**
+Record decision for each story.
 
 ### Phase 5: Apply Actions
-
-**Step 1: Process decisions**
 
 | Decision | Action |
 |----------|--------|
@@ -121,9 +91,7 @@ Your choice: ___
 | Close | `gh issue close #{num} --reason "not planned" --comment "Closed during pivot: {reason}"` |
 | Skip | No change, include in "pending review" |
 
-**Step 2: Document pivot on parent**
-
-Add comment to epic/PRD issue:
+**Document pivot on parent:**
 
 ```bash
 gh issue comment $parent --body "## Pivot: {date}
@@ -145,38 +113,23 @@ gh issue comment $parent --body "## Pivot: {date}
 
 ```
 Pivot complete: Epic #{num} / PRD {name}
-
 Reason: {pivot_reason}
-
 Stories reviewed: {total}
-  ✅ Kept: {count}
-  📦 Archived: {count}
-  ❌ Closed: {count}
-  ⏸️ Pending: {count}
-
+  Kept: {count}
+  Archived: {count}
+  Closed: {count}
+  Pending: {count}
 Documentation added to #{parent}
-
 Next steps:
 1. Review kept stories for priority adjustment
 2. Continue work: work #{next_story}
 ```
 
----
-
 ## When to Use
 
-Use `/pivot` when:
-- Project requirements significantly change
-- Market/business direction shifts
-- Scope needs realignment
-- Technical constraints require rethinking
+Use `/pivot` when project requirements change significantly, direction shifts, scope needs realignment, or technical constraints require rethinking.
 
-**Not for:**
-- Minor priority changes (use `gh pmu move --priority`)
-- Single story updates (edit directly)
-- Adding new stories (use `/add-story`)
-
----
+**Not for:** minor priority changes (`gh pmu move --priority`), single story updates, adding stories (`/add-story`).
 
 ## Error Handling
 
@@ -186,7 +139,5 @@ Use `/pivot` when:
 | PRD not found | "No PRD found matching '{name}'." |
 | No open stories | "No open stories found to review." |
 | User cancels | "Pivot cancelled. No changes made." |
-
----
 
 **End of /pivot Command**

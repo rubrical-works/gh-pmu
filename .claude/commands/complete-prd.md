@@ -1,108 +1,62 @@
 ---
-version: "v0.74.0"
+version: "v0.87.0"
 description: Verify and close PRD tracker (project)
 argument-hint: "<issue-number> (e.g., 151)"
 copyright: "Rubrical Works (c) 2026"
 ---
-
 <!-- MANAGED -->
 # /complete-prd
-
-Verify all epics and stories derived from a PRD are complete, then close the PRD tracker issue.
-
+Verify all epics/stories from a PRD are complete, then close the PRD tracker.
 ---
-
 ## Arguments
-
 | Argument | Description |
 |----------|-------------|
-| `<prd-issue-number>` | PRD tracker issue number (e.g., `151` or `#151`) |
-
+| `<prd-issue-number>` | PRD tracker (e.g., `151` or `#151`) |
 ---
-
 ## Usage
-
 ```bash
 /complete-prd 151
 /complete-prd #151
 ```
-
 ---
-
 ## Prerequisites
-
-- PRD tracker issue exists with `prd` label
-- PRD was created via `/create-backlog` (has linked epics)
-
+- PRD tracker exists with `prd` label
+- Created via `/create-backlog` (has linked epics)
 ---
-
 ## Workflow
-
 ### Step 1: Validate PRD Issue
-
-Parse issue number (accept `151` or `#151`):
 ```bash
 issue_num="${1#\#}"
-```
-
-Verify PRD label:
-```bash
 gh issue view $issue_num --json labels -q '.labels[].name' | grep -q "prd"
 ```
-
-**If not a PRD issue:**
+**If not PRD:**
 ```
 Error: Issue #$issue_num does not have the 'prd' label.
 This command requires a PRD tracker issue.
 ```
-
 ### Step 2: Find Linked Epics
-
-Find all epics that reference this PRD tracker:
-
 ```bash
-# Search for epics containing "PRD Tracker: #{issue_num}"
 gh issue list --label "epic" --state all --json number,title,body,state
 ```
+Filter epics whose body contains `**PRD Tracker:** #{issue_num}`.
 
-Filter to epics whose body contains `**PRD Tracker:** #{issue_num}`.
-
-**If no epics found:**
+**None found:**
 ```
 Warning: No epics found linked to PRD #{issue_num}.
 Check that epics have "PRD Tracker: #{issue_num}" in their body.
 ```
-
 ### Step 3: Check Epic Completion
-
-For each linked epic:
-
 ```bash
 gh issue view #{epic} --json state -q '.state'
 ```
-
-**Collect:**
-- Total epics count
-- Closed epics count
-- Open epics list
-
+**Collect:** total, closed, open list.
 ### Step 4: Check Story Completion
-
-For each linked epic, get sub-issues (stories):
-
 ```bash
 gh pmu sub list #{epic} --json
 ```
-
-**Collect:**
-- Total stories count
-- Closed stories count
-- Open stories list
-
+**Collect:** total, closed, open list.
 ### Step 5: Report Status
-
-**If all complete:**
-
+**All complete:**
 ```
 ✅ PRD #{issue_num} Verification Complete
 
@@ -113,8 +67,7 @@ Stories: {closed_stories}/{total_stories} complete
 
 All work items are complete. Closing PRD tracker.
 ```
-
-Then close:
+Close:
 ```bash
 gh pmu move $issue_num --status done
 gh issue comment $issue_num --body "## PRD Complete ✅
@@ -127,9 +80,7 @@ All epics and stories have been completed.
 
 PRD closed by \`/complete-prd\` on {date}."
 ```
-
-**If incomplete:**
-
+**Incomplete:**
 ```
 ⚠️ PRD #{issue_num} Not Ready for Closure
 
@@ -150,109 +101,62 @@ Stories: {closed_stories}/{total_stories} complete
 
 Complete the above items before running /complete-prd again.
 ```
-
-**Do NOT close** if any items are incomplete.
-
+**Do NOT close** if incomplete.
 ### Step 6: Move Proposal to Implemented (After Closure)
+**Only when Step 5 successfully closes PRD.**
 
-**Only runs when Step 5 successfully closes the PRD tracker.**
-
-Locate and move the original proposal file to `Proposal/Implemented/`.
-
-**Step 6a: Find the source proposal**
-
-Extract the proposal issue reference from the PRD tracker issue body:
-
-```
-Pattern: **Source Proposal:** #NNN
-```
-
-If found, read the proposal issue to get the file path:
-
+**6a: Find source proposal** — extract from PRD body: `**Source Proposal:** #NNN`. Read proposal issue:
 ```bash
 gh issue view $proposal_issue --json body --jq '.body'
 ```
+Extract file path: `**File:** Proposal/[Name].md`.
 
-Extract the proposal file path from:
-
-```
-Pattern: **File:** Proposal/[Name].md
-```
-
-**Step 6b: Move proposal file**
-
-If the proposal file exists at the extracted path:
-
+**6b: Move proposal file**
 ```bash
-# Ensure Proposal/Implemented/ exists
 mkdir -p Proposal/Implemented
-
-# Check if file is tracked by git
 git ls-files --error-unmatch Proposal/{Name}.md 2>/dev/null
-
-# If untracked: git add first so git mv can work
 git add Proposal/{Name}.md
-
-# Move to Implemented
 git mv Proposal/{Name}.md Proposal/Implemented/{Name}.md
 ```
-
-**Step 6c: Handle edge cases**
-
+**6c: Edge cases**
 | Situation | Response |
 |-----------|----------|
-| Proposal already in `Proposal/Implemented/` | Skip — already moved (by `/create-prd` Phase 7). Non-blocking. |
-| Proposal file not found at path | Warn: `"Proposal file not found: {path}. Skipping proposal move."` Continue — non-blocking. |
-| No `**Source Proposal:**` in PRD tracker body | Warn: `"No source proposal reference found in PRD tracker."` Continue — non-blocking. |
-| Proposal issue not found or closed | Use the issue body from the closed proposal issue (works with `gh issue view` for closed issues). |
-| `git mv` fails | Warn and continue — PRD completion is not blocked by proposal move failure. |
+| Already in `Proposal/Implemented/` | Skip (by `/create-prd` Phase 7). Non-blocking. |
+| File not found at path | Warn: `"Proposal file not found: {path}. Skipping proposal move."` Continue. |
+| No `**Source Proposal:**` in PRD body | Warn: `"No source proposal reference found in PRD tracker."` Continue. |
+| Proposal issue not found/closed | Use body from closed issue (`gh issue view` works on closed). |
+| `git mv` fails | Warn and continue — non-blocking. |
 
-**Step 6d: Include in commit**
-
-If the proposal was moved, stage and commit:
-
+**6d: Commit if moved**
 ```bash
 git add Proposal/Implemented/{Name}.md
 git commit -m "Refs #$issue_num — move proposal to Implemented after PRD completion"
 ```
-
-If no proposal was moved (already in Implemented or not found), skip the commit.
-
+If nothing moved, skip commit.
 ---
-
 ## Verification Logic
-
 ```
 PRD Complete = (ALL epics CLOSED) AND (ALL stories CLOSED)
 ```
-
 | Epics | Stories | Result |
 |-------|---------|--------|
 | All closed | All closed | ✅ Close PRD |
-| Any open | Any state | ❌ Report incomplete |
-| All closed | Any open | ❌ Report incomplete |
-
+| Any open | Any | ❌ Incomplete |
+| All closed | Any open | ❌ Incomplete |
 ---
-
 ## Error Handling
-
 | Situation | Response |
 |-----------|----------|
 | PRD issue not found | "Issue #N not found. Check the issue number?" |
-| Issue missing prd label | "Issue #N does not have 'prd' label." |
-| No linked epics found | Warning + suggest manual verification |
+| Missing prd label | "Issue #N does not have 'prd' label." |
+| No linked epics | Warning + suggest manual verification |
 | PRD already closed | "PRD #{N} is already closed." |
-
 ---
-
-## Related Commands
-
+## Related
 | Command | Purpose |
 |---------|---------|
-| `/create-backlog` | Creates PRD tracker with linked epics/stories |
+| `/create-backlog` | Creates PRD tracker with epics/stories |
 | `/add-story` | Adds stories (updates PRD tracker) |
 | `/split-story` | Splits stories (updates PRD tracker) |
-
 ---
-
 **End of /complete-prd Command**

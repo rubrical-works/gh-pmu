@@ -2469,6 +2469,50 @@ func TestSearchRepositoryIssues_QueryError(t *testing.T) {
 	}
 }
 
+// TestSearchRepositoryIssues_RejectsInvalidOwner (#835) asserts that owner/
+// repo inputs are validated before being interpolated into the GitHub search
+// query string. Previously `fmt.Sprintf("repo:%s/%s", owner, repo)` would
+// silently accept whitespace or colons and inject extra search qualifiers.
+func TestSearchRepositoryIssues_RejectsInvalidOwner(t *testing.T) {
+	var called bool
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			called = true
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	_, err := client.SearchRepositoryIssues("foo is:closed", "repo", SearchFilters{}, 0)
+	if err == nil {
+		t.Fatal("expected validator to reject owner with whitespace")
+	}
+	if !strings.Contains(err.Error(), "owner contains invalid characters") {
+		t.Errorf("expected validator error mentioning owner, got: %v", err)
+	}
+	if called {
+		t.Error("graphql Query should not be invoked when validation fails")
+	}
+}
+
+// TestSearchRepositoryIssues_RejectsInvalidRepo covers the mirror case.
+func TestSearchRepositoryIssues_RejectsInvalidRepo(t *testing.T) {
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	_, err := client.SearchRepositoryIssues("owner", "bar author:someone", SearchFilters{}, 0)
+	if err == nil {
+		t.Fatal("expected validator to reject repo with whitespace")
+	}
+	if !strings.Contains(err.Error(), "repo contains invalid characters") {
+		t.Errorf("expected validator error mentioning repo, got: %v", err)
+	}
+}
+
 func TestSearchRepositoryIssues_EmptyResult(t *testing.T) {
 	mock := &queryMockClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {

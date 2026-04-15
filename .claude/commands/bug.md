@@ -1,99 +1,49 @@
 ---
-version: "v0.74.0"
+version: "v0.87.0"
 description: Create a bug issue with standard template (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
 ---
-
 <!-- EXTENSIBLE -->
 # /bug
-
-Creates a properly labeled bug issue with a standard template and adds it to the project board.
-
-**Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command bug`
-
----
-
+Create a labeled bug issue with standard template and add to project board.
+**Extension Points:** `.claude/metadata/extension-points.json` or `/extensions list --command bug`
 ## Prerequisites
-
-- `gh pmu` extension installed
-- `.gh-pmu.json` configured in repository root
-
----
-
+- `gh pmu` installed, `.gh-pmu.json` configured
 ## Arguments
+| Argument | Description |
+|----------|-------------|
+| `<title>` | Bug title (e.g., `assign-branch fails on Windows paths`) |
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<title>` | No | Bug title (e.g., `assign-branch fails on Windows paths`) |
-
-If no title provided, prompt the user for one.
-
----
-
-## Execution Instructions
-
-**REQUIRED:** Before executing this command:
-
-1. **Generate Todo List:** Parse the workflow steps in this spec, then use `TodoWrite` to create todos
-2. **Include Extensions:** For each non-empty `USER-EXTENSION` block, add a todo item
-3. **Track Progress:** Mark todos `in_progress` → `completed` as you work
-4. **Post-Compaction:** If resuming after context compaction, re-read this spec and regenerate todos
-
-**Todo Generation Rules:**
-- One todo per numbered step
-- One todo per active extension point (non-empty `USER-EXTENSION` blocks)
-- Skip commented-out extensions
-- Use the step name as the todo content
-
----
-
+If not provided, prompt user.
+## Execution
+**REQUIRED before executing:**
+1. Use `TaskCreate` for one task per step below. No routing → bulk create upfront (see rule `07-task-creation-timing.md`).
+2. Include one task per active (non-empty) `USER-EXTENSION` block.
+3. Mark tasks `in_progress` → `completed` via `TaskUpdate`.
+4. **Post-Compaction:** re-read spec, call `TaskList`, resume from first incomplete task.
 ## Workflow
-
 ### Step 1: Parse Arguments
-
-Extract `<title>` from command arguments.
-
-**If empty:** Ask the user for a bug title before proceeding.
-
-**If title contains special characters** (backticks, quotes): Escape appropriately for the shell. On Windows, use temp file approach per shell safety rules.
-
+Extract `<title>`.
+**Empty:** Ask user before proceeding.
+**Special chars** (backticks, quotes): Escape for shell. On Windows, use temp file per shell safety.
 ### Step 2: Gather Description
-
-Extract `<body>` from command arguments.
-
-**IF** there is insufficient detail provided in the arguments to create the issue, **THEN**:
-
-Ask the user to describe the bug:
-
+Extract `<body>` from args.
+**IF insufficient detail**, THEN:
 ```
 Describe the bug (steps to reproduce, expected vs actual behavior):
 ```
-
-**If the user provides a description:** Use it as the issue body.
-**If the user declines or says "skip":** Create with a minimal body.
-
+**Description provided:** use as body. **Declined/"skip":** minimal body.
 ### Step 2b: Detect Version
-
-Auto-detect the software version using this priority:
-1. `package.json` → `version` (Node.js projects)
-2. Latest git tag (`git describe --tags --abbrev=0`)
-3. If none found, prompt: `"Which version was this bug found in?"`
-
-**If a version is detected**, confirm using `AskUserQuestion`:
-- Question: `"Detected version: {detected-version}. Is this correct?"`
-- Options: `"Yes, use {detected-version}"` (default), `"No, let me specify"`
-- If user selects "No", ask conversationally for the correct version
-
-**If the user provides an override**, use that instead.
+Priority: `package.json` → `version` | git tag (`git describe --tags --abbrev=0`) | prompt user.
+**If detected**, confirm via `AskUserQuestion` with "Yes, use {version}" (default) / "No, let me specify".
+**Override provided:** use it.
 
 <!-- USER-EXTENSION-START: pre-create -->
 <!-- USER-EXTENSION-END: pre-create -->
 
 ### Step 3: Create Issue
-
-Build the issue body with a standard bug template:
-
+Body template:
 ```markdown
 ## Bug Report
 
@@ -116,25 +66,23 @@ Build the issue body with a standard bug template:
 - **In scope:** {infer from description, or "To be documented"}
 - **Out of scope:** {infer from description, or "To be documented"}
 
+**Deployment Impact:** {dev-only | deployed (list affected areas) | unknown}
+
 **Acceptance Criteria:**
-- [ ] {infer from description — e.g., "Bug no longer reproduces following the Steps to Reproduce", or "To be documented"}
+- [ ] {infer from description, or "To be documented"}
 
 **Proposed Fix:**
 {infer from description if enough context, or "To be documented"}
 ```
+Populate from user input where possible. Use "To be documented" only where insufficient.
 
-Populate sections from the user's description where possible. Use "To be documented" placeholders only for sections without enough input.
-
-Create the issue:
+Create:
 ```bash
 gh pmu create --title "[Bug]: {title}" --label bug --status backlog --priority p1 --assignee @me -F .tmp-body.md
 rm .tmp-body.md
 ```
-
-**Note:** Always use `-F .tmp-body.md` for the body (never inline `--body`).
-
+**Note:** Always `-F .tmp-body.md` (never inline `--body`).
 ### Step 4: Report and STOP
-
 ```
 Created: Issue #$ISSUE_NUM — [Bug]: {title}
 Status: Backlog
@@ -146,19 +94,13 @@ Say "/review-issue #$ISSUE_NUM" then "/assign-branch #$ISSUE_NUM" then "work #$I
 <!-- USER-EXTENSION-START: post-create -->
 <!-- USER-EXTENSION-END: post-create -->
 
-**STOP.** Do not begin work unless the user explicitly says "work", "fix that", or "implement that".
-
----
-
+**STOP.** Do NOT begin work unless user says "work", "fix that", or "implement that".
 ## Error Handling
-
 | Situation | Response |
 |-----------|----------|
-| No title provided | Prompt user for title |
-| Empty title after prompt | "A bug title is required." → STOP |
+| No title | Prompt user |
+| Empty after prompt | "A bug title is required." → STOP |
 | `gh pmu create` fails | "Failed to create issue: {error}" → STOP |
-| Special characters in title | Escape for shell safety |
-
----
+| Special chars | Escape for shell safety |
 
 **End of /bug Command**

@@ -1,184 +1,152 @@
 ---
-version: "v0.74.0"
+version: "v0.87.0"
 description: Comprehensive code review with manifest-driven incremental tracking (project)
 argument-hint: "[--full] [--status] [--scope <globs>] [--batch <N>] [--with <domains>] [--suggest]"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- MANAGED -->
 # /code-review
-Performs methodical, charter-aligned code review with manifest-driven incremental tracking. Previously reviewed unchanged files are skipped.
-**Note:** Reviews **source code files** only. Use `/review-issue`, `/review-prd`, `/review-proposal`, or `/review-test-plan` for other artifacts.
+Methodical charter-aligned code review with manifest-driven incremental tracking. Previously approved+unchanged files skipped.
+**Note:** Source code files only. Use `/review-issue`, `/review-prd`, `/review-proposal`, `/review-test-plan` for other artifacts.
 ## Prerequisites
-- `CHARTER.md` exists and is configured (run `/charter` if missing)
-- `framework-config.json` exists in project root
+- `CHARTER.md` exists (run `/charter` if missing)
+- `framework-config.json` exists
 ## Arguments
-| Argument | Required | Description |
-|----------|----------|-------------|
-| *(none)* | | Normal incremental mode -- skip approved+unchanged files |
-| `--full` | | Bypass manifest, review all discovered files |
-| `--status` | | Report manifest statistics only, then STOP |
-| `--scope <globs>` | | Comma-separated file patterns to limit scope |
-| `--batch <N>` | | Review N files then stop; next run picks up where left off |
-| `--with <domains>` | | Comma-separated domain extensions or `--with all` |
-| `--suggest` | | Analyze charter and codebase, recommend applicable domains (mutually exclusive with `--with`) |
-Multiple flags can be combined: `--scope "src/**/*.js" --batch 10 --with security`
-## Execution Instructions
-**REQUIRED:** Before executing:
-1. **Generate Todo List:** Parse workflow steps, use `TodoWrite` to create todos
-2. **Track Progress:** Mark todos `in_progress` -> `completed` as you work
-3. **Post-Compaction:** If resuming after context compaction, re-read this spec and regenerate todos
+| Argument | Description |
+|----------|-------------|
+| *(none)* | Incremental mode — skip approved+unchanged |
+| `--full` | Bypass manifest, review all discovered |
+| `--status` | Report manifest stats only, STOP |
+| `--scope <globs>` | Comma-separated file patterns to limit scope |
+| `--batch <N>` | Review N files then stop |
+| `--with <domains>` | Comma-sep domain extensions or `all` |
+| `--suggest` | Recommend domains (mutually exclusive with `--with`) |
+
+Combinable: `--scope "src/**/*.js" --batch 10 --with security`
+## Execution
+**REQUIRED before executing:**
+1. Parse workflow steps → `TaskCreate`
+2. Mark tasks `in_progress` → `completed`
+3. **Post-Compaction:** re-read this spec, regenerate tasks
 ## Workflow
 ### Step 1: Parse Arguments
-Accept: no arguments (incremental), `--full`, `--status`, `--scope "globs"`, `--batch N`, `--with domains`, `--suggest`
-`--suggest` and `--with` are mutually exclusive. If both provided, report error and STOP.
-If invalid arguments provided, report error and STOP.
+Accept: none, `--full`, `--status`, `--scope`, `--batch N`, `--with`, `--suggest`. `--suggest` and `--with` mutually exclusive → error+STOP. Invalid → error+STOP.
 ### Step 2: Load Manifest
-Read `.code-review-manifest.json` from project root.
-```json
-{
-  "version": 1,
-  "lastRun": "2026-02-16",
-  "charter": { "contentHash": "sha256:abc123..." },
-  "files": {
-    "src/utils/helper.js": {
-      "contentHash": "sha256:def456...",
-      "status": "approved",
-      "reviewedAt": "2026-02-15",
-      "findingCount": 0,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    }
-  }
-}
-```
-**Status values:** `pending` (never reviewed), `approved` (clean), `flagged` (has findings), `deferred` (user skipped)
-If manifest not found: create empty manifest (first run). If malformed: warn and continue as `--full`.
+Read `.code-review-manifest.json`.
+**Read** `.claude/scripts/shared/lib/code-review-manifest-schema.json` for manifest structure, required fields, and status enum values.
+Not found → create empty. Malformed → warn, continue as `--full`.
 ### Step 2b: Status Report (--status)
-If `--status` flag: read manifest, run discovery for counting only, report approved count, flagged count, pending count, deferred count, and new (unreviewed) count. Show directory breakdown if > 20 files. **STOP** after report.
+Read manifest, discovery for counting only, report approved/flagged/pending/deferred/new counts. Directory breakdown if >20 files. **STOP**.
 ### Step 3: Discover Source Files
-Scan codebase using Glob patterns. Auto-detect from charter tech stack:
-- JS/TS: `**/*.js`, `**/*.ts`, `**/*.jsx`, `**/*.tsx`; Python: `**/*.py`; Go: `**/*.go`; Rust: `**/*.rs`; Java: `**/*.java`
-**Default include patterns** (auto-detect from charter tech stack). **Default exclude patterns:**
-| Category | Directories |
-|----------|------------|
-| Dependencies | `node_modules/`, `vendor/`, `Pods/`, `packages/` |
-| Python | `__pycache__/`, `.venv/`, `venv/`, `site-packages/`, `.tox/` |
-| Build output | `dist/`, `build/`, `out/`, `target/`, `bin/`, `obj/` |
-| Framework builds | `.next/`, `.nuxt/`, `.svelte-kit/`, `.angular/` |
-| Java/Gradle | `.gradle/`, `.maven/` |
-| Test coverage | `coverage/`, `.nyc_output/` |
-| System | `.git/` |
-- Test files (reviewed by `/bad-test-review` instead)
-If `--scope` provided: use those globs instead of defaults. Still apply excludes.
-**Language detection:** 1. Check CHARTER.md tech stack 2. Scan root configs 3. Count extensions
-### Step 4: Filter by Manifest (Incremental Mode)
-Compute SHA-256 per file and compare against manifest:
-| File State | Manifest Entry | Hash Match? | Action |
-|------------|---------------|-------------|--------|
-| New file | Not in manifest | N/A | **Queue** |
+Resolve default include patterns from charter tech stack:
+1. `detectTechStack(projectRoot)` from `.claude/scripts/shared/lib/detect-tech-stack.js`
+2. `getGlobPatternsForTechs(techs)` from same module
+3. Cross-reference CHARTER.md tech stack; include any additional patterns
+
+**Read** `.claude/metadata/code-review-excludes.json` for default exclude patterns. Flatten `categories[].directories`. `env: "dev"` applies only in `idpf-praxis-dev`; `env: "deployed"` only in user projects; omitted = both. Test files always excluded (use `/bad-test-review`).
+`--scope` → use those globs (still apply excludes).
+### Step 4: Filter by Manifest (Incremental)
+SHA-256 each file, compare to manifest:
+| File State | Manifest | Hash | Action |
+|------------|----------|------|--------|
+| New | Absent | — | **Queue** |
 | Existing | `approved` | Yes | **Skip** |
 | Existing | `approved` | No | **Queue** re-review |
-| Existing | `flagged` | Yes (unchanged) | **Skip** — flagged unchanged |
-| Existing | `flagged` | No (changed) | **Queue** re-review |
+| Existing | `flagged` | Yes | **Skip** unchanged |
+| Existing | `flagged` | No | **Queue** re-review |
 | Existing | `deferred` | Any | **Skip** |
-| Deleted | In manifest | N/A | **Remove** from manifest |
-**Charter change:** If CHARTER.md hash differs, re-review all files.
-**Domain change:** When `--with` specified, files previously approved without requested domain are queued for re-review even if unchanged.
-**`--full` mode:** Queue every discovered file.
+| Deleted | Present | — | **Remove** |
+
+**Charter change:** CHARTER.md hash differs → re-review all.
+**Domain change:** `--with` queues files previously approved without requested domain.
+**`--full`:** Queue all discovered.
 ### Step 5: Load Charter-Aligned Review Criteria
-Read `CHARTER.md` for project goals, conventions, quality standards, tech stack, security requirements.
-| Category | What to Check |
-|----------|--------------|
-| **Correctness** | Logic errors, edge cases, off-by-one, null handling |
-| **Security** | Injection, XSS, auth bypass, sensitive data exposure, OWASP top 10 |
+Read `CHARTER.md` for goals, conventions, quality, tech stack, security.
+| Category | Checks |
+|----------|--------|
+| **Correctness** | Logic, edge cases, off-by-one, null |
+| **Security** | Injection, XSS, auth bypass, data exposure, OWASP top 10 |
 | **Maintainability** | Complexity, duplication, coupling, cohesion, readability |
-| **Naming conventions** | Variable/function/file naming per charter standards |
+| **Naming** | Charter standards |
 | **Error handling** | Missing try/catch, unhandled promises, silent failures |
-| **Documentation** | Missing JSDoc/docstrings for public APIs (per charter requirements) |
+| **Documentation** | JSDoc/docstrings per charter |
 ### Step 5b: Skill Loading
-Check `projectSkills` in `framework-config.json`. Re-read `.claude/metadata/skill-keywords.json` from disk and match keywords:
-| Skill | Domain | When Loaded |
-|-------|--------|-------------|
-| `anti-pattern-analysis` | Code smells, design pattern violations | Reviewing implementation files |
-| `error-handling-patterns` | Error handling consistency | Error handling patterns detected |
-| `codebase-analysis` | Architecture review, structural analysis | Reviewing module boundaries |
-| `test-writing-patterns` | Test quality, assertion patterns | Reviewing test-adjacent files |
-Skills loaded lazily. Supplementary, not required.
+Check `projectSkills` in `framework-config.json`. Re-read `.claude/metadata/skill-keywords.json` and match keywords. Skills load lazily — supplementary only. If no skills installed, continue with charter-only criteria.
 ### Step 5a: Charter-Aware Domain Filtering
-When `--with all` or `--with <domains>` is specified, filter domains by project applicability before loading extensions:
-1. Check `activeDomains` in `framework-config.json` — if present, takes precedence (only load domains in both `activeDomains` and requested list)
-2. If no `activeDomains`, read `CHARTER.md` (Tech Stack, In Scope sections) and `.claude/metadata/domain-signals.json`
+When `--with all`/`--with <domains>`:
+1. Check `activeDomains` in `framework-config.json` → precedence (intersect requested)
+2. Else read `CHARTER.md` (Tech Stack, In Scope) + `.claude/metadata/domain-signals.json`
 3. Call `filterDomainsByCharter(requestedDomains, charterContent, domainSignalsJson, config)` from `load-review-extensions.js`
-4. Log skipped domains: `"Skipping {domains} — not applicable per {source}"`
-5. Pass only applicable domains to Step 5c
-`--with all` becomes "all applicable domains" rather than all unconditionally.
-**Error handling:** If `domain-signals.json` is missing or malformed, fall back to no filtering (all domains pass through).
+4. Log skipped: `"Skipping {domains} — not applicable per {source}"`
+5. Pass applicable to Step 5c
+
+`--with all` = all applicable.
+**Error:** `domain-signals.json` missing/malformed → no filtering.
 ### Step 5d: Domain Suggestion (--suggest)
-If `--suggest` specified (mutually exclusive with `--with`):
-1. Read `CHARTER.md` and `.claude/metadata/domain-signals.json`
-2. Call `suggestDomains(charterContent, domainSignalsJson)` from `load-review-extensions.js`
-3. Present ranked recommendations via `AskUserQuestion`:
-   - Options: "Accept suggested ({domains})", "Modify selection", "Skip domains"
-   - Display reasoning per domain (high/medium/low/none relevance)
-4. If accepted: feed suggested domains into `--with` pipeline (proceed to Step 5a → 5c with suggested domains)
-5. If modified: user specifies domains, proceed with those
-6. If skipped: continue with standard review only (no domain extensions)
+1. Read `CHARTER.md` + `.claude/metadata/domain-signals.json`
+2. Call `suggestDomains(charterContent, domainSignalsJson)`
+3. `AskUserQuestion`: Accept/Modify/Skip with per-domain reasoning
+4. Accepted → feed to `--with` pipeline (5a → 5c)
+5. Modified → user specifies
+6. Skipped → standard review only
 ### Step 5c: Domain Extension Loading (--with)
-If `--with` specified (or domains from `--suggest` accepted):
-1. Read `.claude/metadata/review-extensions.json` registry
-2. Parse: `all` loads all 8 extensions, comma-separated loads specific ones
+1. Read `.claude/metadata/review-extensions.json`
+2. Parse: `all` = 8 extensions, or comma-sep
 3. Call `loadCodeReviewExtensions(projectDir, domainIds)` from `./.claude/scripts/shared/lib/load-review-extensions.js`
-   **Return shape:** `{ ok: boolean, domains: { [id]: { description, domain, questions: string[] } }, warnings: string[] }`
-   - If `ok: false`: log `result.error`, fall back to standard review
-   - If `ok: true`: iterate `Object.entries(result.domains)` for loaded domain questions
-   - Report `result.warnings` if any (non-blocking)
-4. For each domain in `result.domains`: use `questions[]` array as Code Review Questions
-5. Unknown IDs: warn with available list (`security, accessibility, performance, chaos, contract, qa, seo, privacy, observability, i18n, api-design`)
-**Error handling:** All errors fall back to standard review only (non-blocking): unknown ID warns and skips, missing criteria file skips domain, missing registry falls back, no Code Review Questions section skips domain.
-If `--with` not specified: skip extension loading.
+   **Return:** `{ ok, domains: { [id]: { description, domain, questions: string[] } }, warnings }`
+   - `ok: false` → log `error`, fallback standard
+   - `ok: true` → iterate `Object.entries(result.domains)`
+   - Report `warnings` (non-blocking)
+4. Use `questions[]` per domain as Code Review Questions
+5. Unknown IDs: warn with list derived from the loaded `.claude/metadata/review-extensions.json` registry (source of truth — do not hardcode).
+
+**Error:** All non-blocking → fallback standard review.
+No `--with` → skip loading.
 ### Step 6: Per-File Review
-Read each queued file and perform structured analysis:
+Read each queued file; structured analysis:
 | Field | Description |
 |-------|-------------|
-| File path | Relative path |
-| Line range | Start-end lines |
-| Category | correctness, security, maintainability, naming, error-handling, documentation, or domain name |
-| Severity | `high`, `medium`, `low`, `info` |
-| Description | What the issue is |
-| Recommendation | How to fix it |
-**Severity:** High = security/correctness bug; Medium = maintainability/convention; Low = style/naming; Info = suggestion
-When `--with` active: after standard review, apply domain criteria questions. Tag findings with domain name. Domain findings can escalate but not downgrade severity.
-### Step 7: Batch Mode Support
-`--batch N`: limit to N files per invocation, save manifest after batch, report progress.
+| File path | Relative |
+| Line range | Start-end |
+| Category | correctness/security/maintainability/naming/error-handling/documentation/domain |
+| Severity | `high`/`medium`/`low`/`info` |
+| Description | Issue |
+| Recommendation | Fix |
+
+**Severity:** High=security/correctness bug; Medium=maintainability/convention; Low=style/naming; Info=suggestion.
+`--with` active: after standard review, apply domain criteria. Tag with domain. Domain can escalate, not downgrade.
+### Step 7: Batch Mode
+`--batch N`: limit N per invocation, save manifest, report progress.
 ### Step 8: Issue Creation
-**MANDATORY:** All issue creation MUST use the `/bug` or `/enhancement` slash commands. Never use raw `gh issue create` — it bypasses project board integration and creates orphaned issues.
-| Finding Type | Issue Command |
-|-------------|---------------|
-| Correctness/security defect | `/bug` (invokes `gh pmu create` internally) |
-| Missing error handling, refactoring, convention | `/enhancement` (invokes `gh pmu create` internally) |
+**MANDATORY:** Use `/bug` or `/enhancement` slash commands. NEVER raw `gh issue create` — bypasses project board.
+| Finding | Command |
+|---------|---------|
+| Correctness/security defect | `/bug` |
+| Error handling, refactoring, convention | `/enhancement` |
+
 1. Present findings summary
-2. Use `AskUserQuestion` for user choice: per finding, per group, or skip
-3. For each approved finding, invoke the Skill tool: `Skill("bug", "<title>")` or `Skill("enhancement", "<title>")`
-4. Group related findings sharing root cause
+2. `AskUserQuestion`: per finding, per group, or skip
+3. Invoke `Skill("bug", "<title>")` or `Skill("enhancement", "<title>")`
+4. Group findings sharing root cause
 5. Record issue refs in manifest
-**Info-level findings** reported but not offered as issues.
+
+**Info-level** reported but not offered as issues.
 ### Step 8b: Security Finding Label
-If `--with security` or `--with all` was specified and any security domain finding has ⚠️ or ❌ severity, apply the `security-finding` label to each issue created from security findings:
+If `--with security`/`--with all` and any security finding has ⚠️/❌:
 ```bash
 gh issue edit $ISSUE --add-label=security-finding
 ```
-If all security findings are ✅ (no issues detected), do not apply the label.
+All security findings ✅ → do not apply.
 ### Step 9: Structured Report
-Save to `Construction/Code-Reviews/YYYY-MM-DD-report.md` **after** issue creation so issue numbers are available. Create `Construction/Code-Reviews/` directory if it does not exist. Format: summary, findings grouped by severity with issue numbers, per-file status, aggregate statistics, issues created summary.
-Each finding entry must include its issue number (e.g., `Issue: #1234`) or `No issue` for info-level findings. Add an **Issues Created** summary section listing all issues created during this review.
+Save to `Construction/Code-Reviews/YYYY-MM-DD-report.md` **after** issue creation. Create dir if absent. Format: summary, findings grouped by severity with issue #s, per-file status, aggregate statistics, issues-created summary.
+Each finding: `Issue: #1234` or `No issue` for info. Add **Issues Created** section.
 ### Step 10: Manifest Update
-1. Write updated `.code-review-manifest.json`
+1. Write `.code-review-manifest.json`
 2. Update `charter.contentHash`
-3. Set status: no findings -> `approved`, has findings -> `flagged`
-4. Record `reviewedAt` and `findingCount` per file
-5. Record `domains` array when `--with` active (merge, don't replace)
-6. Preserve skipped entries; remove deleted entries
+3. Status: no findings→`approved`, findings→`flagged`
+4. Record `reviewedAt`, `findingCount`
+5. Record `domains` when `--with` active (merge, not replace)
+6. Preserve skipped; remove deleted
 ### Step 11: Final Summary
 ```
 Code Review Complete
@@ -190,21 +158,22 @@ Report: Construction/Code-Reviews/YYYY-MM-DD-report.md
 Manifest: .code-review-manifest.json updated
 Next: Run --status to see cumulative progress
 ```
-**STOP** -- command complete.
+**STOP.**
 ## Error Handling
 | Situation | Response |
 |-----------|----------|
-| CHARTER.md not found | "No charter found. Run `/charter` first." -> STOP |
-| No source files found | "No reviewable source files found in scope." -> STOP |
-| Manifest malformed | "Manifest corrupted. Running full review." -> continue as `--full` |
-| Source file unreadable | Warn and skip, continue |
-| Issue creation fails | Warn, include in report, continue |
-| `--scope` matches no files | "Scope pattern matched no files: {pattern}" -> STOP |
-| `framework-config.json` missing | Warn, continue without skill loading |
-| `--with` unknown domain | Warn with available list, skip unknown, continue |
-| `--with` registry missing | Warn, fall back to standard review only |
-| `--with` criteria file missing | Skip domain, warn, continue |
-| `--suggest` + `--with` both given | "`--suggest` and `--with` are mutually exclusive." → STOP |
-| `domain-signals.json` missing | Warn, skip charter filtering (all domains pass through) |
-| All domains filtered out | Warn: "All requested domains filtered — falling back to standard review only" |
+| CHARTER.md missing | "No charter found. Run `/charter` first." → STOP |
+| No source files | "No reviewable source files found in scope." → STOP |
+| Manifest malformed | "Manifest corrupted. Running full review." → `--full` |
+| File unreadable | Warn, skip |
+| Issue creation fails | Warn, include in report |
+| `--scope` matches nothing | "Scope pattern matched no files: {pattern}" → STOP |
+| `framework-config.json` missing | Warn, no skill loading |
+| `--with` unknown domain | Warn with list, skip |
+| `--with` registry missing | Warn, fallback standard |
+| `--with` criteria missing | Skip domain, warn |
+| `--suggest`+`--with` | "`--suggest` and `--with` are mutually exclusive." → STOP |
+| `domain-signals.json` missing | Warn, skip filtering |
+| All domains filtered | "All requested domains filtered — falling back to standard review only" |
+
 **End of /code-review Command**

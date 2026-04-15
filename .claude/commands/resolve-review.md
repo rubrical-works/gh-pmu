@@ -1,54 +1,54 @@
 ---
-version: "v0.74.0"
+version: "v0.87.0"
 description: Resolve review findings for an issue (project)
 argument-hint: "#issue"
 copyright: "Rubrical Works (c) 2026"
 ---
-
 <!-- MANAGED -->
 # /resolve-review
-Parse the latest review findings on an issue and systematically resolve each one. Delegates comment parsing and finding classification to `resolve-preamble.js`, keeping this spec focused on resolution judgment. Works with findings from `/review-issue`, `/review-proposal`, `/review-prd`, and `/review-test-plan`.
+Parse the latest review findings and resolve each one. Delegates parsing/classification to `resolve-preamble.js`. Works with findings from `/review-issue`, `/review-proposal`, `/review-prd`, `/review-test-plan`.
 ---
 ## Prerequisites
-- `gh pmu` extension installed
-- `.gh-pmu.json` configured in repository root
-- Issue has at least one review comment
+- `gh pmu` installed
+- `.gh-pmu.json` configured
+- Issue has ≥1 review comment
 ---
 ## Arguments
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `#issue` | Yes | Issue number (e.g., `#42` or `42`) |
+| Argument | Description |
+|----------|-------------|
+| `#issue` | Issue number (e.g., `#42`) |
 ---
-## Execution Instructions
-**REQUIRED:** Before executing:
-1. **Create Todo List:** Use `TodoWrite` to create todos from the steps below
-2. **Track Progress:** Mark todos `in_progress` → `completed` as you work
-3. **Resume Point:** If interrupted, todos show where to continue
+## Execution
+**REQUIRED — routed command, two-phase task creation:**
+1. **Phase 1 — Preamble task only:** `TaskCreate` single preamble/setup task. Do NOT create subsequent tasks yet.
+2. **Phase 2 — Bulk after routing:** After preamble confirms path (no redirect, no early exit), bulk-create remaining workflow tasks.
+3. **Redirect or early exit:** Mark preamble done, stop. Do NOT create remaining tasks.
+4. **Include Extensions:** Active `USER-EXTENSION` block → Phase 2 task
+5. Mark `in_progress` → `completed`
+6. **Post-Compaction:** Re-read, resume from first incomplete — no re-routing.
 ---
 ## Workflow
 ### Step 1: Setup (Preamble Script)
 ```bash
 node ./.claude/scripts/shared/resolve-preamble.js $ISSUE
 ```
-Parse JSON output. If `ok: false`: report `errors[0].message` → **STOP**.
-If `earlyExit: true` (recommendation starts with "Ready for"): report "Already ready — no action needed." → **STOP**.
+Parse JSON. `ok: false` → report `errors[0].message` → **STOP**.
+`earlyExit: true` (recommendation "Ready for") → "Already ready — no action needed." → **STOP**.
 Extract: `context` (reviewType, reviewNumber, recommendation), `findings` (autoFixable, needsUserInput, passed).
-Report summary: `"Resolving N findings from {reviewType} Review #M..."` showing auto-fixable and user-input counts.
-
-### Step 2: Resolve — Pass 1 (Auto-Fix)
-Iterate `findings.autoFixable`. For each finding, apply the fix immediately and report:
-- **Priority not set:** `gh pmu move $ISSUE --priority p2` — apply default, report
-- **Missing labels:** `gh issue edit $ISSUE --add-label {label}` — add inferred label, report
-- **Body-modifying fixes** (missing AC section, missing repro steps, format issues): show preview and confirm before applying — body changes are harder to undo
+Report: `"Resolving N findings from {reviewType} Review #M..."` with auto-fixable/user-input counts.
+### Step 2: Pass 1 — Auto-Fix
+Iterate `findings.autoFixable`. Apply and report:
+- **Priority not set:** `gh pmu move $ISSUE --priority p2`
+- **Missing labels:** `gh issue edit $ISSUE --add-label {label}` — inferred
+- **Body-modifying** (missing AC, repro, format): show preview and confirm — body is harder to undo
 ```
 Auto-resolved:
   ✓ Priority set to P2 (default)
   ✓ Added label: enhancement
   ✓ Added AC section skeleton (confirmed)
 ```
-
-### Step 3: Resolve — Pass 2 (User Input)
-Iterate `findings.needsUserInput`. For each finding, use `AskUserQuestion`:
+### Step 3: Pass 2 — User Input
+Iterate `findings.needsUserInput`. Use `AskUserQuestion`:
 ```javascript
 AskUserQuestion({
   questions: [{
@@ -63,34 +63,39 @@ AskUserQuestion({
   }]
 });
 ```
-- **Accept suggestion** → apply, report `"✓ {change applied}"`
-- **Provide alternative** → ask conversationally, then apply
-- **Skip** → report `"⊘ Skipped: {finding}"`
+- **Accept:** apply, `"✓ {change applied}"`
+- **Alternative:** ask conversationally, apply
+- **Skip:** `"⊘ Skipped: {finding}"`
 
-**For title rewording:** Propose new title based on issue content, present via AskUserQuestion with "Accept", "Edit", "Skip" options.
-
+**Title rewording:** Propose new title from content, present "Accept", "Edit", "Skip".
 ### Step 4: Re-Review
-After all findings resolved, invoke re-review using the Skill tool with `--force`:
+After all findings resolved, mark the outer wrapper task `completed` **before** invoking the Skill tool — Skill transfers control to `/review-issue`, so a post-invocation `TaskUpdate` is missed by most paths and leaves the wrapper stuck in `in_progress`.
+```
+TaskUpdate: mark "Apply body edits and re-review" task completed
+```
+Then invoke re-review with `--force`:
 ```
 Skill("review-issue", "#$ISSUE --force")
 ```
-The thin orchestrator `/review-issue` handles the full re-review cycle (preamble → evaluate → finalize), including label management (`reviewed`/`pending` swap).
-Report final status:
+`/review-issue` handles full cycle (preamble → evaluate → finalize), including `reviewed`/`pending` label swap.
+Report:
 ```
 /resolve-review #$ISSUE complete.
   Findings resolved: N
   Re-review: [recommendation from re-review]
 ```
-If user declined all fixes: `"No changes made. Review findings remain unresolved."` → **STOP**
+If user declined all: `"No changes made. Review findings remain unresolved."` → **STOP**
+
+**Post-Complete Cleanup:** After emitting the closing report, clear the task list (mirrors `/work`'s Post-STOP Cleanup). Clear BOTH `/resolve-review` tasks AND the transient re-review tasks created by the nested `Skill("review-issue")` call — all transient resolution-cycle state, not user work. Without this, the next command inherits stale tasks plus re-review's preamble/evaluate/finalize/closing tasks, and compaction recovery misreads them as incomplete work.
 ---
 ## Error Handling
 | Situation | Response |
 |-----------|----------|
 | Preamble `ok: false` | Report error → STOP |
-| No review comment found | Preamble returns error → STOP |
+| No review comment | Preamble errors → STOP |
 | Already ready | "Already ready — no action needed." → STOP |
-| `gh pmu` command fails | Report error → STOP |
-| User declines all fixes | "No changes made." → STOP |
-| Re-review finds new issues | Report — user can run `/resolve-review` again |
+| `gh pmu` fails | Report error → STOP |
+| User declines all | "No changes made." → STOP |
+| Re-review finds new issues | Report — user can re-run |
 ---
 **End of /resolve-review Command**

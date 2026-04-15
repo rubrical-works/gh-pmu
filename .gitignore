@@ -81,7 +81,25 @@ runp_claude
 .claude/commands/plan-workstreams.md
 .claude/commands/playwright-check.md
 .claude/commands/resolve-review.md
-.claude/commands/review-test-plan.md
 .claude/commands/split-story.md
 .claude/commands/switch-branch.md
 .claude/commands/transfer-issue.md
+.claude/skills/anti-pattern-analysis/
+.claude/skills/codebase-analysis/
+.claude/skills/command-spec-audit/
+.claude/skills/drawio-generation/
+.claude/skills/error-handling-patterns/
+.claude/skills/mutation-testing/
+.claude/skills/tdd-failure-recovery/
+.claude/skills/tdd-green-phase/
+.claude/skills/tdd-red-phase/
+.claude/skills/tdd-refactor-phase/
+.claude/skills/test-scaffold/
+.claude/skills/test-writing-patterns/
+.claude/skills/tdd-process/
+
+# IDPF Framework (managed by Praxis Hub Manager)
+.claude/commands/audit-commands.md
+
+# IDPF Framework (managed by Praxis Hub Manager)
+.claude/commands/workit.md
