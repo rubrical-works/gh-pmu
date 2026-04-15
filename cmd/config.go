@@ -92,9 +92,17 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 		return fmt.Errorf("comparison failed: %w", err)
 	}
 
-	// Checksum comparison
-	currentChecksum, _ := integrity.ComputeChecksum(configPath)
-	storedChecksum, _ := integrity.LoadChecksum(configDir)
+	// Checksum comparison — surface I/O errors to stderr rather than
+	// silently discarding them. LoadChecksum already returns ("", nil) when
+	// no checksum file is present, so this only fires for real failures.
+	currentChecksum, err := integrity.ComputeChecksum(configPath)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not compute checksum: %v\n", err)
+	}
+	storedChecksum, err := integrity.LoadChecksum(configDir)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not read stored checksum: %v\n", err)
+	}
 
 	fmt.Fprintf(out, "Config: %s\n", configPath)
 	fmt.Fprintf(out, "SHA-256: %s\n", currentChecksum)
@@ -161,7 +169,7 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 				remoteCritical := compareCriticalFields(localContent, remoteContent)
 				if len(remoteCritical) > 0 {
 					hasCriticalDrift = true
-					writeCriticalAlert(os.Stderr, remoteCritical)
+					writeCriticalAlert(cmd.ErrOrStderr(), remoteCritical)
 				}
 			}
 		}

@@ -334,3 +334,60 @@ func TestConfigVerify_StrictMode_CriticalDrift_ReturnsError(t *testing.T) {
 		t.Errorf("Expected critical alert on stderr in strict mode")
 	}
 }
+
+// TestConfigVerify_Remote_CriticalAlert_CapturedOnStderr asserts that when
+// --remote surfaces a critical field change vs origin/main, the alert is
+// written to cobra's cmd.ErrOrStderr() rather than os.Stderr directly. Prior
+// to #834, the remote path wrote to os.Stderr and the alert leaked out of
+// tests that captured stderr via SetErr.
+func TestConfigVerify_Remote_CriticalAlert_CapturedOnStderr(t *testing.T) {
+	// Set up an upstream bare repo + a local clone so origin/main exists.
+	remote := t.TempDir()
+	runGit(t, remote, "init", "--bare")
+
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "remote", "add", "origin", remote)
+
+	// Initial config committed to local and pushed to origin/main.
+	original := []byte(`{"project":{"owner":"upstream-owner","number":1},"repositories":["test/repo"]}`)
+	configPath := filepath.Join(dir, ".gh-pmu.json")
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "init")
+	runGit(t, dir, "branch", "-M", "main")
+	runGit(t, dir, "push", "-u", "origin", "main")
+
+	// Change project.owner locally AND commit to HEAD, so HEAD and
+	// origin/main match but both disagree with the new local file... scratch
+	// that — to isolate the *remote* critical-alert path, we want the local
+	// file to match HEAD but differ from origin/main. Do that by amending
+	// HEAD without pushing.
+	modified := []byte(`{"project":{"owner":"new-owner","number":1},"repositories":["test/repo"]}`)
+	if err := os.WriteFile(configPath, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "local change")
+
+	cmd := NewRootCommand()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"config", "verify", "--dir", dir, "--remote"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	errOutput := stderr.String()
+	if !containsStr(errOutput, "CRITICAL CONFIG CHANGE DETECTED") {
+		t.Errorf("Expected remote critical alert on captured stderr, got: %q", errOutput)
+	}
+	if !containsStr(errOutput, "project.owner") {
+		t.Errorf("Expected 'project.owner' in remote alert on stderr, got: %q", errOutput)
+	}
+}
