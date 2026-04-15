@@ -96,4 +96,3 @@ func validateLabelNames(names []string) error {
 	}
 	return nil
 }
-
