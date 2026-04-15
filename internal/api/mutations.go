@@ -803,6 +803,12 @@ func (c *Client) RemoveLabelFromIssue(owner, repo, issueID, labelName string) er
 }
 
 func (c *Client) getLabelID(owner, repo, labelName string) (string, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return "", err
+	}
+	if err := validateLabelName(labelName); err != nil {
+		return "", err
+	}
 	var query struct {
 		Repository struct {
 			Label struct {
@@ -1449,6 +1455,9 @@ func (c *Client) LabelExists(owner, repo, labelName string) (bool, error) {
 
 // CreateLabel creates a new label in a repository
 func (c *Client) CreateLabel(owner, repo, name, color, description string) error {
+	if err := validateLabelName(name); err != nil {
+		return err
+	}
 
 	// Get repository ID first
 	repoID, err := c.GetRepositoryID(owner, repo)
@@ -1592,6 +1601,11 @@ type DeleteLabelInput struct {
 
 // UpdateLabel updates a label's properties in a repository
 func (c *Client) UpdateLabel(owner, repo, labelName, newName, newColor, newDescription string) error {
+	if newName != "" {
+		if err := validateLabelName(newName); err != nil {
+			return err
+		}
+	}
 
 	// Get the label ID first
 	labelID, err := c.getLabelID(owner, repo, labelName)

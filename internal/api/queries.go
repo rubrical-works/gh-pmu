@@ -307,6 +307,9 @@ func (c *Client) GetIssue(owner, repo string, number int) (*Issue, error) {
 // GetIssueWithProjectFields fetches an issue and its project field values in a single query.
 // This is more efficient than calling GetIssue + GetProjectItems when you only need one issue.
 func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Issue, []FieldValue, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, nil, err
+	}
 
 	var query struct {
 		Repository struct {
@@ -1254,6 +1257,9 @@ func (c *Client) getBoardItemsPage(projectID string, cursor *string) ([]BoardIte
 
 // GetSubIssues fetches all sub-issues for a given issue with pagination support
 func (c *Client) GetSubIssues(owner, repo string, number int) ([]SubIssue, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
 
 	var subIssues []SubIssue
 	var cursor *graphql.String
@@ -1545,6 +1551,9 @@ func parseSubIssuesBatchResponse(data []byte, numbers []int) (map[int][]SubIssue
 
 // GetRepositoryIssues fetches issues from a repository with the given state filter
 func (c *Client) GetRepositoryIssues(owner, repo, state string) ([]Issue, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
 
 	// Map state to GraphQL enum values (IssueState enum, not String)
 	var states []IssueState
@@ -1975,12 +1984,24 @@ func (c *Client) searchIssuesPage(query string, pageSize int, cursor *string) ([
 
 // GetOpenIssuesByLabel fetches open issues with a specific label
 func (c *Client) GetOpenIssuesByLabel(owner, repo, label string) ([]Issue, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
+	if err := validateLabelName(label); err != nil {
+		return nil, err
+	}
 	return c.getIssuesByLabelPaginated(owner, repo, label, []IssueState{IssueStateOpen})
 }
 
 // GetOpenIssuesByLabels fetches open issues matching ALL specified labels.
 // Includes SubIssueCount for each issue (from subIssues.totalCount).
 func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]Issue, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
+	if err := validateLabelNames(labels); err != nil {
+		return nil, err
+	}
 
 	var gqlLabels []graphql.String
 	for _, l := range labels {
@@ -2140,11 +2161,20 @@ func (c *Client) getIssuesByLabelPage(owner, repo, label string, states []IssueS
 
 // GetClosedIssuesByLabel fetches closed issues with a specific label
 func (c *Client) GetClosedIssuesByLabel(owner, repo, label string) ([]Issue, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
+	if err := validateLabelName(label); err != nil {
+		return nil, err
+	}
 	return c.getIssuesByLabelPaginated(owner, repo, label, []IssueState{IssueStateClosed})
 }
 
 // GetParentIssue fetches the parent issue for a given sub-issue
 func (c *Client) GetParentIssue(owner, repo string, number int) (*Issue, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
 
 	var query struct {
 		Repository struct {
@@ -2268,6 +2298,9 @@ type Comment struct {
 
 // GetIssueComments fetches comments for an issue
 func (c *Client) GetIssueComments(owner, repo string, number int) ([]Comment, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
 
 	var query struct {
 		Repository struct {
@@ -2659,6 +2692,9 @@ func parseParentIssueBatchResponse(data []byte, numbers []int) (map[int]*Issue, 
 
 // ListLabels fetches all labels from a repository with their name, color, and description.
 func (c *Client) ListLabels(owner, repo string) ([]RepoLabel, error) {
+	if err := validateOwnerRepo(owner, repo); err != nil {
+		return nil, err
+	}
 
 	var allLabels []RepoLabel
 	var cursor *string
