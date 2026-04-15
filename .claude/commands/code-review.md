@@ -1,5 +1,5 @@
 ---
-version: "v0.86.0"
+version: "v0.87.0"
 description: Comprehensive code review with manifest-driven incremental tracking (project)
 argument-hint: "[--full] [--status] [--scope <globs>] [--batch <N>] [--with <domains>] [--suggest]"
 copyright: "Rubrical Works (c) 2026"
@@ -32,44 +32,19 @@ Combinable: `--scope "src/**/*.js" --batch 10 --with security`
 ### Step 1: Parse Arguments
 Accept: none, `--full`, `--status`, `--scope`, `--batch N`, `--with`, `--suggest`. `--suggest` and `--with` mutually exclusive → error+STOP. Invalid → error+STOP.
 ### Step 2: Load Manifest
-Read `.code-review-manifest.json`:
-```json
-{
-  "version": 1,
-  "lastRun": "2026-02-16",
-  "charter": { "contentHash": "sha256:abc123..." },
-  "files": {
-    "src/utils/helper.js": {
-      "contentHash": "sha256:def456...",
-      "status": "approved",
-      "reviewedAt": "2026-02-15",
-      "findingCount": 0,
-      "findings": [],
-      "issueRefs": [],
-      "domains": []
-    }
-  }
-}
-```
-**Status values:** `pending`, `approved`, `flagged`, `deferred`.
+Read `.code-review-manifest.json`.
+**Read** `.claude/scripts/shared/lib/code-review-manifest-schema.json` for manifest structure, required fields, and status enum values.
 Not found → create empty. Malformed → warn, continue as `--full`.
 ### Step 2b: Status Report (--status)
 Read manifest, discovery for counting only, report approved/flagged/pending/deferred/new counts. Directory breakdown if >20 files. **STOP**.
 ### Step 3: Discover Source Files
-Glob by charter tech stack: JS/TS (`**/*.{js,ts,jsx,tsx}`), Python (`**/*.py`), Go (`**/*.go`), Rust (`**/*.rs`), Java (`**/*.java`).
-**Default excludes:**
-| Category | Directories |
-|----------|------------|
-| Dependencies | `node_modules/`, `vendor/`, `Pods/`, `packages/` |
-| Python | `__pycache__/`, `.venv/`, `venv/`, `site-packages/`, `.tox/` |
-| Build | `dist/`, `build/`, `out/`, `target/`, `bin/`, `obj/` |
-| Framework builds | `.next/`, `.nuxt/`, `.svelte-kit/`, `.angular/` |
-| Java/Gradle | `.gradle/`, `.maven/` |
-| Coverage | `coverage/`, `.nyc_output/` |
-| System | `.git/` |
-Test files excluded (use `/bad-test-review`). Uses configurable include/exclude patterns per charter.
+Resolve default include patterns from charter tech stack:
+1. `detectTechStack(projectRoot)` from `.claude/scripts/shared/lib/detect-tech-stack.js`
+2. `getGlobPatternsForTechs(techs)` from same module
+3. Cross-reference CHARTER.md tech stack; include any additional patterns
+
+**Read** `.claude/metadata/code-review-excludes.json` for default exclude patterns. Flatten `categories[].directories`. `env: "dev"` applies only in `idpf-praxis-dev`; `env: "deployed"` only in user projects; omitted = both. Test files always excluded (use `/bad-test-review`).
 `--scope` → use those globs (still apply excludes).
-**Language detection:** 1) CHARTER.md tech stack 2) root configs 3) extension counts.
 ### Step 4: Filter by Manifest (Incremental)
 SHA-256 each file, compare to manifest:
 | File State | Manifest | Hash | Action |
@@ -96,15 +71,7 @@ Read `CHARTER.md` for goals, conventions, quality, tech stack, security.
 | **Error handling** | Missing try/catch, unhandled promises, silent failures |
 | **Documentation** | JSDoc/docstrings per charter |
 ### Step 5b: Skill Loading
-Check `projectSkills` in `framework-config.json`. Re-read `.claude/metadata/skill-keywords.json`:
-| Skill | Domain | When |
-|-------|--------|------|
-| `anti-pattern-analysis` | Code smells, pattern violations | Implementation files |
-| `error-handling-patterns` | Error consistency | Error patterns detected |
-| `codebase-analysis` | Architecture, structure | Module boundaries |
-| `test-writing-patterns` | Test quality | Test-adjacent files |
-
-Skills load lazily when a file matches a domain; supplementary only. If no skills installed, continue with charter-only criteria.
+Check `projectSkills` in `framework-config.json`. Re-read `.claude/metadata/skill-keywords.json` and match keywords. Skills load lazily — supplementary only. If no skills installed, continue with charter-only criteria.
 ### Step 5a: Charter-Aware Domain Filtering
 When `--with all`/`--with <domains>`:
 1. Check `activeDomains` in `framework-config.json` → precedence (intersect requested)
@@ -131,7 +98,7 @@ When `--with all`/`--with <domains>`:
    - `ok: true` → iterate `Object.entries(result.domains)`
    - Report `warnings` (non-blocking)
 4. Use `questions[]` per domain as Code Review Questions
-5. Unknown IDs: warn with list (`security, accessibility, performance, chaos, contract, qa, seo, privacy, observability, i18n, api-design`)
+5. Unknown IDs: warn with list derived from the loaded `.claude/metadata/review-extensions.json` registry (source of truth — do not hardcode).
 
 **Error:** All non-blocking → fallback standard review.
 No `--with` → skip loading.

@@ -1,5 +1,5 @@
 ---
-version: "v0.86.0"
+version: "v0.87.0"
 description: Split story into smaller stories (project)
 argument-hint: "<story-number> (e.g., 123)"
 copyright: "Rubrical Works (c) 2026"

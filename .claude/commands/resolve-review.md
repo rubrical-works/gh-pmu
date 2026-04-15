@@ -1,5 +1,5 @@
 ---
-version: "v0.86.0"
+version: "v0.87.0"
 description: Resolve review findings for an issue (project)
 argument-hint: "#issue"
 copyright: "Rubrical Works (c) 2026"
@@ -69,7 +69,11 @@ AskUserQuestion({
 
 **Title rewording:** Propose new title from content, present "Accept", "Edit", "Skip".
 ### Step 4: Re-Review
-After all resolved, invoke re-review via Skill tool with `--force`:
+After all findings resolved, mark the outer wrapper task `completed` **before** invoking the Skill tool — Skill transfers control to `/review-issue`, so a post-invocation `TaskUpdate` is missed by most paths and leaves the wrapper stuck in `in_progress`.
+```
+TaskUpdate: mark "Apply body edits and re-review" task completed
+```
+Then invoke re-review with `--force`:
 ```
 Skill("review-issue", "#$ISSUE --force")
 ```
@@ -81,6 +85,8 @@ Report:
   Re-review: [recommendation from re-review]
 ```
 If user declined all: `"No changes made. Review findings remain unresolved."` → **STOP**
+
+**Post-Complete Cleanup:** After emitting the closing report, clear the task list (mirrors `/work`'s Post-STOP Cleanup). Clear BOTH `/resolve-review` tasks AND the transient re-review tasks created by the nested `Skill("review-issue")` call — all transient resolution-cycle state, not user work. Without this, the next command inherits stale tasks plus re-review's preamble/evaluate/finalize/closing tasks, and compaction recovery misreads them as incomplete work.
 ---
 ## Error Handling
 | Situation | Response |
