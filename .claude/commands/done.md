@@ -1,5 +1,5 @@
 ---
-version: "v0.87.0"
+version: "v0.88.0"
 description: Complete issues with criteria verification and status transitions (project)
 argument-hint: "[#issue... | --all] (optional)"
 copyright: "Rubrical Works (c) 2026"

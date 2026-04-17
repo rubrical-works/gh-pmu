@@ -1,5 +1,5 @@
 ---
-version: "v0.87.0"
+version: "v0.88.0"
 description: Produce DTCG-compliant design tokens with pluggable adapter architecture (project)
 argument-hint: "[--discover | --export <adapter> | --theme <name>]"
 copyright: "Rubrical Works (c) 2026"
@@ -22,6 +22,9 @@ Produce DTCG-compliant design token file (`Design-System/idpf-design.tokens.json
 | `--export <adapter>` | Export tokens to framework-specific format |
 | `--export all` | Export to all detected formats |
 | `--theme <name>` | Generate/apply theme override |
+| `--from-screenshot <path>` | AC31 — extract token candidates (color, typography, spacing, gradient) from a visual reference. Path validated via `validateScreenshotFile` from `.claude/scripts/shared/lib/screenshot-input.js`. Multimodal Read produces candidates → `applyCandidateSelection` from `.claude/scripts/shared/lib/screenshot-token-candidates.js` applies user accept/reject/partial decision before any write (AC32). |
+| `--diff` | AC33 — 4-category drift report (additions/removals/mismatches/broken aliases) via each adapter's `diff(projectRoot, currentTokens)` (AC38), aggregated by `buildDriftReport` + rendered by `formatDriftReport` from `.claude/scripts/shared/lib/token-drift-report.js`. No writes. |
+| `--discover --diff` | AC34 — combine discovery + diff, then selectively apply via `applySelectedDiff` (AC39). User decline → no writes. |
 
 ```
 /design-system              # Init or status
@@ -29,6 +32,7 @@ Produce DTCG-compliant design token file (`Design-System/idpf-design.tokens.json
 /design-system --export css-vars   # CSS custom properties
 /design-system --export all        # All detected formats
 /design-system --theme dark        # Dark theme override
+/design-system --from-screenshot ./design/home.png   # Bootstrap tokens from image
 ```
 ---
 ## Execution
@@ -38,9 +42,10 @@ Produce DTCG-compliant design token file (`Design-System/idpf-design.tokens.json
 ---
 ## Workflow
 ### Step 1: Check Existing Token File
-`Design-System/idpf-design.tokens.json`:
-- **Exists:** load, validate against schema, report status
-- **Missing:** proceed to init (Step 2)
+Invoke `detectMode('Design-System/idpf-design.tokens.json')` from `.claude/scripts/shared/lib/token-update-mode.js` (AC35):
+- **`'init'`** (missing): proceed to init (Step 2)
+- **`'update'`** (exists + parses): update walkthrough — list groups, selective edit, `mergeUpdate(original, edits)` preserves untouched groups byte-for-byte
+- **`'unreadable'`** (parse fails): report parse error, offer `backupAndOffer(path)` to back up to `*.bak.{ts}` and reinit (Exception #7)
 ### Step 2: Mode Selection
 - **No args + no tokens:** Init (Step 3)
 - **`--discover`:** Step 4
@@ -90,6 +95,13 @@ Load `Design-System/adapters/export/`:
 3. `dtcg-schema.validateTokens()`
 4. `dtcg-tokens.writeTokenFiles()`
 5. Report: files created, token count, validation status
+### Step 8: Token Change Propagation (AC36, AC37)
+After write in update mode:
+1. Compute `changedKeys` = paths whose `$value` differs between original and merged token tree.
+2. `loadCatalog('Mockups/screen-catalog.json')` (from `.claude/scripts/shared/lib/screen-catalog.js`).
+3. `findAffectedMockups(catalog, changedKeys)` from `.claude/scripts/shared/lib/token-propagation.js` — returns screens whose `tokenDependencies` (AC37) overlap.
+4. Empty → "No affected mockups."
+5. Non-empty → `AskUserQuestion` yes/no/select → `applyPropagationDecision` → regenerate via `/mockups` for each chosen screen (mockups remain stale on `no`).
 ---
 ## Directory Structure
 ```

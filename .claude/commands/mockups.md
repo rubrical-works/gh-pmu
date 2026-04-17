@@ -1,5 +1,5 @@
 ---
-version: "v0.87.0"
+version: "v0.88.0"
 description: Create text-based or diagrammatic screen mockups (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -21,10 +21,12 @@ Creates text-based or diagrammatic screen mockups. Fully interactive via `AskUse
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `#NN` | No | Issue number (bug/enhancement/proposal/PRD). Reads body to pre-populate flow. |
+| `--from-image <path>` | No | AC21 — use reference image as visual baseline. Path validated by `validateScreenshotFile` (NFR-3 mime allowlist). Bypasses Q4. |
 
 ```
-/mockups            # Fully interactive, no context
-/mockups #42        # Interactive with issue #42 context
+/mockups                           # Fully interactive, no context
+/mockups #42                       # Interactive with issue #42 context
+/mockups --from-image ./design/home.png
 ```
 
 ## Execution Instructions
@@ -94,27 +96,20 @@ If used: generate mockup per path implying a distinct screen state. Group by cat
 
 **Q3: What type of mockups?**
 
-Detect UI framework first:
-```bash
-node .claude/scripts/shared/mockup-detect-framework.js
-```
-If supported framework detected (exit 0), add "Framework-native components" as first option.
-
-- "Framework-native components ({framework})" → `Components/` (only when detected)
 - "Interactive HTML mockups" → `Screens/` as `.html`
 - "ASCII/text mockups" → `AsciiScreens/`
 - "Interactive UI mockups (drawio.svg)" → `Screens/`
 - "Both ASCII + drawio.svg" → both
 
-**Framework-native generation:** Layout-only components using framework extensions (`.tsx`, `.svelte`, `.vue`, `.component.ts`/`.html`). Structure and placeholder content only — no business logic, state, or API calls. Written to `Mockups/{Name}/Components/`.
-
-**Fallback to `.drawio.svg`** when no UI framework is detected, only non-web frameworks (Electron/Tauri without React/Vue/etc.) are present, more than one supported framework is in deps, charter tech stack is TBD/placeholder, or the project is a static-content site (Astro/Eleventy/Hugo without component framework). Framework-native option is hidden in these cases — Q3 shows the standard three options only.
+`/mockups` produces planning artifacts only (HTML / ASCII / drawio). Framework-native component generation removed per PRD #2333 (AC15/AC16/AC17).
 
 **Q4: How should screen content be sourced?**
 - "From existing screen specs"
 - "From source code discovery"
 - "Describe screens manually"
 - "From issue #NN description" (only when `#NN`)
+- "From screen catalog" (AC19 — read `Mockups/screen-catalog.json` via `loadCatalog` from `.claude/scripts/shared/lib/screen-catalog.js`, list entries for selection)
+- "From reference image" (AC20 — accept screenshot path, validate via `validateScreenshotFile` from `.claude/scripts/shared/lib/screenshot-input.js`, use multimodal Read)
 
 **Condition:** If `Specs/` has specs, show as available sources.
 
@@ -194,6 +189,10 @@ Ensure directories exist: `Mockups/{Name}/{AsciiScreens,Screens,Specs,AC}/`.
 **Update screen spec** (if exists in `Specs/`): read `Mockups/{Name}/Specs/{Screen-Name}.md`; append or update a `## Related Artifacts` section listing each created mockup file (ASCII and/or `.drawio.svg`); write back.
 
 **Mockup references its spec** via the `**Screen Spec:**` field in its header.
+
+**Registry upsert (AC18, AC22):** After each mockup is written, call `upsertScreen(catalog, screenName, { status: 'active', kind, canonicalSpec, designTokens: tokensApplied ? 'applied' : 'pending', tokenDependencies })` + `saveCatalog(catalog)` (both from `.claude/scripts/shared/lib/screen-catalog.js`). `tokensApplied` is true when tokens consumed; `tokenDependencies` lists token keys (read by Story 1.14 propagation).
+
+**Navigation graph regeneration (AC40):** After registry upsert, regenerate `Mockups/NAVIGATION.md` via `renderNavigationMarkdown(catalog)` from `.claude/scripts/shared/lib/navigation-graph.js`. Sections: Pages, Wizards (with steps), Unreachable (AC41).
 
 <!-- USER-EXTENSION-START: post-mockup -->
 <!-- USER-EXTENSION-END: post-mockup -->

@@ -1,5 +1,5 @@
 ---
-version: "v0.87.0"
+version: "v0.88.0"
 description: Discover and catalog screen elements from source code (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -16,10 +16,14 @@ Discovers and catalogs UI screen elements from source code, producing structured
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `#NN` | No | Issue number (enhancement, bug, proposal). Reads body for context, enables writeback. |
+| `--from-screenshot <path>` | No | AC11 — single-screenshot extraction. Path validated by `validateScreenshotFile` from `.claude/scripts/shared/lib/screenshot-input.js` (NFR-3 mime allowlist). |
+| `--from-screenshots <dir>` | No | AC12 — bulk-extraction from directory. Non-image files skipped with warning. |
 
 ```
 /catalog-screens            # Interactive, no issue context
 /catalog-screens #42        # With issue #42 context (enables writeback)
+/catalog-screens --from-screenshot ./design/home.png
+/catalog-screens --from-screenshots ./design/screenshots/
 ```
 Former arguments (screen names, `--scope`, `--update`) are incorporated into the interactive flow.
 ## Execution Instructions
@@ -57,6 +61,7 @@ Scan `Mockups/` and subdirectories:
 - "Create new screen specs"
 - "Update existing screen specs"
 - "Re-scan source for changes"
+- "Initialize full screen catalog" (brownfield bulk discovery — invokes `node .claude/scripts/shared/lib/bulk-discover-screens.js` to seed `Mockups/screen-catalog.json`, then renders `Mockups/NAVIGATION.md` via `navigation-graph.js`)
 
 **Condition:** If no existing specs found, skip Q1 and default to "Create new".
 
@@ -70,6 +75,8 @@ Scan `Mockups/` and subdirectories:
 - "Scan source code automatically"
 - "Scan a specific directory"
 - "Enter screen details manually"
+- "From screenshot(s)" (AC13 — invokes `validateScreenshotFile`/`validateScreenshotDir` from `.claude/scripts/shared/lib/screenshot-input.js`, then uses multimodal Read to extract spec(s))
+- "From existing mockup files" (AC14 — reads existing `Mockups/{Name}/Screen.html` or `.svg` to extract spec structure)
 
 **Condition:** Only for "Create new" flow. For Update/Re-scan, skip to Q6.
 
@@ -214,6 +221,8 @@ Use `AskUserQuestion` for fields the agent couldn't determine.
    - **Orphaned specs:** Screen renamed — detect via fuzzy matching, suggest rename via `AskUserQuestion`
    - **Deleted source components:** Mark all elements `(source removed)`, preserve user data, flag: `"Source component deleted — spec preserved for review"`
 4. **Present changes** for confirmation before writing
+5. **Registry drift report (AC9):** invoke `detectDrift(catalog, sourceFiles)` from `.claude/scripts/shared/lib/screen-catalog.js`, then `formatDriftReport(drift)` and print the returned string so the user sees new/missing/changed before writing
+6. **Registry validation (AC44):** `node .claude/scripts/shared/validate-screen-catalog.js` and print result. Report-only — non-blocking.
 
 **Never silently overwrite user-enriched data.**
 ### Step 6: Write Screen Specs
@@ -225,6 +234,11 @@ Check if target file exists.
 Ensure `Mockups/{Name}/Specs/` exists (create if missing).
 
 Write one file per screen: `Mockups/{Name}/Specs/{Screen-Name}.md`
+
+**Registry upsert (AC8):** After writing each spec, call `upsertScreen(catalog, screenName, { status: 'active', kind, canonicalSpec, source, route })` and `saveCatalog(catalog)` from `.claude/scripts/shared/lib/screen-catalog.js` so `Mockups/screen-catalog.json` reflects the new screen. Helper invocation failure halts spec creation (atomic).
+
+**Navigation graph regeneration (AC40):** After Step 6, regenerate `Mockups/NAVIGATION.md` via `renderNavigationMarkdown(catalog)` from `.claude/scripts/shared/lib/navigation-graph.js`. Sections: Pages, Wizards (with steps), Unreachable (AC41). 200+ screens paginate per NFR-4 (page size 50).
+
 #### Step 6b: Screen Spec Format
 ```markdown
 # Screen: {Screen Name}
