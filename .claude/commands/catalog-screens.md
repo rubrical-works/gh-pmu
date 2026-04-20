@@ -1,5 +1,5 @@
 ---
-version: "v0.88.0"
+version: "v0.89.0"
 description: Discover and catalog screen elements from source code (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -56,6 +56,9 @@ Scan `Mockups/` and subdirectories:
 - Note last-updated dates and element counts
 
 **Step 1c: Interactive Question Flow**
+
+**Spec-literal option lists (#2383):** Present each question with its options **verbatim** as written. Context adaptation is permitted only as **pre-selection** of a listed option — never substitution, omission, or invention. Pre-select when context strongly implies an answer; keep full list visible. See `Construction/Design-Decisions/2026-04-19-mockups-catalog-screens-spec-literal-questions.md`.
+
 #### Mode Selection (Q1-Q3)
 **Q1: What would you like to do?**
 - "Create new screen specs"
@@ -66,19 +69,22 @@ Scan `Mockups/` and subdirectories:
 **Condition:** If no existing specs found, skip Q1 and default to "Create new".
 
 **Q2: Which mockup set should these specs belong to?**
-- List each existing `Mockups/{Name}/` directory
+- List each existing `Mockups/{Name}/` directory **verbatim** (directory names only — do NOT annotate with type/element-count/metadata)
 - "Create a new mockup set"
 
 **Q2a** (if "Create new mockup set"): Ask for name. Used to create `Mockups/{Name}/Specs/`.
 
 **Q3: How should screens be discovered?**
+
+**Always ask in Create-new flow — present full option set verbatim.** Do NOT substitute or drop options. Pre-selection based on context is permitted; substitution/omission/invention are not.
+
 - "Scan source code automatically"
 - "Scan a specific directory"
 - "Enter screen details manually"
 - "From screenshot(s)" (AC13 — invokes `validateScreenshotFile`/`validateScreenshotDir` from `.claude/scripts/shared/lib/screenshot-input.js`, then uses multimodal Read to extract spec(s))
 - "From existing mockup files" (AC14 — reads existing `Mockups/{Name}/Screen.html` or `.svg` to extract spec structure)
 
-**Condition:** Only for "Create new" flow. For Update/Re-scan, skip to Q6.
+**Condition:** Only for "Create new" flow. For Update/Re-scan, skip to Q6. (Spec-documented conditional — not a reshape.)
 
 **Q3a** (if "Scan a specific directory"): Ask for path. Validate existence.
 - **Path does not exist:**
@@ -235,7 +241,14 @@ Ensure `Mockups/{Name}/Specs/` exists (create if missing).
 
 Write one file per screen: `Mockups/{Name}/Specs/{Screen-Name}.md`
 
-**Registry upsert (AC8):** After writing each spec, call `upsertScreen(catalog, screenName, { status: 'active', kind, canonicalSpec, source, route })` and `saveCatalog(catalog)` from `.claude/scripts/shared/lib/screen-catalog.js` so `Mockups/screen-catalog.json` reflects the new screen. Helper invocation failure halts spec creation (atomic).
+**Registry upsert (AC8):** Thread the upsert return value — `upsertScreen` is **pure**; discarding it persists the pre-upsert catalog and drops the new screen (#2380):
+
+```js
+catalog = upsertScreen(catalog, screenName, { status: 'active', kind, canonicalSpec, source, route });
+saveCatalog(catalog);
+```
+
+From `.claude/scripts/shared/lib/screen-catalog.js`. Helper invocation failure halts spec creation (atomic).
 
 **Navigation graph regeneration (AC40):** After Step 6, regenerate `Mockups/NAVIGATION.md` via `renderNavigationMarkdown(catalog)` from `.claude/scripts/shared/lib/navigation-graph.js`. Sections: Pages, Wizards (with steps), Unreachable (AC41). 200+ screens paginate per NFR-4 (page size 50).
 

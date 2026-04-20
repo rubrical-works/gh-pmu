@@ -1,5 +1,5 @@
 ---
-version: "v0.88.0"
+version: "v0.89.0"
 description: Create text-based or diagrammatic screen mockups (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -22,11 +22,18 @@ Creates text-based or diagrammatic screen mockups. Fully interactive via `AskUse
 |----------|----------|-------------|
 | `#NN` | No | Issue number (bug/enhancement/proposal/PRD). Reads body to pre-populate flow. |
 | `--from-image <path>` | No | AC21 — use reference image as visual baseline. Path validated by `validateScreenshotFile` (NFR-3 mime allowlist). Bypasses Q4. |
+| `--serve [{Name}]` | No | Start a backgrounded zero-dep static server (`.claude/scripts/shared/mockups-serve.js`, http+fs+path only) on `Mockups/` (bare) or `Mockups/{Name}/` (scoped). Spawn via `Bash` `run_in_background: true`; read listening URL from helper's single-line banner via `BashOutput`; report URL + shell ID. Can run standalone or after normal generation. |
+| `--port <N>` / `-p <N>` | No | Pin port; default `3000`. Helper falls back to next free port on conflict; command reports the **actual** port. |
+| `--open` | No | Spawn platform default browser to the listening URL. `win32` → `start "" "<url>"`; `darwin` → `open "<url>"`; `linux` → `xdg-open "<url>"`. Launch failure warns, does not fail command. |
 
 ```
 /mockups                           # Fully interactive, no context
 /mockups #42                       # Interactive with issue #42 context
 /mockups --from-image ./design/home.png
+/mockups --serve                   # Serve Mockups/ on http://localhost:3000/
+/mockups --serve sandbox           # Serve Mockups/sandbox/ only
+/mockups --serve --open            # Serve + auto-launch browser
+/mockups --serve --port 8080 --open
 ```
 
 ## Execution Instructions
@@ -83,6 +90,8 @@ If used: generate mockup per path implying a distinct screen state. Group by cat
 
 ### Step 1d: Interactive Question Flow
 
+**Spec-literal option lists (#2383):** Present each question with its options **verbatim** as written. Context adaptation is permitted only as **pre-selection** of a listed option — never substitution, omission, or invention. Pre-select when context strongly implies an answer; keep full list visible so the user can override. See `Construction/Design-Decisions/2026-04-19-mockups-catalog-screens-spec-literal-questions.md`.
+
 **Q1: What would you like to do?**
 - "Create new mockups"
 - "Modify existing mockups"
@@ -90,11 +99,13 @@ If used: generate mockup per path implying a distinct screen state. Group by cat
 
 **Conditions:** If `#NN` provided, pre-select based on issue type (enhancement/proposal → Create; bug referencing screen → Modify). If no existing mockups, skip Q1 → "Create new mockups".
 
-**Q2: Which mockup set?** List each `Mockups/{Name}/` directory + "Create a new mockup set". If `#NN`, derive name from issue title (first noun phrase) and pre-suggest.
+**Q2: Which mockup set?** List each `Mockups/{Name}/` directory **verbatim** (directory names only — do NOT annotate with type/element-count/metadata; conflates Q2 with Q3) + "Create a new mockup set". If `#NN`, derive name from issue title (first noun phrase) and pre-suggest.
 
 **Q2a** (new set): Ask name via free text; suggest from issue title if `#NN`. Creates `Mockups/{Name}/`.
 
 **Q3: What type of mockups?**
+
+**Always ask in Create-new flow.** Never skip based on inferred type. If context implies a type, pre-select but keep full list visible — every output path below must remain reachable.
 
 - "Interactive HTML mockups" → `Screens/` as `.html`
 - "ASCII/text mockups" → `AsciiScreens/`
@@ -104,6 +115,9 @@ If used: generate mockup per path implying a distinct screen state. Group by cat
 `/mockups` produces planning artifacts only (HTML / ASCII / drawio). Framework-native component generation removed per PRD #2333 (AC15/AC16/AC17).
 
 **Q4: How should screen content be sourced?**
+
+**Present the full option set below verbatim.** Do NOT substitute (e.g., "Regenerate Login/Dashboard" is not listed — do not offer in place of "From existing screen specs"). Do NOT drop options. Permitted adaptations: spec-documented conditionals (`#NN`-only options) + pre-selection based on context.
+
 - "From existing screen specs"
 - "From source code discovery"
 - "Describe screens manually"
@@ -190,7 +204,14 @@ Ensure directories exist: `Mockups/{Name}/{AsciiScreens,Screens,Specs,AC}/`.
 
 **Mockup references its spec** via the `**Screen Spec:**` field in its header.
 
-**Registry upsert (AC18, AC22):** After each mockup is written, call `upsertScreen(catalog, screenName, { status: 'active', kind, canonicalSpec, designTokens: tokensApplied ? 'applied' : 'pending', tokenDependencies })` + `saveCatalog(catalog)` (both from `.claude/scripts/shared/lib/screen-catalog.js`). `tokensApplied` is true when tokens consumed; `tokenDependencies` lists token keys (read by Story 1.14 propagation).
+**Registry upsert (AC18, AC22):** Thread the upsert return value — `upsertScreen` is **pure**; discarding it persists the pre-upsert catalog and drops the new screen (#2380):
+
+```js
+catalog = upsertScreen(catalog, screenName, { status: 'active', kind, canonicalSpec, designTokens: tokensApplied ? 'applied' : 'pending', tokenDependencies });
+saveCatalog(catalog);
+```
+
+From `.claude/scripts/shared/lib/screen-catalog.js`. `tokensApplied` is true when tokens consumed; `tokenDependencies` lists token keys (read by Story 1.14 propagation).
 
 **Navigation graph regeneration (AC40):** After registry upsert, regenerate `Mockups/NAVIGATION.md` via `renderNavigationMarkdown(catalog)` from `.claude/scripts/shared/lib/navigation-graph.js`. Sections: Pages, Wizards (with steps), Unreachable (AC41).
 
@@ -273,6 +294,33 @@ If files were created/modified:
 
 **STOP.** Do not proceed without user instruction.
 
+### Step 9: Serve Mockups (when `--serve` passed)
+
+Runs standalone or after Step 8. Steps:
+
+1. **Resolve target:** bare `--serve` → `Mockups/`; `--serve {Name}` → `Mockups/{Name}/`. Missing target → report "Target not found: {path}. Create mockups first." → STOP.
+2. **Port:** use `--port`/`-p` if given, else `3000`. Helper handles in-use fallback internally.
+3. **Spawn server** via `Bash` with `run_in_background: true`:
+   ```bash
+   node .claude/scripts/shared/mockups-serve.js --root <target> --port <port>
+   ```
+   Capture shell ID.
+4. **Read banner via `BashOutput`** until line `Serving <root> at http://localhost:<N>/` appears — extract `<N>` (actual port, may differ on fallback).
+5. **Optional browser launch** (when `--open`): platform-specific one-shot backgrounded `Bash`:
+   - `win32` → `start "" "http://localhost:<N>/"`
+   - `darwin` → `open "http://localhost:<N>/"`
+   - `linux` → `xdg-open "http://localhost:<N>/"`
+
+   Launch failure warns, does not fail command. Server continues regardless.
+6. **Report:**
+   ```
+   Serving Mockups/{Name}/ at http://localhost:{port}/
+   Shell ID: {id}  (use KillShell to stop)
+   Browser: opened | not opened (--open not passed) | launch failed: {reason}
+   ```
+
+Server runs until user kills its shell; `/mockups --serve` itself does NOT block.
+
 ## Error Handling
 
 | Situation | Response |
@@ -285,5 +333,8 @@ If files were created/modified:
 | Spec cross-reference update fails | Warn, continue (mockup still created) |
 | Proposal writeback path invalid | Warn, skip writeback, mockup still created |
 | Schema file missing | "Shared schema not found at .claude/metadata/screen-spec-schema.json" → STOP |
+| `--serve`: requested port in use | Helper falls back to next free port; command reports actual port. Not an error. |
+| `--serve`: target `Mockups/` or `Mockups/{Name}/` missing | "Target not found: {path}. Create mockups first." → STOP |
+| `--serve --open`: browser launch fails | Warn with launch exit code; leave server running; do NOT fail command |
 
 **End of /mockups Command**

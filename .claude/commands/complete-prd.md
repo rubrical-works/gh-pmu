@@ -1,5 +1,5 @@
 ---
-version: "v0.88.0"
+version: "v0.89.0"
 description: Verify and close PRD tracker (project)
 argument-hint: "<issue-number> (e.g., 151)"
 copyright: "Rubrical Works (c) 2026"

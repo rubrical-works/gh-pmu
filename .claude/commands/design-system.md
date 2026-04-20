@@ -1,7 +1,7 @@
 ---
-version: "v0.88.0"
+version: "v0.89.0"
 description: Produce DTCG-compliant design tokens with pluggable adapter architecture (project)
-argument-hint: "[--discover | --export <adapter> | --theme <name>]"
+argument-hint: "[--init | --discover | --export <adapter> | --theme <name>]"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- EXTENSIBLE -->
@@ -17,7 +17,8 @@ Produce DTCG-compliant design token file (`Design-System/idpf-design.tokens.json
 ## Arguments
 | Argument | Description |
 |----------|-------------|
-| *(none)* | Init mode or show status |
+| *(none)* | Init when no tokens; status summary when tokens exist. Bare behavior unchanged. |
+| `--init` | Force init regardless of state. If valid tokens exist, prompt to confirm → `backupAndOffer(path)` (copies to `*.bak.{ts}`) → Init. Decline → STOP, no writes. Unreadable file → shared `'unreadable'` path (no double-prompt). |
 | `--discover` | Extract tokens from existing code via adapters |
 | `--export <adapter>` | Export tokens to framework-specific format |
 | `--export all` | Export to all detected formats |
@@ -28,6 +29,7 @@ Produce DTCG-compliant design token file (`Design-System/idpf-design.tokens.json
 
 ```
 /design-system              # Init or status
+/design-system --init       # Force init; backup-and-replace if tokens exist
 /design-system --discover   # Discover from code
 /design-system --export css-vars   # CSS custom properties
 /design-system --export all        # All detected formats
@@ -47,11 +49,18 @@ Invoke `detectMode('Design-System/idpf-design.tokens.json')` from `.claude/scrip
 - **`'update'`** (exists + parses): update walkthrough — list groups, selective edit, `mergeUpdate(original, edits)` preserves untouched groups byte-for-byte
 - **`'unreadable'`** (parse fails): report parse error, offer `backupAndOffer(path)` to back up to `*.bak.{ts}` and reinit (Exception #7)
 ### Step 2: Mode Selection
-- **No args + no tokens:** Init (Step 3)
+- **`--init` + `'init'`:** Init (Step 3), identical to bare invocation on empty project.
+- **`--init` + `'update'`:** `AskUserQuestion` — "Tokens exist. Back up + re-init?"
+  - **Yes** → `backupAndOffer(path)` → Init (Step 3)
+  - **No** → STOP, no writes. Report: "Existing tokens preserved."
+- **`--init` + `'unreadable'`:** delegates to Step 1's `backupAndOffer` path (no double-prompt).
+- **No args + no tokens:** Init (Step 3). *(Bare-invocation behavior unchanged.)*
+- **No args + tokens exist:** Show summary + actions. *(Bare-invocation behavior unchanged.)*
 - **`--discover`:** Step 4
 - **`--export`:** Step 5
 - **`--theme`:** Step 6
-- **No args + tokens exist:** Show summary + actions
+
+**`detectMode` interaction:** retains three-value return (`'init'` / `'update'` / `'unreadable'`). `--init` bypasses `'update'` (forces Init after backup confirmation); still honors `'unreadable'` for shared parse-error recovery.
 ### Step 3: Init Mode (Interactive)
 Guided walkthrough (modeled on `/charter`):
 1. **Color palette:** primary, secondary, accent, neutral scale, semantic
