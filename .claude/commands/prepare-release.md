@@ -1,5 +1,5 @@
 ---
-version: "v0.89.0"
+version: "v0.90.0"
 description: Prepare release with PR, merge to main, and tag
 argument-hint: "[version] [--skip-coverage] [--dry-run] [--help]"
 copyright: "Rubrical Works (c) 2026"
@@ -11,7 +11,6 @@ copyright: "Rubrical Works (c) 2026"
 Validate, create PR to main, merge, and tag for deployment.
 
 **Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command prepare-release`
-
 ## Arguments
 | Argument | Description |
 |----------|-------------|

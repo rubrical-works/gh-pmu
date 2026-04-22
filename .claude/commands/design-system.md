@@ -1,5 +1,5 @@
 ---
-version: "v0.89.0"
+version: "v0.90.0"
 description: Produce DTCG-compliant design tokens with pluggable adapter architecture (project)
 argument-hint: "[--init | --discover | --export <adapter> | --theme <name>]"
 copyright: "Rubrical Works (c) 2026"
@@ -62,13 +62,34 @@ Invoke `detectMode('Design-System/idpf-design.tokens.json')` from `.claude/scrip
 
 **`detectMode` interaction:** retains three-value return (`'init'` / `'update'` / `'unreadable'`). `--init` bypasses `'update'` (forces Init after backup confirmation); still honors `'unreadable'` for shared parse-error recovery.
 ### Step 3: Init Mode (Interactive)
-Guided walkthrough (modeled on `/charter`):
-1. **Color palette:** primary, secondary, accent, neutral scale, semantic
-2. **Typography:** families, size scale, weight scale
-3. **Spacing:** base unit + scale
-4. **Component patterns:** radii, shadows, transitions
+Guided walkthrough (modeled on `/charter`). Category set is **fixed and auditable** — sourced from `.claude/metadata/design-system-init-categories.json` (schema: `design-system-init-categories.schema.json`). Two sessions MUST present identical option sets.
 
-Use `AskUserQuestion` per category. Optional skip: shadows, transitions.
+**Top-level (all four `alwaysSelected:true`):**
+1. **Color palette** — primary, secondary, accent, neutral scale, semantic
+2. **Typography** — families, size scale, weight scale
+3. **Spacing** — base unit + scale
+4. **Components** — aggregate of DTCG-common pattern tokens; subcategories selectable per `defaultOn`
+
+**Component subcategories:**
+
+| Subcategory | Default |
+|---|---|
+| Border radii | ON |
+| Shadows / elevation | ON |
+| Transitions (duration + easing) | ON |
+| Z-index layers | ON |
+| Breakpoints | ON |
+| Icon sizes | ON |
+| Opacity scale | OFF |
+| Blur / filter | OFF |
+| Motion / keyframes | OFF |
+| Stroke widths | OFF |
+| Grid tokens | OFF |
+
+**Default rule:** ON when the pattern appears in the majority of mature web/mobile design systems (Material, Carbon, Polaris, Atlassian); OFF when specialized/advanced/domain-specific.
+
+**`AskUserQuestion`:** read `.claude/metadata/design-system-init-categories.json` from disk, pass `componentPatterns` as options with `defaultOn` driving selection state. Do NOT improvise or reorder — the data file is authoritative. Parity test `tests/metadata/design-system-init-categories.test.js` enforces spec ↔ data sync.
+
 Output: valid DTCG `idpf-design.tokens.json` + `idpf-design.schema.json`.
 
 <!-- USER-EXTENSION-START: discovery-adapters -->

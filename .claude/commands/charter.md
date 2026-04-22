@@ -1,5 +1,5 @@
 ---
-version: "v0.89.0"
+version: "v0.90.0"
 description: View, create, or manage project charter
 argument-hint: "[update|refresh|validate|--create-domain-entities]"
 copyright: "Rubrical Works (c) 2026"
@@ -148,7 +148,7 @@ What review mode should be used for this project?
 | Active domains? | framework-config.json → activeDomains |
 **Process:**
 1. Create lifecycle dirs: `mkdir -p Inception Construction/Test-Plans Construction/Design-Decisions Construction/Tech-Debt Transition`
-2. Generate CHARTER.md (Vision, Tech Stack, In Scope, Status: Draft)
+2. Generate CHARTER.md (Vision, Tech Stack, In Scope, Status: Draft). **Required (#2379):** title exactly `# Project Charter: {name}`; include `## Key Entities` table `| Entity | Count | Location |` with ≥1 row (use `TBD` for unknown Count). Wrong title or missing section → generator returns structured `{error, hint}` / `{warning, entities:{}}`.
 3. Generate Inception/ artifacts (Charter-Details, Tech-Stack, Scope-Boundaries, Constraints, Architecture, Test-Strategy, Milestones)
 4. Construction/ structure with .gitkeep and README.md
 5. Transition/ artifacts (Deployment-Guide, Runbook, User-Documentation)
@@ -168,7 +168,7 @@ What review mode should be used for this project?
 1. Read CHARTER.md and Inception/Charter-Details.md
 2. Ask what to update (Vision, Current Focus, Tech Stack, Scope, Milestones, Deployment Target)
 3. Apply, sync CHARTER.md if vision changes, update Last Updated
-3a. Regenerate `domain-entities.json` via `generateFromCharter()`. Validate before writing. If missing, generate (migration). Include `"$schema"` first property → `.claude/metadata/domain-entities-schema.json`.
+3a. Regenerate `domain-entities.json` via `generateFromCharter()`. Validate before writing. If missing, generate (migration). Include `"$schema"` first property → `.claude/metadata/domain-entities-schema.json`. **#2379:** if helper returns `{error, hint}` or top-level `warning`, surface both and do not write a partial file.
 3b. Hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
 4. If Tech Stack modified: trigger skill/recipe suggestions (NEW only). Detect new default skills not in `projectSkills` (from `skill-keywords.json` `defaultSkills`) — copy from `{frameworkPath}/.claude/skills/`, add additively.
 4b. If Deployment Target changed: remove old deployment skill, copy new from `{frameworkPath}/.claude/skills/<skill-name>/`. Update `deploymentTarget` and `projectSkills`. No prior target → fresh install.
@@ -178,7 +178,7 @@ What review mode should be used for this project?
 3. Compare with Inception/ artifacts, identify differences
 4. Present diff, ask for confirmation
 5. Merge changes, commit "Charter refresh"
-5a. Regenerate `domain-entities.json` via `generateFromCharter()`. Run `verifyEntityCounts()` — report mismatches. Ask before updating charter counts. Validate and write. Include `"$schema"` first property.
+5a. Regenerate `domain-entities.json` via `generateFromCharter()`. Run `verifyEntityCounts()` — report mismatches. Ask before updating charter counts. Validate and write. Include `"$schema"` first property. **#2379:** helper may return `{error, hint}` or `{warning, entities:{}}` if refreshed charter lost title or Key Entities table — surface to user and restore required sections before overwriting.
 5b. Hint: `"Tip: Run /charter --create-domain-entities to regenerate domain-entities.json after manual charter edits."`
 6. Trigger skill/recipe suggestions. Detect new default skills not in `projectSkills` — copy from `{frameworkPath}/.claude/skills/`, add additively, report. Tech stack changed → keyword-based suggestions (NEW only).
 ### /charter validate

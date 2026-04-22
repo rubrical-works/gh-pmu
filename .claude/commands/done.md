@@ -1,7 +1,7 @@
 ---
-version: "v0.89.0"
+version: "v0.90.0"
 description: Complete issues with criteria verification and status transitions (project)
-argument-hint: "[#issue... | --all] (optional)"
+argument-hint: "[#issue... | --all] [--yes|-y] (optional)"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- EXTENSIBLE -->
@@ -19,6 +19,7 @@ Move issues from `in_review` → `done` with a STOP boundary. Final transition o
 | `#issue` | Single issue (`#42` or `42`) |
 | `#issue #issue...` | Multiple |
 | `--all` | All `in_review` on current branch (with confirmation) |
+| `--yes` / `-y` | Auto-approve interactive prompts. With `--all`: unattended batch. Does NOT bypass safety gates (AC verification, force-move prohibition). |
 | *(none)* | Query `in_review` issues for selection |
 
 ## Execution Instructions
@@ -36,8 +37,11 @@ node .claude/scripts/shared/done-preamble.js                         # discovery
 
 Parse JSON, check `ok`:
 - **`ok: false`:** report `errors[]` (`code`, `message`, optional `suggestion`) → **STOP**
-- **Discovery** (`discovery` field): `mode: 'query'` (no-args) — present `discovery.issues` for user selection, re-run with `--issue N`. `mode: 'all'` (`--all`) — present list, ask "Complete all N in_review issues?"; yes → re-run with `--issues` for all numbers (deferred push: single push after last); empty list → "No in_review issues on current branch", STOP.
-- **`ok: true` + `diffVerification`:** `requiresConfirmation: true` → report `warnings`, ask "Continue? (yes/no)"; yes → re-run with `--force-move`; no → **STOP**. `requiresConfirmation: false` → already moved to done, proceed.
+- **Discovery** (`discovery` field): `mode: 'query'` (no-args) — present `discovery.issues` for user selection, re-run with `--issue N`. `mode: 'all'` (`--all`) — present list, ask "Complete all N in_review issues?"; yes → re-run with `--issues` for all numbers (deferred push: single push after last); empty list → "No in_review issues on current branch", STOP. **`yes: true` in envelope** (`--yes`/`-y`): SKIP the prompt, re-run with `--issues` for all (pass `--yes` through). `query` mode still requires user selection.
+- **`ok: true` + `diffVerification`:** `requiresConfirmation: true` → report `warnings`, ask "Continue? (yes/no)"; yes → re-run with `--force-move`; no → **STOP**. **`yes: true` in envelope:** SKIP the prompt, re-run with `--force-move` (pass `--yes` through); still report warnings for audit. `requiresConfirmation: false` → already moved to done, proceed.
+
+**Safety gates under `--yes`:** suppresses interactive prompts only. Does NOT bypass AC verification, force-move prohibition (`/work` Step 4b), `gh pmu` errors, or any failure halt — all halt as usual regardless of `--yes`.
+
 - **`ok: true` + `gates.movedToDone: true`:** report `Issue #$ISSUE: $TITLE → Done`. `context.trackerLinked: true` → `Linked #$ISSUE to branch tracker #$TRACKER`. `context.nextSteps` present → report `context.nextSteps.guidance` (approval-gate steps, e.g., `/review-prd` before `/create-backlog`).
 
 Report any `warnings[]` (non-blocking).
