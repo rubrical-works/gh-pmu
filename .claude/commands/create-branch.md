@@ -60,10 +60,6 @@ Tracker issue for branch `$BRANCH`.
 - **Work all issues:** `/work #[tracker-number]` (processes sub-issues sequentially)
 - **Work single issue:** `/work #N`
 - **When ready:** `/merge-branch` or `/prepare-release`
-
-### Sub-Issues
-
-Issues assigned to this branch appear as sub-issues below.
 ```
 ```bash
 gh pmu edit [TRACKER_NUMBER] -F .tmp-body.md && rm .tmp-body.md

@@ -753,11 +753,17 @@ func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.Fie
 		fmt.Fprintf(w, "\n%s %d of %d sub-issues complete (%d%%)\n", progressBar, closedCount, total, percentage)
 	}
 
-	// Body
-	if issue.Body != "" {
+	// Body. Branch trackers created before the template fix carry a dead
+	// "### Sub-Issues" placeholder section; strip it so the rendered view
+	// doesn't show the redundant empty section after the top-block list.
+	body := issue.Body
+	if issueHasLabel(issue.Labels, "branch") {
+		body = stripEmptySubIssuesSection(body)
+	}
+	if body != "" {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "---")
-		fmt.Fprintln(w, issue.Body)
+		fmt.Fprintln(w, body)
 	}
 
 	// Comments
@@ -772,6 +778,37 @@ func outputViewTable(cmd *cobra.Command, issue *api.Issue, fieldValues []api.Fie
 	}
 
 	return nil
+}
+
+// stripEmptySubIssuesSection removes a trailing "### Sub-Issues" section whose
+// body is only the branch-tracker template placeholder. Existing trackers
+// created from .claude/commands/create-branch.md before the template fix
+// carry this dead text; rendering it after the top-block sub-issue list reads
+// as missing data. Bodies whose Sub-Issues section has real content are left
+// unchanged.
+func stripEmptySubIssuesSection(body string) string {
+	const (
+		heading     = "### Sub-Issues"
+		placeholder = "Issues assigned to this branch appear as sub-issues below."
+	)
+	idx := strings.LastIndex(body, heading)
+	if idx == -1 {
+		return body
+	}
+	if strings.TrimSpace(body[idx+len(heading):]) != placeholder {
+		return body
+	}
+	return strings.TrimRight(body[:idx], " \t\n")
+}
+
+// issueHasLabel reports whether the labels slice contains one with the given name.
+func issueHasLabel(labels []api.Label, name string) bool {
+	for _, l := range labels {
+		if l.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // renderProgressBar creates a visual progress bar
