@@ -1,5 +1,5 @@
 ---
-version: "v0.87.0"
+version: "v0.90.0"
 description: Create a branch with tracker issue (project)
 argument-hint: "<branch-name> (e.g., release/v0.16.0, my-feature, bugfix-123)"
 copyright: "Rubrical Works (c) 2026"
@@ -60,10 +60,6 @@ Tracker issue for branch `$BRANCH`.
 - **Work all issues:** `/work #[tracker-number]` (processes sub-issues sequentially)
 - **Work single issue:** `/work #N`
 - **When ready:** `/merge-branch` or `/prepare-release`
-
-### Sub-Issues
-
-Issues assigned to this branch appear as sub-issues below.
 ```
 ```bash
 gh pmu edit [TRACKER_NUMBER] -F .tmp-body.md && rm .tmp-body.md

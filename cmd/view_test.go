@@ -1947,3 +1947,98 @@ func TestViewCommand_RejectsZeroArgs(t *testing.T) {
 		t.Error("expected error for zero args")
 	}
 }
+
+// ============================================================================
+// stripEmptySubIssuesSection + branch-tracker rendering (Issue #838)
+// ============================================================================
+
+func TestStripEmptySubIssuesSection_RemovesPlaceholder(t *testing.T) {
+	body := "## Branch: foo\n\n### Workflow\n- bar\n\n### Sub-Issues\n\nIssues assigned to this branch appear as sub-issues below.\n"
+	got := stripEmptySubIssuesSection(body)
+	if strings.Contains(got, "### Sub-Issues") {
+		t.Errorf("expected `### Sub-Issues` heading stripped, got:\n%s", got)
+	}
+	if strings.Contains(got, "Issues assigned to this branch appear as sub-issues below.") {
+		t.Errorf("expected placeholder text stripped, got:\n%s", got)
+	}
+	if !strings.Contains(got, "### Workflow") {
+		t.Errorf("expected preceding content preserved, got:\n%s", got)
+	}
+}
+
+func TestStripEmptySubIssuesSection_NoHeading(t *testing.T) {
+	body := "## Branch: foo\n\n### Workflow\n- bar\n"
+	got := stripEmptySubIssuesSection(body)
+	if got != body {
+		t.Errorf("expected unchanged body, got:\n%s", got)
+	}
+}
+
+func TestStripEmptySubIssuesSection_HeadingWithRealContent_Preserved(t *testing.T) {
+	body := "## Branch: foo\n\n### Sub-Issues\n\n- #42 something real\n- #43 also real\n"
+	got := stripEmptySubIssuesSection(body)
+	if got != body {
+		t.Errorf("expected body with real sub-issue content to be preserved unchanged, got:\n%s", got)
+	}
+}
+
+// AC 5 (a): branch tracker with 0 sub-issues — placeholder must not appear in output.
+func TestOutputViewTable_BranchTracker_NoSubIssues_HidesPlaceholder(t *testing.T) {
+	buf := new(bytes.Buffer)
+	cmd := createViewTestCmd(buf)
+
+	issue := &api.Issue{
+		Number: 211,
+		Title:  "Branch tracker isd/0.13.0",
+		State:  "OPEN",
+		URL:    "https://github.com/owner/repo/issues/211",
+		Author: api.Actor{Login: "author"},
+		Labels: []api.Label{{Name: "branch"}},
+		Body:   "## Branch: isd/0.13.0\n\n### Workflow\n- stuff\n\n### Sub-Issues\n\nIssues assigned to this branch appear as sub-issues below.\n",
+	}
+
+	if err := outputViewTable(cmd, issue, nil, nil, nil, nil); err != nil {
+		t.Fatalf("outputViewTable error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "Issues assigned to this branch appear as sub-issues below.") {
+		t.Errorf("expected placeholder text absent from rendered output, got:\n%s", out)
+	}
+	if strings.Contains(out, "### Sub-Issues") {
+		t.Errorf("expected `### Sub-Issues` heading absent from rendered output, got:\n%s", out)
+	}
+}
+
+// AC 5 (b): branch tracker with ≥1 sub-issue — top block renders list, placeholder absent.
+func TestOutputViewTable_BranchTracker_WithSubIssues_HidesPlaceholder(t *testing.T) {
+	buf := new(bytes.Buffer)
+	cmd := createViewTestCmd(buf)
+
+	issue := &api.Issue{
+		Number: 211,
+		Title:  "Branch tracker isd/0.13.0",
+		State:  "OPEN",
+		URL:    "https://github.com/owner/repo/issues/211",
+		Author: api.Actor{Login: "author"},
+		Labels: []api.Label{{Name: "branch"}},
+		Body:   "## Branch: isd/0.13.0\n\n### Workflow\n- stuff\n\n### Sub-Issues\n\nIssues assigned to this branch appear as sub-issues below.\n",
+	}
+	subs := []api.SubIssue{
+		{Number: 210, Title: "First", State: "OPEN"},
+	}
+
+	if err := outputViewTable(cmd, issue, nil, subs, nil, nil); err != nil {
+		t.Fatalf("outputViewTable error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "Issues assigned to this branch appear as sub-issues below.") {
+		t.Errorf("expected placeholder text absent from rendered output, got:\n%s", out)
+	}
+	// Top-block list (regression guard — AC 4) still renders.
+	if !strings.Contains(out, "Sub-Issues:") {
+		t.Errorf("expected top-block `Sub-Issues:` header to still render, got:\n%s", out)
+	}
+	if !strings.Contains(out, "#210") {
+		t.Errorf("expected sub-issue #210 to still render, got:\n%s", out)
+	}
+}

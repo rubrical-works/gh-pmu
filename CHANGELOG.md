@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.7] - 2026-04-23
+
+### Fixed
+- `gh pmu view` on branch trackers: strip the trailing `### Sub-Issues` placeholder section (dead text from the pre-fix `/create-branch` body template) so the rendered output no longer shows a redundant/empty section after the top-block sub-issue list. Sections with real content are preserved unchanged (#838)
+
+### Added
+- `gh pmu init` now emits `fields.branch: { field: "Branch" }` in the generated `.gh-pmu.json` when the target project has a Branch field, so config-path callers (`cmd/branch.go` readers of `cfg.Fields["branch"]`) resolve the same field as `ResolveBranchFieldName` (#841)
+- Re-init preserves a user-renamed `fields.branch.field` alias instead of clobbering it with the project's canonical field name (#841)
+
+### Changed
+- `.claude/commands/create-branch.md` body template no longer writes the `### Sub-Issues` placeholder section into newly created branch trackers (#838)
+
 ## [1.4.6] - 2026-04-15
 
 ### Fixed

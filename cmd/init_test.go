@@ -1948,3 +1948,127 @@ func TestInit_NonInteractiveFlagStillAccepted(t *testing.T) {
 		t.Error("--non-interactive should still be accepted (deprecated, not removed)")
 	}
 }
+
+// ============================================================================
+// Branch field alias emission + preservation (Issue #841)
+// ============================================================================
+
+// TestBuildFieldMappingsFromMetadata_BranchField verifies that a Branch (TEXT)
+// field present in project metadata is emitted as fields.branch in the config.
+func TestBuildFieldMappingsFromMetadata_BranchField(t *testing.T) {
+	metadata := &ProjectMetadata{
+		ProjectID: "PVT_test",
+		Fields: []FieldMetadata{
+			{ID: "PVTF_branch", Name: "Branch", DataType: "TEXT"},
+		},
+	}
+
+	mappings := buildFieldMappingsFromMetadata(metadata)
+
+	branch, ok := mappings["branch"]
+	if !ok {
+		t.Fatal("Expected 'branch' field mapping when Branch field exists in metadata")
+	}
+	if branch.Field != "Branch" {
+		t.Errorf("Expected branch.Field = %q, got %q", "Branch", branch.Field)
+	}
+}
+
+// TestBuildFieldMappingsFromMetadata_NoBranchField verifies that an absent Branch
+// field does not produce a fields.branch entry (so `cfg.Fields[\"branch\"]` absence
+// remains meaningful for upstream callers).
+func TestBuildFieldMappingsFromMetadata_NoBranchField(t *testing.T) {
+	metadata := &ProjectMetadata{
+		ProjectID: "PVT_test",
+		Fields: []FieldMetadata{
+			{ID: "PVTF_status", Name: "Status", DataType: "SINGLE_SELECT", Options: []OptionMetadata{{ID: "o1", Name: "Backlog"}}},
+		},
+	}
+
+	mappings := buildFieldMappingsFromMetadata(metadata)
+
+	if _, ok := mappings["branch"]; ok {
+		t.Error("Did not expect 'branch' mapping when Branch field is absent from metadata")
+	}
+}
+
+// TestWriteConfigWithMetadata_EmitsBranchAlias verifies AC 2: a freshly written
+// config file includes fields.branch: { field: "Branch" } when the project has a Branch field.
+func TestWriteConfigWithMetadata_EmitsBranchAlias(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &InitConfig{
+		ProjectOwner:  "owner",
+		ProjectNumber: 1,
+		Repositories:  []string{"owner/repo"},
+	}
+
+	metadata := &ProjectMetadata{
+		ProjectID: "PVT_test",
+		Fields: []FieldMetadata{
+			{ID: "PVTF_branch", Name: "Branch", DataType: "TEXT"},
+		},
+	}
+
+	if err := writeConfigWithMetadata(tmpDir, cfg, metadata); err != nil {
+		t.Fatalf("writeConfigWithMetadata failed: %v", err)
+	}
+
+	content, _ := readFile(tmpDir + "/.gh-pmu.json")
+	if !bytes.Contains(content, []byte(`"branch"`)) {
+		t.Error("Config should contain \"branch\" field alias key")
+	}
+	if !bytes.Contains(content, []byte(`"field": "Branch"`)) {
+		t.Error("Config should map branch alias to field name \"Branch\"")
+	}
+}
+
+// TestWriteConfigWithMetadata_PreservesExistingBranchAlias verifies AC 3: re-init
+// against an existing .gh-pmu.json preserves a user-renamed fields.branch.field
+// instead of clobbering it with the project's current field name.
+func TestWriteConfigWithMetadata_PreservesExistingBranchAlias(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Seed an existing config with a user-renamed branch alias
+	existing := &ConfigFileWithMetadata{
+		Version:      getVersion(),
+		Project:      ProjectConfig{Name: "X", Owner: "owner", Number: 1},
+		Repositories: []string{"owner/repo"},
+		Defaults:     DefaultsConfig{Priority: "p2", Status: "backlog"},
+		Fields: map[string]FieldMapping{
+			"branch": {Field: "Git Branch"}, // user renamed it
+		},
+		Metadata: MetadataSection{Project: MetadataProject{ID: "PVT_existing"}},
+	}
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(tmpDir, config.ConfigFileName), data, 0600); err != nil {
+		t.Fatalf("seed config write failed: %v", err)
+	}
+
+	// Re-init: fresh project metadata has "Branch" as the canonical name
+	cfg := &InitConfig{ProjectOwner: "owner", ProjectNumber: 1, Repositories: []string{"owner/repo"}}
+	metadata := &ProjectMetadata{
+		ProjectID: "PVT_test",
+		Fields: []FieldMetadata{
+			{ID: "PVTF_branch", Name: "Branch", DataType: "TEXT"},
+		},
+	}
+
+	if err := writeConfigWithMetadata(tmpDir, cfg, metadata); err != nil {
+		t.Fatalf("writeConfigWithMetadata failed: %v", err)
+	}
+
+	content, _ := readFile(filepath.Join(tmpDir, config.ConfigFileName))
+	var got ConfigFileWithMetadata
+	if err := json.Unmarshal(content, &got); err != nil {
+		t.Fatalf("unmarshal written config: %v", err)
+	}
+	branch, ok := got.Fields["branch"]
+	if !ok {
+		t.Fatal("Expected 'branch' field mapping to be preserved on re-init")
+	}
+	if branch.Field != "Git Branch" {
+		t.Errorf("Expected preserved user alias %q, got %q (re-init clobbered the rename)", "Git Branch", branch.Field)
+	}
+}

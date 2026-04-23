@@ -707,12 +707,15 @@ func writeConfigWithMetadata(dir string, cfg *InitConfig, metadata *ProjectMetad
 	// Build field mappings dynamically from metadata
 	fieldMappings := buildFieldMappingsFromMetadata(metadata)
 
-	// Read existing acceptance from config before writing
+	// Read existing acceptance + preserve user-renamed branch alias on re-init
 	var existingAcceptance *config.Acceptance
 	existingJSONPath := filepath.Join(dir, config.ConfigFileName)
-	if existingCfg, err := config.Load(existingJSONPath); err == nil && existingCfg.Acceptance != nil {
-		if !config.RequiresReAcceptance(existingCfg.Acceptance.Version, getVersion()) {
+	if existingCfg, err := config.Load(existingJSONPath); err == nil {
+		if existingCfg.Acceptance != nil && !config.RequiresReAcceptance(existingCfg.Acceptance.Version, getVersion()) {
 			existingAcceptance = existingCfg.Acceptance
+		}
+		if prev, ok := existingCfg.Fields["branch"]; ok && prev.Field != "" {
+			fieldMappings["branch"] = FieldMapping{Field: prev.Field}
 		}
 	}
 
@@ -792,6 +795,10 @@ func buildFieldMappingsFromMetadata(metadata *ProjectMetadata) map[string]FieldM
 				Field:  field.Name,
 				Values: values,
 			}
+		}
+
+		if fieldNameLower == "branch" {
+			mappings["branch"] = FieldMapping{Field: field.Name}
 		}
 	}
 
