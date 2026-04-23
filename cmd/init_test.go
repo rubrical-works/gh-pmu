@@ -2031,10 +2031,10 @@ func TestWriteConfigWithMetadata_PreservesExistingBranchAlias(t *testing.T) {
 
 	// Seed an existing config with a user-renamed branch alias
 	existing := &ConfigFileWithMetadata{
-		Version: getVersion(),
-		Project: ProjectConfig{Name: "X", Owner: "owner", Number: 1},
+		Version:      getVersion(),
+		Project:      ProjectConfig{Name: "X", Owner: "owner", Number: 1},
 		Repositories: []string{"owner/repo"},
-		Defaults: DefaultsConfig{Priority: "p2", Status: "backlog"},
+		Defaults:     DefaultsConfig{Priority: "p2", Status: "backlog"},
 		Fields: map[string]FieldMapping{
 			"branch": {Field: "Git Branch"}, // user renamed it
 		},
