@@ -13,6 +13,7 @@
     "tdd-green-phase",
     "tdd-process",
     "tdd-red-phase",
+    "tdd-refactor-coverage-audit",
     "tdd-refactor-phase",
     "test-scaffold",
     "test-writing-patterns"

@@ -105,3 +105,4 @@ runp_claude
 
 # IDPF Framework (managed by Praxis Hub Manager)
 .claude/commands/work.md
+.claude/skills/tdd-refactor-coverage-audit/
