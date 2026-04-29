@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.8] - 2026-04-29
+
+### Fixed
+- `gh pmu init --project` (connect to existing project) now creates optional fields listed in `defaults.Fields.CreateIfMissing` (Priority, Branch) when they are absent on the project, mirroring the `--source-project` path. Previously the existing-project path skipped the create-if-missing loop entirely, leaving connected projects without a Branch field and no `branch` mapping in the generated `.gh-pmu.json` (#844)
+
+### Changed
+- Extract `ensureOptionalProjectFields` helper used by both `runInitNonInteractive` and `runInitExistingProject` so the create-if-missing behavior has a single implementation across init paths (#844)
+
 ## [1.4.7] - 2026-04-23
 
 ### Fixed
