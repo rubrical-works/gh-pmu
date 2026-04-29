@@ -11,6 +11,7 @@ import (
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
+	"github.com/rubrical-works/gh-pmu/internal/defaults"
 )
 
 func TestInitCommand_Exists(t *testing.T) {
@@ -2070,5 +2071,160 @@ func TestWriteConfigWithMetadata_PreservesExistingBranchAlias(t *testing.T) {
 	}
 	if branch.Field != "Git Branch" {
 		t.Errorf("Expected preserved user alias %q, got %q (re-init clobbered the rename)", "Git Branch", branch.Field)
+	}
+}
+
+// ============================================================================
+// ensureOptionalProjectFields tests (Issue #844)
+//
+// Verifies that the create-if-missing helper invoked by both --source-project
+// and --project init paths creates absent fields (e.g. Branch) on the project
+// and skips fields that already exist.
+// ============================================================================
+
+// mockOptionalFieldClient implements the optionalFieldClient interface for
+// testing ensureOptionalProjectFields without hitting the API.
+type mockOptionalFieldClient struct {
+	existingByName  map[string]bool
+	fieldExistsErr  map[string]error
+	createFieldErr  map[string]error
+	createCalls     []mockCreateFieldCall
+	fieldExistsCall []string
+}
+
+type mockCreateFieldCall struct {
+	ProjectID string
+	Name      string
+	DataType  string
+	Options   []string
+}
+
+func (m *mockOptionalFieldClient) FieldExists(projectID, name string) (bool, error) {
+	m.fieldExistsCall = append(m.fieldExistsCall, name)
+	if err, ok := m.fieldExistsErr[name]; ok {
+		return false, err
+	}
+	return m.existingByName[name], nil
+}
+
+func (m *mockOptionalFieldClient) CreateProjectField(projectID, name, dataType string, options []string) (*api.ProjectField, error) {
+	if err, ok := m.createFieldErr[name]; ok {
+		return nil, err
+	}
+	m.createCalls = append(m.createCalls, mockCreateFieldCall{
+		ProjectID: projectID,
+		Name:      name,
+		DataType:  dataType,
+		Options:   options,
+	})
+	return &api.ProjectField{
+		ID:       "PVTF_" + name,
+		Name:     name,
+		DataType: dataType,
+	}, nil
+}
+
+func TestEnsureOptionalProjectFields_BranchMissing_CreatesBranch(t *testing.T) {
+	mock := &mockOptionalFieldClient{
+		existingByName: map[string]bool{
+			"Priority": true,
+			"Branch":   false,
+		},
+	}
+	defs := []defaults.FieldDef{
+		{Name: "Priority", Type: "SINGLE_SELECT", Options: []string{"P0", "P1", "P2"}},
+		{Name: "Branch", Type: "TEXT"},
+	}
+
+	errBuf := new(bytes.Buffer)
+	ensureOptionalProjectFields(mock, "PVT_test", defs, errBuf)
+
+	if len(mock.createCalls) != 1 {
+		t.Fatalf("expected exactly 1 CreateProjectField call (Branch), got %d: %+v", len(mock.createCalls), mock.createCalls)
+	}
+	if mock.createCalls[0].Name != "Branch" {
+		t.Errorf("expected Branch to be created, got %q", mock.createCalls[0].Name)
+	}
+	if mock.createCalls[0].DataType != "TEXT" {
+		t.Errorf("expected Branch DataType TEXT, got %q", mock.createCalls[0].DataType)
+	}
+}
+
+func TestEnsureOptionalProjectFields_BranchExists_NoCreate(t *testing.T) {
+	mock := &mockOptionalFieldClient{
+		existingByName: map[string]bool{
+			"Priority": true,
+			"Branch":   true,
+		},
+	}
+	defs := []defaults.FieldDef{
+		{Name: "Priority", Type: "SINGLE_SELECT", Options: []string{"P0", "P1", "P2"}},
+		{Name: "Branch", Type: "TEXT"},
+	}
+
+	errBuf := new(bytes.Buffer)
+	ensureOptionalProjectFields(mock, "PVT_test", defs, errBuf)
+
+	if len(mock.createCalls) != 0 {
+		t.Errorf("expected no CreateProjectField calls when all fields exist, got %d: %+v", len(mock.createCalls), mock.createCalls)
+	}
+}
+
+func TestEnsureOptionalProjectFields_FieldExistsError_LogsWarningAndContinues(t *testing.T) {
+	mock := &mockOptionalFieldClient{
+		existingByName: map[string]bool{"Branch": false},
+		fieldExistsErr: map[string]error{"Priority": fmt.Errorf("graphql: rate limit")},
+	}
+	defs := []defaults.FieldDef{
+		{Name: "Priority", Type: "SINGLE_SELECT", Options: []string{"P0"}},
+		{Name: "Branch", Type: "TEXT"},
+	}
+
+	errBuf := new(bytes.Buffer)
+	ensureOptionalProjectFields(mock, "PVT_test", defs, errBuf)
+
+	if !strings.Contains(errBuf.String(), "Priority") {
+		t.Errorf("expected warning to mention failing field name Priority, got: %s", errBuf.String())
+	}
+	createdNames := make([]string, 0, len(mock.createCalls))
+	for _, c := range mock.createCalls {
+		createdNames = append(createdNames, c.Name)
+	}
+	found := false
+	for _, n := range createdNames {
+		if n == "Branch" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected Branch to still be created after Priority FieldExists error, got created: %v", createdNames)
+	}
+}
+
+func TestEnsureOptionalProjectFields_CreateFieldError_LogsWarningAndContinues(t *testing.T) {
+	mock := &mockOptionalFieldClient{
+		existingByName: map[string]bool{"Branch": false, "Priority": false},
+		createFieldErr: map[string]error{"Priority": fmt.Errorf("permission denied")},
+	}
+	defs := []defaults.FieldDef{
+		{Name: "Priority", Type: "SINGLE_SELECT", Options: []string{"P0"}},
+		{Name: "Branch", Type: "TEXT"},
+	}
+
+	errBuf := new(bytes.Buffer)
+	ensureOptionalProjectFields(mock, "PVT_test", defs, errBuf)
+
+	if !strings.Contains(errBuf.String(), "Priority") {
+		t.Errorf("expected warning to mention failing field name Priority, got: %s", errBuf.String())
+	}
+	branchCreated := false
+	for _, c := range mock.createCalls {
+		if c.Name == "Branch" {
+			branchCreated = true
+		}
+	}
+	if !branchCreated {
+		t.Errorf("expected Branch to still be created after Priority CreateProjectField error, got: %+v", mock.createCalls)
 	}
 }

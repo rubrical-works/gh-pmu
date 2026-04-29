@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,18 +231,7 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 		}
 
 		// Create optional fields if missing
-		for _, optField := range defs.Fields.CreateIfMissing {
-			exists, err := client.FieldExists(newProject.ID, optField.Name)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to check field %q: %v\n", optField.Name, err)
-				continue
-			}
-			if !exists {
-				if _, err := client.CreateProjectField(newProject.ID, optField.Name, optField.Type, optField.Options); err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to create field %q: %v\n", optField.Name, err)
-				}
-			}
-		}
+		ensureOptionalProjectFields(client, newProject.ID, defs.Fields.CreateIfMissing, cmd.ErrOrStderr())
 
 		// Check and create required labels
 		for _, labelDef := range defs.Labels {
@@ -406,6 +396,16 @@ func runInitExistingProject(cmd *cobra.Command, opts *initOptions) error {
 					}
 				}
 			}
+		}
+
+		// Create optional fields if missing (Priority, Branch, …) and refetch
+		// so metadata captures any newly-created field IDs.
+		ensureOptionalProjectFields(client, project.ID, defs.Fields.CreateIfMissing, cmd.ErrOrStderr())
+		refetched, err := client.GetProjectFields(project.ID)
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to refetch project fields: %v\n", err)
+		} else {
+			projectFields = refetched
 		}
 	}
 
@@ -855,6 +855,34 @@ func optionNameToAlias(name string) string {
 	result = strings.Trim(result, "_")
 
 	return result
+}
+
+// optionalFieldClient is the subset of *api.Client used by
+// ensureOptionalProjectFields — kept minimal so init's create-if-missing
+// helper is unit-testable with a mock.
+type optionalFieldClient interface {
+	FieldExists(projectID, name string) (bool, error)
+	CreateProjectField(projectID, name, dataType string, singleSelectOptions []string) (*api.ProjectField, error)
+}
+
+// ensureOptionalProjectFields creates each field in defs on the project if it
+// does not already exist. Failures emit a warning to errOut and never abort
+// the loop — every field gets a chance to be created independently. Used by
+// both init paths (--source-project and --project) so they have parity.
+func ensureOptionalProjectFields(client optionalFieldClient, projectID string, defs []defaults.FieldDef, errOut io.Writer) {
+	for _, optField := range defs {
+		exists, err := client.FieldExists(projectID, optField.Name)
+		if err != nil {
+			fmt.Fprintf(errOut, "Warning: failed to check field %q: %v\n", optField.Name, err)
+			continue
+		}
+		if exists {
+			continue
+		}
+		if _, err := client.CreateProjectField(projectID, optField.Name, optField.Type, optField.Options); err != nil {
+			fmt.Fprintf(errOut, "Warning: failed to create field %q: %v\n", optField.Name, err)
+		}
+	}
 }
 
 // findFieldByName searches for a field by name in a slice of ProjectFields.
