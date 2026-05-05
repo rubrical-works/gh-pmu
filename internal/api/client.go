@@ -168,8 +168,8 @@ func NewClientWithOptions(opts ClientOptions) (*Client, error) {
 	}
 
 	return &Client{
-		gql:    gql,
-		rawGQL: &httpRawGraphQL{httpClient: httpClient, host: opts.Host},
+		gql:    newRetryingGraphQL(gql, defaultClientMaxRetries, nil),
+		rawGQL: newRetryingRawGraphQL(&httpRawGraphQL{httpClient: httpClient, host: opts.Host}, defaultClientMaxRetries, nil),
 		opts:   opts,
 	}, nil
 }
