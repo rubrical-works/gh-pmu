@@ -62,6 +62,7 @@ func applyJitter(d time.Duration) time.Duration {
 	if d <= 0 {
 		return d
 	}
+	// #nosec G404 -- jitter for retry backoff, not a security context; math/rand is appropriate.
 	return d + time.Duration(float64(d)*0.25*rand.Float64())
 }
 
