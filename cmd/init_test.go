@@ -2301,3 +2301,67 @@ func TestInitNonInteractive_SourceProjectGuard_RefusesWithoutForce(t *testing.T)
 		t.Errorf("Expected guard message to suggest --force, got: %s", msg)
 	}
 }
+
+// ============================================================================
+// AC3 — Structured failure trailer tests (#847)
+// ============================================================================
+
+func TestPrintInitFailureTrailer_AllFields(t *testing.T) {
+	var buf bytes.Buffer
+	printInitFailureTrailer(&buf, 176, FailedStepGetFields, false)
+	out := buf.String()
+	if !strings.Contains(out, "destinationProjectNumber=176") {
+		t.Errorf("Expected destinationProjectNumber=176 in output, got: %s", out)
+	}
+	if !strings.Contains(out, "failedStep=get-fields") {
+		t.Errorf("Expected failedStep=get-fields, got: %s", out)
+	}
+	if !strings.Contains(out, "configRewritten=false") {
+		t.Errorf("Expected configRewritten=false, got: %s", out)
+	}
+}
+
+func TestPrintInitFailureTrailer_NoProjectCreated(t *testing.T) {
+	// projectNumber=0 means project was never created (failure before/at create-project).
+	// Render explicitly as 'none' rather than "0" to avoid ambiguity.
+	var buf bytes.Buffer
+	printInitFailureTrailer(&buf, 0, FailedStepCreateProject, false)
+	out := buf.String()
+	if !strings.Contains(out, "destinationProjectNumber=none") {
+		t.Errorf("Expected destinationProjectNumber=none for projectNumber=0, got: %s", out)
+	}
+	if !strings.Contains(out, "failedStep=create-project") {
+		t.Errorf("Expected failedStep=create-project, got: %s", out)
+	}
+}
+
+func TestPrintInitFailureTrailer_ConfigWritten(t *testing.T) {
+	var buf bytes.Buffer
+	printInitFailureTrailer(&buf, 176, FailedStepWriteConfig, true)
+	out := buf.String()
+	if !strings.Contains(out, "configRewritten=true") {
+		t.Errorf("Expected configRewritten=true, got: %s", out)
+	}
+}
+
+func TestFailedStep_EnumStability(t *testing.T) {
+	// AC5 decision (#847): label-setup is warn+continue, NOT a hard-fail step.
+	// Enum must NOT include label-setup; if it ever does, the trailer contract
+	// becomes inconsistent with the documented label-loop posture.
+	allowed := map[string]bool{
+		"create-project":           true,
+		"get-fields":               true,
+		"validate-required-fields": true,
+		"refetch-fields":           true,
+		"write-config":             true,
+		"source-copy":              true,
+	}
+	for _, step := range AllFailedSteps {
+		if !allowed[step] {
+			t.Errorf("Unexpected failedStep value %q — keep enum aligned with #847 AC5 (label-setup excluded)", step)
+		}
+	}
+	if _, ok := allowed["label-setup"]; ok {
+		t.Fatal("Test fixture wrong: label-setup must not be allowed")
+	}
+}
