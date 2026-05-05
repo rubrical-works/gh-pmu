@@ -225,10 +225,26 @@ func (h *httpRawGraphQL) DoRawBody(body []byte, headers map[string]string) ([]by
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GraphQL request returned status %d: %s", resp.StatusCode, string(data))
+		return nil, &rawHTTPError{statusCode: resp.StatusCode, body: string(data)}
 	}
 
 	return data, nil
+}
+
+// rawHTTPError surfaces the upstream status code through the httpStatusCoder
+// interface so IsRetryable / IsTransient5xx can classify failures from the
+// raw GraphQL path the same way as typed go-gh errors.
+type rawHTTPError struct {
+	statusCode int
+	body       string
+}
+
+func (e *rawHTTPError) Error() string {
+	return fmt.Sprintf("GraphQL request returned status %d: %s", e.statusCode, e.body)
+}
+
+func (e *rawHTTPError) HTTPStatusCode() int {
+	return e.statusCode
 }
 
 // joinFeatures joins feature names with commas
