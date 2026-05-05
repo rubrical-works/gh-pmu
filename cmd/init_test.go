@@ -2228,3 +2228,76 @@ func TestEnsureOptionalProjectFields_CreateFieldError_LogsWarningAndContinues(t 
 		t.Errorf("expected Branch to still be created after Priority CreateProjectField error, got: %+v", mock.createCalls)
 	}
 }
+
+// ============================================================================
+// AC4 — --source-project guard tests (#847)
+// ============================================================================
+
+func TestSourceProjectGuard_AllowsWhenNoExistingConfig(t *testing.T) {
+	if err := sourceProjectGuard(0, 30, false); err != nil {
+		t.Errorf("Expected nil (no existing project), got: %v", err)
+	}
+}
+
+func TestSourceProjectGuard_AllowsWhenForcePresent(t *testing.T) {
+	if err := sourceProjectGuard(46, 30, true); err != nil {
+		t.Errorf("Expected nil with --force, got: %v", err)
+	}
+}
+
+func TestSourceProjectGuard_RefusesWhenExistingProjectAndNoForce(t *testing.T) {
+	err := sourceProjectGuard(46, 30, false)
+	if err == nil {
+		t.Fatal("Expected error when existing project + --source-project + no --force")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "--project") {
+		t.Errorf("Expected error to recommend --project, got: %v", err)
+	}
+	if !strings.Contains(msg, "--force") {
+		t.Errorf("Expected error to mention --force override, got: %v", err)
+	}
+}
+
+func TestSourceProjectGuard_AllowsWhenSourceProjectZero(t *testing.T) {
+	// Caller didn't pass --source-project; nothing to guard.
+	if err := sourceProjectGuard(46, 0, false); err != nil {
+		t.Errorf("Expected nil when sourceProject == 0, got: %v", err)
+	}
+}
+
+func TestInitNonInteractive_SourceProjectGuard_RefusesWithoutForce(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Existing config declares project #46
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
+	body := `{"version":"1.4.6","project":{"owner":"test","number":46},"repositories":["test/repo"],"framework":"IDPF","defaults":{"priority":"p2","status":"backlog"},"fields":{}}`
+	if err := os.WriteFile(configPath, []byte(body), 0644); err != nil {
+		t.Fatalf("Failed to write existing config: %v", err)
+	}
+
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"init", "--source-project", "30", "--repo", "owner/repo", "-y"})
+
+	out := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(out)
+	cmd.SetErr(errBuf)
+
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("Expected refusal when existing project + --source-project + no --force")
+	}
+	msg := errBuf.String()
+	if !strings.Contains(msg, "already declares project #46") {
+		t.Errorf("Expected guard message to name existing project #46, got: %s", msg)
+	}
+	if !strings.Contains(msg, "--force") {
+		t.Errorf("Expected guard message to suggest --force, got: %s", msg)
+	}
+}

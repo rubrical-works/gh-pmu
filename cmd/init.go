@@ -48,6 +48,7 @@ type initOptions struct {
 	owner          string
 	framework      string
 	yes            bool
+	force          bool
 }
 
 func newInitCommand() *cobra.Command {
@@ -75,6 +76,7 @@ Flags --project and --source-project are mutually exclusive.`,
 	cmd.Flags().StringVar(&opts.owner, "owner", "", "Project owner (defaults to repo owner)")
 	cmd.Flags().StringVar(&opts.framework, "framework", "IDPF", "Framework type (IDPF or none)")
 	cmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Auto-confirm prompts")
+	cmd.Flags().BoolVar(&opts.force, "force", false, "Allow --source-project to replace an existing project pointer in .gh-pmu.json (otherwise refused; prefer --project <existing>)")
 	cmd.MarkFlagsMutuallyExclusive("project", "source-project")
 
 	return cmd
@@ -127,14 +129,22 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 
 	// Check if config already exists
 	var existingFramework string
+	var existingProjectNumber int
 	if _, err := os.Stat(".gh-pmu.json"); err == nil {
-		if existingCfg, err := loadExistingFramework("."); err == nil {
-			existingFramework = existingCfg
+		if existingRaw, err := loadExistingRaw("."); err == nil {
+			existingFramework = existingRaw.Framework
+			existingProjectNumber = existingRaw.Project.Number
 		}
 		if !opts.yes {
 			fmt.Fprintf(os.Stderr, "error: .gh-pmu.json already exists (use --yes to overwrite)\n")
 			return fmt.Errorf("config already exists")
 		}
+	}
+
+	// Stricter guard: --source-project + existing project pointer requires --force
+	if err := sourceProjectGuard(existingProjectNumber, opts.sourceProject, opts.force); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return err
 	}
 
 	// Preserve existing framework on re-init
@@ -460,26 +470,56 @@ func runInitExistingProject(cmd *cobra.Command, opts *initOptions) error {
 	return nil
 }
 
-// existingConfigRaw is used for JSON unmarshaling to get framework
+// existingConfigRaw is used for JSON unmarshaling to get framework + project number
 type existingConfigRaw struct {
 	Framework string `json:"framework"`
+	Project   struct {
+		Number int `json:"number"`
+	} `json:"project"`
+}
+
+// sourceProjectGuard refuses --source-project when the repo already has a
+// .gh-pmu.json declaring a project number, unless --force is passed. Steers
+// the user toward the safer --project <existing> re-link path. Returns nil
+// when there is nothing to guard (no existing project, --source-project not
+// used, or --force present).
+func sourceProjectGuard(existingProjectNumber, sourceProject int, force bool) error {
+	if sourceProject == 0 || existingProjectNumber == 0 || force {
+		return nil
+	}
+	return fmt.Errorf(
+		".gh-pmu.json already declares project #%d. Refusing to replace it via --source-project.\n"+
+			"  To re-link to the existing project: gh pmu init --project %d --repo <owner>/<repo>\n"+
+			"  To intentionally replace it:        rerun with --force",
+		existingProjectNumber, existingProjectNumber,
+	)
 }
 
 // loadExistingFramework loads framework from existing config
 func loadExistingFramework(dir string) (string, error) {
-	configPath, err := config.FindConfigFile(dir)
+	raw, err := loadExistingRaw(dir)
 	if err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return "", err
-	}
-	var raw existingConfigRaw
-	if err := json.Unmarshal(data, &raw); err != nil {
 		return "", err
 	}
 	return raw.Framework, nil
+}
+
+// loadExistingRaw reads the existing .gh-pmu.json (if present) and returns
+// the fields needed for re-init guards: framework and current project number.
+func loadExistingRaw(dir string) (*existingConfigRaw, error) {
+	configPath, err := config.FindConfigFile(dir)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+	var raw existingConfigRaw
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	return &raw, nil
 }
 
 // splitRepository splits "owner/repo" into owner and repo parts.
