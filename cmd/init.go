@@ -158,7 +158,7 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 		return clientErr
 	}
 
-	// Get owner ID for the new project
+	// Get owner ID for the new project (no project created yet — no rollback needed on failure)
 	ownerID, err := client.GetOwnerID(owner)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: failed to get owner ID for %s: %v\n", owner, err)
@@ -168,21 +168,23 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 	// Fetch source project to copy from
 	sourceProject, err := client.GetProject(owner, opts.sourceProject)
 	if err != nil {
+		printInitFailureTrailer(os.Stderr, 0, FailedStepSourceCopy, false)
 		fmt.Fprintf(os.Stderr, "error: failed to find source project %s/%d: %v\n", owner, opts.sourceProject, err)
 		return fmt.Errorf("failed to find source project: %w", err)
 	}
 
-	// Derive project title from repository name
 	projectTitle := deriveProjectTitle(repoName)
 
-	// Copy project from source
+	// Copy project from source — once this succeeds, every subsequent hard
+	// failure must roll back via client.DeleteProject (handled by runInitPostCreate).
 	newProject, err := client.CopyProjectFromTemplate(ownerID, sourceProject.ID, projectTitle)
 	if err != nil {
+		printInitFailureTrailer(os.Stderr, 0, FailedStepCreateProject, false)
 		fmt.Fprintf(os.Stderr, "error: failed to create project from source: %v\n", err)
 		return fmt.Errorf("failed to create project from source: %w", err)
 	}
 
-	// Link repository to the new project
+	// Link repository — warn-only (non-essential to atomicity).
 	repoID, err := client.GetRepositoryID(repoOwner, repoName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not get repository ID: %v\n", err)
@@ -192,98 +194,18 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 		}
 	}
 
-	// Load embedded defaults
 	defs, err := defaults.Load()
 	if err != nil {
+		// Defaults are embedded; this is a build-time issue, not a runtime one.
+		// Roll back since we can't proceed.
+		printInitFailureTrailer(os.Stderr, newProject.Number, FailedStepGetFields, false)
+		if delErr := client.DeleteProject(newProject.ID); delErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: rollback DeleteProject(%s) failed: %v\n", newProject.ID, delErr)
+		}
 		fmt.Fprintf(os.Stderr, "error: failed to load defaults: %v\n", err)
 		return fmt.Errorf("failed to load embedded defaults: %w", err)
 	}
 
-	// Fetch fields from the NEW project
-	projectFields, err := client.GetProjectFields(newProject.ID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: could not fetch project fields: %v\n", err)
-		return fmt.Errorf("could not fetch project fields: %w", err)
-	}
-
-	// Check and create required fields (IDPF only)
-	if framework == "IDPF" {
-		// Validate required fields exist with expected options
-		for _, reqField := range defs.Fields.Required {
-			field := findFieldByName(projectFields, reqField.Name)
-			if field == nil {
-				fmt.Fprintf(os.Stderr, "error: required field %q not found in project\n", reqField.Name)
-				return fmt.Errorf("required field %q not found in project", reqField.Name)
-			}
-
-			// Validate field type
-			if field.DataType != reqField.Type {
-				fmt.Fprintf(os.Stderr, "error: field %q has type %s, expected %s\n", reqField.Name, field.DataType, reqField.Type)
-				return fmt.Errorf("field %q has type %s, expected %s", reqField.Name, field.DataType, reqField.Type)
-			}
-
-			// Validate options for SINGLE_SELECT fields
-			if reqField.Type == "SINGLE_SELECT" && len(reqField.Options) > 0 {
-				for _, reqOpt := range reqField.Options {
-					found := false
-					for _, opt := range field.Options {
-						if opt.Name == reqOpt {
-							found = true
-							break
-						}
-					}
-					if !found {
-						fmt.Fprintf(os.Stderr, "error: field %q missing required option %q\n", reqField.Name, reqOpt)
-						return fmt.Errorf("field %q missing required option %q", reqField.Name, reqOpt)
-					}
-				}
-			}
-		}
-
-		// Create optional fields if missing
-		ensureOptionalProjectFields(client, newProject.ID, defs.Fields.CreateIfMissing, cmd.ErrOrStderr())
-
-		// Check and create required labels
-		for _, labelDef := range defs.Labels {
-			exists, err := client.LabelExists(repoOwner, repoName, labelDef.Name)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to check label %q: %v\n", labelDef.Name, err)
-				continue
-			}
-			if !exists {
-				if err := client.CreateLabel(repoOwner, repoName, labelDef.Name, labelDef.Color, labelDef.Description); err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to create label %q: %v\n", labelDef.Name, err)
-				}
-			}
-		}
-	}
-
-	// Refetch fields after potential creation
-	fields, err := client.GetProjectFields(newProject.ID)
-	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to refetch project fields: %v\n", err)
-	}
-
-	// Convert to metadata
-	metadata := &ProjectMetadata{
-		ProjectID: newProject.ID,
-	}
-	for _, f := range fields {
-		fm := FieldMetadata{
-			ID:       f.ID,
-			Name:     f.Name,
-			DataType: f.DataType,
-		}
-		for _, opt := range f.Options {
-			fm.Options = append(fm.Options, OptionMetadata{
-				ID:   opt.ID,
-				Name: opt.Name,
-			})
-		}
-		metadata.Fields = append(metadata.Fields, fm)
-	}
-
-	// Create config with NEW project number (not the source)
 	cfg := &InitConfig{
 		ProjectName:   newProject.Title,
 		ProjectOwner:  owner,
@@ -292,11 +214,19 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 		Framework:     framework,
 	}
 
-	// Write config
 	cwd, _ := os.Getwd()
-	if err := writeConfigWithMetadata(cwd, cfg, metadata); err != nil {
-		fmt.Fprintf(os.Stderr, "error: failed to write config: %v\n", err)
-		return fmt.Errorf("failed to write config: %w", err)
+	if err := runInitPostCreate(client, &initPostCreateInputs{
+		Cwd:        cwd,
+		RepoOwner:  repoOwner,
+		RepoName:   repoName,
+		Framework:  framework,
+		NewProject: newProject,
+		Cfg:        cfg,
+		Defs:       defs,
+		ErrOut:     cmd.ErrOrStderr(),
+	}); err != nil {
+		// Trailer + rollback already emitted by runInitPostCreate.
+		return err
 	}
 
 	// Output success to stdout (minimal for CI/CD parsing)
