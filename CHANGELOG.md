@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.9] - 2026-05-05
+
+### Fixed
+- `gh pmu init --source-project` now refuses by default when `.gh-pmu.json` already declares a project number — protects against silently replacing the project pointer when the user actually wanted to re-link via `--project <existing>`. New `--force` flag opts in to the explicit-replace path. (#847)
+- `init` is now atomic: any hard failure after destination-project creation (field validation, refetch, config write) deletes the just-created project so no orphan is left on the org, and `.gh-pmu.json` is only written as the very last step. Previously a transient 5xx mid-init left an empty project on the org and a `.gh-pmu.json` rewritten to point at it. (#847)
+- `init` hard failures emit a structured trailer on stderr (`destinationProjectNumber=N`, `failedStep=...`, `configRewritten=bool`) so callers like px-manager can branch on machine-readable fields instead of screen-scraping. (#847)
+- All gh-pmu commands now retry transparently on transient GitHub HTTP errors — `IsRetryable` classifier covers 502/503/504 in addition to 429/rate-limited 403, and the retry decorator is installed at API client construction so every command (`init`, `edit`, `view`, etc.) inherits it without per-call-site wrapping. Closes a long-standing latent gap where typed-GraphQL errors from go-gh's underlying `shurcoolGraphQL` weren't matched by the rate-limit classifier. (#849)
+
+### Added
+- `internal/api.IsTransient5xx` and `internal/api.IsRetryable` classifiers; `internal/api.DeleteProject` mutation for init rollback. (#847, #849)
+- `--force` flag on `gh pmu init` (overrides the `--source-project` guard described above). (#847)
+
+### Changed
+- `WithRetry` now uses `IsRetryable` (rate-limit ∪ transient 5xx) and applies positive-bias jitter to default retry delays to spread coordinated-client retries. `Retry-After` header still overrides default delay exactly. (#849)
+
 ## [1.4.8] - 2026-04-29
 
 ### Fixed
