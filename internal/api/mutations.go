@@ -1914,3 +1914,36 @@ func (c *Client) executeBatchMutation(projectID string, updates []FieldUpdate) (
 
 	return results, nil
 }
+
+// DeleteProjectV2Input represents the input for deleting a project.
+type DeleteProjectV2Input struct {
+	ProjectID graphql.ID `json:"projectId"`
+}
+
+// DeleteProject deletes a GitHub Projects v2 project. Used by init's atomicity
+// rollback path: when post-creation setup hard-fails, the just-created project
+// is removed so the org isn't littered with orphans.
+func (c *Client) DeleteProject(projectID string) error {
+	if projectID == "" {
+		return fmt.Errorf("project ID is required")
+	}
+
+	var mutation struct {
+		DeleteProjectV2 struct {
+			ClientMutationID string `graphql:"clientMutationId"`
+		} `graphql:"deleteProjectV2(input: $input)"`
+	}
+
+	input := DeleteProjectV2Input{
+		ProjectID: graphql.ID(projectID),
+	}
+
+	variables := map[string]interface{}{
+		"input": input,
+	}
+
+	if err := c.gql.Mutate("DeleteProjectV2", &mutation, variables); err != nil {
+		return fmt.Errorf("failed to delete project: %w", err)
+	}
+	return nil
+}

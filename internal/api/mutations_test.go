@@ -3102,3 +3102,63 @@ func TestLinkProjectToRepository_MutationError(t *testing.T) {
 		t.Errorf("Expected 'failed to link repository to project' in error, got: %v", err)
 	}
 }
+
+// ============================================================================
+// DeleteProject Tests
+// ============================================================================
+
+func TestDeleteProject_Success(t *testing.T) {
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			if name != "DeleteProjectV2" {
+				t.Errorf("Expected mutation name 'DeleteProjectV2', got '%s'", name)
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	if err := client.DeleteProject("PVT_abc"); err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+}
+
+func TestDeleteProject_EmptyProjectID(t *testing.T) {
+	client := NewClientWithGraphQL(&mockGraphQLClient{})
+	err := client.DeleteProject("")
+	if err == nil {
+		t.Fatal("Expected error for empty project ID, got nil")
+	}
+}
+
+func TestDeleteProject_MutationError(t *testing.T) {
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			return errors.New("project not found")
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	err := client.DeleteProject("PVT_missing")
+	if err == nil {
+		t.Fatal("Expected error when mutation fails")
+	}
+	if !strings.Contains(err.Error(), "failed to delete project") {
+		t.Errorf("Expected wrapper 'failed to delete project', got: %v", err)
+	}
+}
+
+func TestDeleteProject_InputVariables(t *testing.T) {
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			input, ok := variables["input"].(DeleteProjectV2Input)
+			if !ok {
+				t.Fatal("Expected input to be DeleteProjectV2Input type")
+			}
+			if input.ProjectID != "PVT_xyz" {
+				t.Errorf("Expected ProjectID 'PVT_xyz', got '%s'", input.ProjectID)
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	_ = client.DeleteProject("PVT_xyz")
+}
