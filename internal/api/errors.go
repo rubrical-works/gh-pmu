@@ -90,6 +90,35 @@ func IsRateLimited(err error) bool {
 		strings.Contains(msg, "RATE_LIMITED")
 }
 
+// IsTransient5xx checks if an error indicates a transient server-side failure
+// from the upstream API. Detects via the httpStatusCoder interface for the
+// canonical transient status codes: 502 Bad Gateway, 503 Service Unavailable,
+// 504 Gateway Timeout. 500 (Internal Server Error) and 501 (Not Implemented)
+// are intentionally excluded — they typically indicate a real bug rather than
+// a recoverable transient condition. 429 is handled by IsRateLimited, not here.
+func IsTransient5xx(err error) bool {
+	if err == nil {
+		return false
+	}
+	var sc httpStatusCoder
+	if !errors.As(err, &sc) {
+		return false
+	}
+	switch sc.HTTPStatusCode() {
+	case 502, 503, 504:
+		return true
+	}
+	return false
+}
+
+// IsRetryable returns true if an error should trigger automatic retry. It
+// composes IsRateLimited (429, rate-limited 403) with IsTransient5xx
+// (502/503/504). Callers that need rate-limit-only semantics should keep
+// using IsRateLimited directly.
+func IsRetryable(err error) bool {
+	return IsRateLimited(err) || IsTransient5xx(err)
+}
+
 // GetRetryAfter extracts a Retry-After duration from an error, if available.
 // Returns 0 if no Retry-After information is present.
 func GetRetryAfter(err error) time.Duration {

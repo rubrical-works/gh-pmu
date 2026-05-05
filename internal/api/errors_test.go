@@ -213,6 +213,118 @@ func TestGetRetryAfter_NonHTTPError(t *testing.T) {
 	}
 }
 
+func TestIsTransient5xx_With502(t *testing.T) {
+	err := &ghHTTPError{statusCode: 502, message: "Bad Gateway"}
+	if !IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return true for 502")
+	}
+}
+
+func TestIsTransient5xx_With503(t *testing.T) {
+	err := &ghHTTPError{statusCode: 503, message: "Service Unavailable"}
+	if !IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return true for 503")
+	}
+}
+
+func TestIsTransient5xx_With504(t *testing.T) {
+	err := &ghHTTPError{statusCode: 504, message: "Gateway Timeout"}
+	if !IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return true for 504")
+	}
+}
+
+func TestIsTransient5xx_With500(t *testing.T) {
+	// 500 typically signals a real bug, not a transient — do not retry.
+	err := &ghHTTPError{statusCode: 500, message: "Internal Server Error"}
+	if IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return false for 500")
+	}
+}
+
+func TestIsTransient5xx_With501(t *testing.T) {
+	err := &ghHTTPError{statusCode: 501, message: "Not Implemented"}
+	if IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return false for 501")
+	}
+}
+
+func TestIsTransient5xx_With429(t *testing.T) {
+	// 429 is rate-limit, distinct classifier domain.
+	err := &ghHTTPError{statusCode: 429, message: "Too Many Requests"}
+	if IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return false for 429 (rate-limit, not transient 5xx)")
+	}
+}
+
+func TestIsTransient5xx_WithNil(t *testing.T) {
+	if IsTransient5xx(nil) {
+		t.Error("Expected IsTransient5xx to return false for nil")
+	}
+}
+
+func TestIsTransient5xx_WithNonHTTPError(t *testing.T) {
+	err := errors.New("some error without HTTPStatusCode")
+	if IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return false for non-HTTP error")
+	}
+}
+
+func TestIsRetryable_With429(t *testing.T) {
+	err := &ghHTTPError{statusCode: 429, message: "Too Many Requests"}
+	if !IsRetryable(err) {
+		t.Error("Expected IsRetryable to return true for 429")
+	}
+}
+
+func TestIsRetryable_With503(t *testing.T) {
+	err := &ghHTTPError{statusCode: 503, message: "Service Unavailable"}
+	if !IsRetryable(err) {
+		t.Error("Expected IsRetryable to return true for 503")
+	}
+}
+
+func TestIsRetryable_With504(t *testing.T) {
+	err := &ghHTTPError{statusCode: 504, message: "Gateway Timeout"}
+	if !IsRetryable(err) {
+		t.Error("Expected IsRetryable to return true for 504")
+	}
+}
+
+func TestIsRetryable_With403RateLimit(t *testing.T) {
+	err := &ghHTTPError{statusCode: 403, message: "API rate limit exceeded"}
+	if !IsRetryable(err) {
+		t.Error("Expected IsRetryable to return true for 403 rate-limit")
+	}
+}
+
+func TestIsRetryable_With403PermissionDenied(t *testing.T) {
+	err := &ghHTTPError{statusCode: 403, message: "Resource not accessible by integration"}
+	if IsRetryable(err) {
+		t.Error("Expected IsRetryable to return false for 403 permission denied")
+	}
+}
+
+func TestIsRetryable_With404(t *testing.T) {
+	err := &ghHTTPError{statusCode: 404, message: "Not Found"}
+	if IsRetryable(err) {
+		t.Error("Expected IsRetryable to return false for 404")
+	}
+}
+
+func TestIsRetryable_With500(t *testing.T) {
+	err := &ghHTTPError{statusCode: 500, message: "Internal Server Error"}
+	if IsRetryable(err) {
+		t.Error("Expected IsRetryable to return false for 500")
+	}
+}
+
+func TestIsRetryable_WithNil(t *testing.T) {
+	if IsRetryable(nil) {
+		t.Error("Expected IsRetryable to return false for nil")
+	}
+}
+
 // ghHTTPError simulates go-gh's api.HTTPError for testing within this package.
 // We can't import github.com/cli/go-gh/v2/pkg/api here (same package name),
 // so we use a local type and test that IsRateLimited handles the StatusCode interface.
