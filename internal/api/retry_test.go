@@ -205,6 +205,105 @@ func TestWithRetryDelays_MaxRetriesExhaustedClearMessage(t *testing.T) {
 	}
 }
 
+func TestWithRetryDelays_504TriggersRetry(t *testing.T) {
+	callCount := 0
+	gatewayErr := &httpStatusError{code: 504, msg: "Gateway Timeout"}
+	err := WithRetryDelays(func() error {
+		callCount++
+		if callCount < 3 {
+			return gatewayErr
+		}
+		return nil
+	}, 3, []time.Duration{1 * time.Millisecond})
+
+	if err != nil {
+		t.Errorf("Expected nil error after retry, got: %v", err)
+	}
+	if callCount != 3 {
+		t.Errorf("Expected 3 calls (2 504s + 1 success), got %d", callCount)
+	}
+}
+
+func TestWithRetryDelays_502TriggersRetry(t *testing.T) {
+	callCount := 0
+	badGatewayErr := &httpStatusError{code: 502, msg: "Bad Gateway"}
+	err := WithRetryDelays(func() error {
+		callCount++
+		if callCount < 2 {
+			return badGatewayErr
+		}
+		return nil
+	}, 3, []time.Duration{1 * time.Millisecond})
+	if err != nil {
+		t.Errorf("Expected nil error after retry, got: %v", err)
+	}
+	if callCount != 2 {
+		t.Errorf("Expected 2 calls, got %d", callCount)
+	}
+}
+
+func TestWithRetryDelays_503TriggersRetry(t *testing.T) {
+	callCount := 0
+	unavailErr := &httpStatusError{code: 503, msg: "Service Unavailable"}
+	err := WithRetryDelays(func() error {
+		callCount++
+		if callCount < 2 {
+			return unavailErr
+		}
+		return nil
+	}, 3, []time.Duration{1 * time.Millisecond})
+	if err != nil {
+		t.Errorf("Expected nil error after retry, got: %v", err)
+	}
+	if callCount != 2 {
+		t.Errorf("Expected 2 calls, got %d", callCount)
+	}
+}
+
+func TestWithRetryDelays_500DoesNotRetry(t *testing.T) {
+	// 500 is not classified as transient — likely a real server-side bug.
+	callCount := 0
+	internalErr := &httpStatusError{code: 500, msg: "Internal Server Error"}
+	err := WithRetryDelays(func() error {
+		callCount++
+		return internalErr
+	}, 3, []time.Duration{1 * time.Millisecond})
+	if err != internalErr {
+		t.Errorf("Expected original 500 error, got: %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("Expected 1 call (no retry for 500), got %d", callCount)
+	}
+}
+
+func TestApplyJitter_PositiveBiasRange(t *testing.T) {
+	// Positive-only jitter: result lies in [base, base*1.25]. Positive bias
+	// preserves the "delay at least the configured base" guarantee that the
+	// existing TestWithRetryDelays_UsesLastDelayWhenAttemptsExceedDelayLength
+	// test relies on, while still spreading retries to avoid thundering herd.
+	base := 100 * time.Millisecond
+	high := time.Duration(float64(base) * 1.25)
+	sawAbove := false
+	for i := 0; i < 200; i++ {
+		got := applyJitter(base)
+		if got < base || got > high {
+			t.Fatalf("applyJitter(%v) = %v, outside [%v, %v]", base, got, base, high)
+		}
+		if got > base {
+			sawAbove = true
+		}
+	}
+	if !sawAbove {
+		t.Errorf("Expected at least one jittered value strictly above base over 200 iterations; got all == base")
+	}
+}
+
+func TestApplyJitter_ZeroBaseReturnsZero(t *testing.T) {
+	if got := applyJitter(0); got != 0 {
+		t.Errorf("applyJitter(0) = %v, want 0", got)
+	}
+}
+
 // httpStatusError simulates an HTTP error with a status code for testing.
 type httpStatusError struct {
 	code int

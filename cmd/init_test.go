@@ -2228,3 +2228,307 @@ func TestEnsureOptionalProjectFields_CreateFieldError_LogsWarningAndContinues(t 
 		t.Errorf("expected Branch to still be created after Priority CreateProjectField error, got: %+v", mock.createCalls)
 	}
 }
+
+// ============================================================================
+// AC4 — --source-project guard tests (#847)
+// ============================================================================
+
+func TestSourceProjectGuard_AllowsWhenNoExistingConfig(t *testing.T) {
+	if err := sourceProjectGuard(0, 30, false); err != nil {
+		t.Errorf("Expected nil (no existing project), got: %v", err)
+	}
+}
+
+func TestSourceProjectGuard_AllowsWhenForcePresent(t *testing.T) {
+	if err := sourceProjectGuard(46, 30, true); err != nil {
+		t.Errorf("Expected nil with --force, got: %v", err)
+	}
+}
+
+func TestSourceProjectGuard_RefusesWhenExistingProjectAndNoForce(t *testing.T) {
+	err := sourceProjectGuard(46, 30, false)
+	if err == nil {
+		t.Fatal("Expected error when existing project + --source-project + no --force")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "--project") {
+		t.Errorf("Expected error to recommend --project, got: %v", err)
+	}
+	if !strings.Contains(msg, "--force") {
+		t.Errorf("Expected error to mention --force override, got: %v", err)
+	}
+}
+
+func TestSourceProjectGuard_AllowsWhenSourceProjectZero(t *testing.T) {
+	// Caller didn't pass --source-project; nothing to guard.
+	if err := sourceProjectGuard(46, 0, false); err != nil {
+		t.Errorf("Expected nil when sourceProject == 0, got: %v", err)
+	}
+}
+
+func TestInitNonInteractive_SourceProjectGuard_RefusesWithoutForce(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Existing config declares project #46
+	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
+	body := `{"version":"1.4.6","project":{"owner":"test","number":46},"repositories":["test/repo"],"framework":"IDPF","defaults":{"priority":"p2","status":"backlog"},"fields":{}}`
+	if err := os.WriteFile(configPath, []byte(body), 0644); err != nil {
+		t.Fatalf("Failed to write existing config: %v", err)
+	}
+
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"init", "--source-project", "30", "--repo", "owner/repo", "-y"})
+
+	out := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(out)
+	cmd.SetErr(errBuf)
+
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("Expected refusal when existing project + --source-project + no --force")
+	}
+	msg := errBuf.String()
+	if !strings.Contains(msg, "already declares project #46") {
+		t.Errorf("Expected guard message to name existing project #46, got: %s", msg)
+	}
+	if !strings.Contains(msg, "--force") {
+		t.Errorf("Expected guard message to suggest --force, got: %s", msg)
+	}
+}
+
+// ============================================================================
+// AC3 — Structured failure trailer tests (#847)
+// ============================================================================
+
+func TestPrintInitFailureTrailer_AllFields(t *testing.T) {
+	var buf bytes.Buffer
+	printInitFailureTrailer(&buf, 176, FailedStepGetFields, false)
+	out := buf.String()
+	if !strings.Contains(out, "destinationProjectNumber=176") {
+		t.Errorf("Expected destinationProjectNumber=176 in output, got: %s", out)
+	}
+	if !strings.Contains(out, "failedStep=get-fields") {
+		t.Errorf("Expected failedStep=get-fields, got: %s", out)
+	}
+	if !strings.Contains(out, "configRewritten=false") {
+		t.Errorf("Expected configRewritten=false, got: %s", out)
+	}
+}
+
+func TestPrintInitFailureTrailer_NoProjectCreated(t *testing.T) {
+	// projectNumber=0 means project was never created (failure before/at create-project).
+	// Render explicitly as 'none' rather than "0" to avoid ambiguity.
+	var buf bytes.Buffer
+	printInitFailureTrailer(&buf, 0, FailedStepCreateProject, false)
+	out := buf.String()
+	if !strings.Contains(out, "destinationProjectNumber=none") {
+		t.Errorf("Expected destinationProjectNumber=none for projectNumber=0, got: %s", out)
+	}
+	if !strings.Contains(out, "failedStep=create-project") {
+		t.Errorf("Expected failedStep=create-project, got: %s", out)
+	}
+}
+
+func TestPrintInitFailureTrailer_ConfigWritten(t *testing.T) {
+	var buf bytes.Buffer
+	printInitFailureTrailer(&buf, 176, FailedStepWriteConfig, true)
+	out := buf.String()
+	if !strings.Contains(out, "configRewritten=true") {
+		t.Errorf("Expected configRewritten=true, got: %s", out)
+	}
+}
+
+func TestFailedStep_EnumStability(t *testing.T) {
+	// AC5 decision (#847): label-setup is warn+continue, NOT a hard-fail step.
+	// Enum must NOT include label-setup; if it ever does, the trailer contract
+	// becomes inconsistent with the documented label-loop posture.
+	allowed := map[string]bool{
+		"create-project":           true,
+		"get-fields":               true,
+		"validate-required-fields": true,
+		"refetch-fields":           true,
+		"write-config":             true,
+		"source-copy":              true,
+	}
+	for _, step := range AllFailedSteps {
+		if !allowed[step] {
+			t.Errorf("Unexpected failedStep value %q — keep enum aligned with #847 AC5 (label-setup excluded)", step)
+		}
+	}
+	if _, ok := allowed["label-setup"]; ok {
+		t.Fatal("Test fixture wrong: label-setup must not be allowed")
+	}
+}
+
+// ============================================================================
+// AC2 — Atomicity tests (#847)
+// ============================================================================
+
+// fakeInitClient is a test double for initPostCreateClient. Each method's
+// behavior is configurable via callbacks so individual tests can simulate
+// failures at specific steps.
+type fakeInitClient struct {
+	getFieldsErr     error
+	getFieldsResult  []api.ProjectField
+	refetchFieldsErr error
+	refetchResult    []api.ProjectField
+	getFieldsCalls   int
+
+	labelExistsErr error
+	createLabelErr error
+	fieldExistsErr error
+	createFieldErr error
+
+	deleteProjectErr   error
+	deleteProjectCalls []string
+}
+
+func (f *fakeInitClient) GetProjectFields(projectID string) ([]api.ProjectField, error) {
+	f.getFieldsCalls++
+	if f.getFieldsCalls == 1 {
+		return f.getFieldsResult, f.getFieldsErr
+	}
+	if f.refetchFieldsErr != nil {
+		return nil, f.refetchFieldsErr
+	}
+	if f.refetchResult != nil {
+		return f.refetchResult, nil
+	}
+	return f.getFieldsResult, nil
+}
+func (f *fakeInitClient) LabelExists(o, r, n string) (bool, error) { return true, f.labelExistsErr }
+func (f *fakeInitClient) CreateLabel(o, r, n, c, d string) error   { return f.createLabelErr }
+func (f *fakeInitClient) FieldExists(p, n string) (bool, error)    { return true, f.fieldExistsErr }
+func (f *fakeInitClient) CreateProjectField(p, n, dt string, opts []string) (*api.ProjectField, error) {
+	return nil, f.createFieldErr
+}
+func (f *fakeInitClient) DeleteProject(projectID string) error {
+	f.deleteProjectCalls = append(f.deleteProjectCalls, projectID)
+	return f.deleteProjectErr
+}
+
+func newAtomicityInputs(t *testing.T, errOut *bytes.Buffer) *initPostCreateInputs {
+	t.Helper()
+	tmpDir := t.TempDir()
+	return &initPostCreateInputs{
+		Cwd:       tmpDir,
+		RepoOwner: "owner",
+		RepoName:  "repo",
+		Framework: "none", // skip required-field validation for clean defer test
+		NewProject: &api.Project{
+			ID:     "PVT_new123",
+			Number: 176,
+			Title:  "test-repo",
+		},
+		Cfg: &InitConfig{
+			ProjectName:   "test-repo",
+			ProjectOwner:  "owner",
+			ProjectNumber: 176,
+			Repositories:  []string{"owner/repo"},
+			Framework:     "none",
+		},
+		Defs:   &defaults.Defaults{},
+		ErrOut: errOut,
+	}
+}
+
+func TestRunInitPostCreate_GetFieldsFailure_RollsBackProject(t *testing.T) {
+	errBuf := &bytes.Buffer{}
+	client := &fakeInitClient{getFieldsErr: fmt.Errorf("non-200 OK status code: 504")}
+	in := newAtomicityInputs(t, errBuf)
+
+	err := runInitPostCreate(client, in)
+	if err == nil {
+		t.Fatal("Expected error from runInitPostCreate")
+	}
+
+	// Rollback: DeleteProject called with the just-created project's ID.
+	if len(client.deleteProjectCalls) != 1 || client.deleteProjectCalls[0] != "PVT_new123" {
+		t.Errorf("Expected DeleteProject('PVT_new123'), got: %v", client.deleteProjectCalls)
+	}
+
+	// Trailer: failedStep + projectNumber + configRewritten=false (config never reached).
+	out := errBuf.String()
+	if !strings.Contains(out, "failedStep=get-fields") {
+		t.Errorf("Expected trailer failedStep=get-fields, got: %s", out)
+	}
+	if !strings.Contains(out, "destinationProjectNumber=176") {
+		t.Errorf("Expected destinationProjectNumber=176, got: %s", out)
+	}
+	if !strings.Contains(out, "configRewritten=false") {
+		t.Errorf("Expected configRewritten=false (config write never attempted), got: %s", out)
+	}
+
+	// Defer: .gh-pmu.json must NOT exist in cwd.
+	if _, err := os.Stat(filepath.Join(in.Cwd, ".gh-pmu.json")); err == nil {
+		t.Error("Expected .gh-pmu.json NOT to exist after pre-config-write failure (defer variant)")
+	}
+}
+
+func TestRunInitPostCreate_RollbackErrorDoesNotMaskOriginal(t *testing.T) {
+	errBuf := &bytes.Buffer{}
+	client := &fakeInitClient{
+		getFieldsErr:     fmt.Errorf("non-200 OK status code: 504"),
+		deleteProjectErr: fmt.Errorf("rollback also failed"),
+	}
+	in := newAtomicityInputs(t, errBuf)
+
+	err := runInitPostCreate(client, in)
+	if err == nil {
+		t.Fatal("Expected original error preserved")
+	}
+	if !strings.Contains(err.Error(), "could not fetch project fields") {
+		t.Errorf("Expected original 'could not fetch project fields' error, got: %v", err)
+	}
+	out := errBuf.String()
+	if !strings.Contains(out, "warning: rollback DeleteProject(PVT_new123) failed") {
+		t.Errorf("Expected rollback-failure warning, got: %s", out)
+	}
+}
+
+func TestRunInitPostCreate_LabelLoopFailure_DoesNotRollBack(t *testing.T) {
+	// AC5: label-loop is warn+continue. Must NOT trigger rollback.
+	errBuf := &bytes.Buffer{}
+	client := &fakeInitClient{
+		labelExistsErr: fmt.Errorf("transient label-check failure"),
+	}
+	in := newAtomicityInputs(t, errBuf)
+	in.Framework = "IDPF"
+	in.Defs = &defaults.Defaults{
+		Labels: []defaults.LabelDef{{Name: "active", Color: "0e8a16"}},
+	}
+
+	err := runInitPostCreate(client, in)
+	if err != nil {
+		t.Fatalf("Expected nil (label failure is warn+continue), got: %v", err)
+	}
+	if len(client.deleteProjectCalls) != 0 {
+		t.Errorf("Expected zero DeleteProject calls (warn+continue), got: %v", client.deleteProjectCalls)
+	}
+	out := errBuf.String()
+	if !strings.Contains(out, "Warning: failed to check label") {
+		t.Errorf("Expected warning to be emitted for label failure, got: %s", out)
+	}
+}
+
+func TestRunInitPostCreate_Success_NoRollback(t *testing.T) {
+	errBuf := &bytes.Buffer{}
+	client := &fakeInitClient{}
+	in := newAtomicityInputs(t, errBuf)
+
+	if err := runInitPostCreate(client, in); err != nil {
+		t.Fatalf("Expected success, got: %v", err)
+	}
+	if len(client.deleteProjectCalls) != 0 {
+		t.Errorf("Expected zero DeleteProject calls on success, got: %v", client.deleteProjectCalls)
+	}
+	if _, err := os.Stat(filepath.Join(in.Cwd, ".gh-pmu.json")); err != nil {
+		t.Errorf("Expected .gh-pmu.json to exist after successful init: %v", err)
+	}
+}
