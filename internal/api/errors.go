@@ -96,19 +96,29 @@ func IsRateLimited(err error) bool {
 // 504 Gateway Timeout. 500 (Internal Server Error) and 501 (Not Implemented)
 // are intentionally excluded — they typically indicate a real bug rather than
 // a recoverable transient condition. 429 is handled by IsRateLimited, not here.
+//
+// Falls back to string-pattern matching for errors that do not satisfy
+// httpStatusCoder. shurcoolGraphQL (used by go-gh's typed GraphQL client)
+// produces plain fmt.Errorf strings of the form "non-200 OK status code: 504
+// Gateway Timeout body: ..." — the string fallback recovers retryability for
+// those cases. Mirrors the existing string fallback in IsRateLimited.
 func IsTransient5xx(err error) bool {
 	if err == nil {
 		return false
 	}
 	var sc httpStatusCoder
-	if !errors.As(err, &sc) {
+	if errors.As(err, &sc) {
+		switch sc.HTTPStatusCode() {
+		case 502, 503, 504:
+			return true
+		}
 		return false
 	}
-	switch sc.HTTPStatusCode() {
-	case 502, 503, 504:
-		return true
-	}
-	return false
+	// String fallback for errors without HTTP status interface.
+	msg := err.Error()
+	return strings.Contains(msg, "non-200 OK status code: 502") ||
+		strings.Contains(msg, "non-200 OK status code: 503") ||
+		strings.Contains(msg, "non-200 OK status code: 504")
 }
 
 // IsRetryable returns true if an error should trigger automatic retry. It

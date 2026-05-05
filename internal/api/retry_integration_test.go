@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"sync/atomic"
@@ -27,6 +28,7 @@ func (f *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 func makeResp(status int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: status,
+		Status:     fmt.Sprintf("%d %s", status, http.StatusText(status)), // shurcoolGraphQL embeds resp.Status (e.g. "504 Gateway Timeout") in its error message
 		Body:       io.NopCloser(bytes.NewBufferString(body)),
 		Header:     make(http.Header),
 	}
@@ -62,6 +64,49 @@ func TestRetryIntegration_RawGraphQL504ThenSuccess(t *testing.T) {
 	}
 	if string(data) != `{"data":{"ok":true}}` {
 		t.Errorf("Expected success payload, got %q", string(data))
+	}
+	if got := transport.calls.Load(); got != 2 {
+		t.Errorf("Expected exactly 2 transport calls (1 504 + 1 200), got %d", got)
+	}
+}
+
+// TestRetryIntegration_TypedGraphQL504ThenSuccess exercises the typed go-gh
+// GraphQL path end-to-end: the typed Mutate/Query route through go-gh's own
+// HTTP-error wrapping, so this test verifies our IsRetryable classifier
+// agrees with the actual error shape go-gh produces — not just our local
+// rawHTTPError fixture. Catches divergence if go-gh changes how non-200
+// responses are wrapped.
+func TestRetryIntegration_TypedGraphQL504ThenSuccess(t *testing.T) {
+	transport := &fakeRoundTripper{
+		responses: []*http.Response{
+			makeResp(504, `{"message":"Gateway Timeout"}`),
+			makeResp(200, `{"data":{"viewer":{"login":"octocat"}}}`),
+		},
+	}
+	SetTestTransport(transport)
+	defer SetTestTransport(nil)
+	SetTestAuthToken("test-token") // go-gh refuses to construct a client without one
+	defer SetTestAuthToken("")
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	// Re-wrap with millisecond delays so the test isn't slow.
+	gqlInner := c.gql.(*retryingGraphQL).inner
+	c.gql = newRetryingGraphQL(gqlInner, 3, []time.Duration{1 * time.Millisecond})
+
+	var q struct {
+		Viewer struct {
+			Login string
+		}
+	}
+	if err := c.gql.Query("Viewer", &q, nil); err != nil {
+		t.Fatalf("Expected nil error after typed-path retry recovers from 504, got: %v", err)
+	}
+	if q.Viewer.Login != "octocat" {
+		t.Errorf("Expected viewer.login 'octocat', got %q", q.Viewer.Login)
 	}
 	if got := transport.calls.Load(); got != 2 {
 		t.Errorf("Expected exactly 2 transport calls (1 504 + 1 200), got %d", got)

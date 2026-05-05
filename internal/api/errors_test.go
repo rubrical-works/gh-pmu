@@ -270,6 +270,45 @@ func TestIsTransient5xx_WithNonHTTPError(t *testing.T) {
 	}
 }
 
+func TestIsTransient5xx_StringFallback_504(t *testing.T) {
+	// shurcoolGraphQL (under go-gh's typed GraphQL client) produces this
+	// exact format via fmt.Errorf("non-200 OK status code: %v body: %q", ...).
+	// The error does not satisfy httpStatusCoder, so the classifier must
+	// fall back to string parsing — same pattern IsRateLimited uses.
+	err := errors.New(`non-200 OK status code: 504 Gateway Timeout body: "{\"message\":\"...\"}"`)
+	if !IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return true for shurcoolGraphQL 504 string error")
+	}
+}
+
+func TestIsTransient5xx_StringFallback_502(t *testing.T) {
+	err := errors.New(`non-200 OK status code: 502 Bad Gateway body: "..."`)
+	if !IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return true for shurcoolGraphQL 502 string error")
+	}
+}
+
+func TestIsTransient5xx_StringFallback_503(t *testing.T) {
+	err := errors.New(`non-200 OK status code: 503 Service Unavailable body: "..."`)
+	if !IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return true for shurcoolGraphQL 503 string error")
+	}
+}
+
+func TestIsTransient5xx_StringFallback_500NotRetryable(t *testing.T) {
+	err := errors.New(`non-200 OK status code: 500 Internal Server Error body: "..."`)
+	if IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return false for 500 (real-bug, not transient)")
+	}
+}
+
+func TestIsTransient5xx_StringFallback_404NotRetryable(t *testing.T) {
+	err := errors.New(`non-200 OK status code: 404 Not Found body: "..."`)
+	if IsTransient5xx(err) {
+		t.Error("Expected IsTransient5xx to return false for 404")
+	}
+}
+
 func TestIsRetryable_With429(t *testing.T) {
 	err := &ghHTTPError{statusCode: 429, message: "Too Many Requests"}
 	if !IsRetryable(err) {
