@@ -125,7 +125,9 @@ func TestRetryingRawGraphQL_DoRawBodyRetriesOn504(t *testing.T) {
 }
 
 func TestNewClientWithOptions_GraphQLClientIsRetrying(t *testing.T) {
-	c, err := NewClientWithOptions(ClientOptions{})
+	// Provide a stub auth token so go-gh's NewGraphQLClient doesn't fail on
+	// auth-discovery in CI environments without `gh auth status`.
+	c, err := NewClientWithOptions(ClientOptions{AuthToken: "test-token"})
 	if err != nil {
 		t.Fatalf("NewClientWithOptions failed: %v", err)
 	}

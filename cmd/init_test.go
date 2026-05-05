@@ -2380,10 +2380,10 @@ type fakeInitClient struct {
 	refetchResult    []api.ProjectField
 	getFieldsCalls   int
 
-	labelExistsErr  error
-	createLabelErr  error
-	fieldExistsErr  error
-	createFieldErr  error
+	labelExistsErr error
+	createLabelErr error
+	fieldExistsErr error
+	createFieldErr error
 
 	deleteProjectErr   error
 	deleteProjectCalls []string
@@ -2403,8 +2403,8 @@ func (f *fakeInitClient) GetProjectFields(projectID string) ([]api.ProjectField,
 	return f.getFieldsResult, nil
 }
 func (f *fakeInitClient) LabelExists(o, r, n string) (bool, error) { return true, f.labelExistsErr }
-func (f *fakeInitClient) CreateLabel(o, r, n, c, d string) error  { return f.createLabelErr }
-func (f *fakeInitClient) FieldExists(p, n string) (bool, error)   { return true, f.fieldExistsErr }
+func (f *fakeInitClient) CreateLabel(o, r, n, c, d string) error   { return f.createLabelErr }
+func (f *fakeInitClient) FieldExists(p, n string) (bool, error)    { return true, f.fieldExistsErr }
 func (f *fakeInitClient) CreateProjectField(p, n, dt string, opts []string) (*api.ProjectField, error) {
 	return nil, f.createFieldErr
 }

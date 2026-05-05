@@ -47,6 +47,8 @@ func TestRetryIntegration_RawGraphQL504ThenSuccess(t *testing.T) {
 	}
 	SetTestTransport(transport)
 	defer SetTestTransport(nil)
+	SetTestAuthToken("test-token") // go-gh refuses to construct a client without one (CI lacks gh auth)
+	defer SetTestAuthToken("")
 
 	c, err := NewClient()
 	if err != nil {
@@ -123,6 +125,8 @@ func TestRetryIntegration_RawGraphQLNonRetryable(t *testing.T) {
 	}
 	SetTestTransport(transport)
 	defer SetTestTransport(nil)
+	SetTestAuthToken("test-token")
+	defer SetTestAuthToken("")
 
 	c, err := NewClient()
 	if err != nil {
