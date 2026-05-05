@@ -160,24 +160,31 @@ func TestInitNonInteractiveWithOwner(t *testing.T) {
 	}
 }
 
-// TestInitNonInteractiveOverwrite tests the --yes flag for overwriting.
+// TestInitNonInteractiveOverwrite tests the --yes + --force combo for overwriting
+// when the existing config declares a project number. Since #847 added a guard
+// that refuses --source-project against a repo whose .gh-pmu.json declares a
+// project (steering users toward --project <existing>), the explicit-replace
+// path now requires --force in addition to --yes.
 func TestInitNonInteractiveOverwrite(t *testing.T) {
 	tmpDir := t.TempDir()
 	initGitRepo(t, tmpDir)
 
-	// Create existing config
+	// Create existing config with a project number — triggers the #847 guard.
 	existingConfig := `{"project":{"name":"existing","owner":"test","number":999}}`
 	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(existingConfig), 0644); err != nil {
 		t.Fatalf("Failed to write existing config: %v", err)
 	}
 
-	// Run init with --yes to overwrite
+	// Run init with --yes + --force to overwrite (--yes alone is no longer enough
+	// when the existing config has a project number; --force confirms the user
+	// really wants to replace the project pointer rather than re-link via --project).
 	result := runPMU(t, tmpDir, "init",
 		"--non-interactive",
 		"--source-project", "41",
 		"--repo", "rubrical-works/gh-pmu-e2e-test",
 		"--yes",
+		"--force",
 	)
 
 	assertExitCode(t, result, 0)
