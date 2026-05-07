@@ -1,5 +1,5 @@
 ---
-version: "v0.90.0"
+version: "v0.91.0"
 allowed-tools: Bash, AskUserQuestion
 description: "Assign or remove issues from a branch: [#issue...] [branch/...] [--add-ready] [--remove] (project)"
 argument-hint: "[#issue...] [branch/name] [--add-ready] [--remove]"
@@ -35,3 +35,7 @@ SUGGESTIONS:
 3. Re-run original command
 ## Normal Output
 If branches exist, report the result directly.
+## Errors
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| `Issue #N is a branch tracker and cannot be assigned.` | Target carries the `branch` label (branch tracker, not implementation work). Script exits non-zero before any mutation. | Target the sub-issues on the branch instead, or use `gh pmu sub list` to enumerate them. |

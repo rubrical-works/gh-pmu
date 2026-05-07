@@ -1,5 +1,5 @@
 ---
-version: "v0.90.0"
+version: "v0.91.0"
 description: Start working on issues with validation and auto-task extraction (project)
 argument-hint: "#issue [#issue...] [--assign] [--nonstop] [--wait] | all in <status>"
 copyright: "Rubrical Works (c) 2026"
@@ -38,7 +38,7 @@ Follow `.claude/rules/08-work-execution.md` (auto-loaded at session start). That
 
 ---
 ## Error Handling
-**STOP errors:** Issue not found, no branch assignment, `gh pmu` failure, `ALREADY_ASSIGNED` (different branch), `WORKSTREAM_CONFLICT` (use `/assign-branch`).
+**STOP errors:** Issue not found, no branch assignment, `gh pmu` failure, `ALREADY_ASSIGNED` (different branch), `WORKSTREAM_CONFLICT` (use `/assign-branch`), `BRANCH_TRACKER_NOT_ASSIGNABLE` (target is a branch tracker — assign sub-issues instead).
 **Non-blocking:** PRD tracker not found, framework file missing, no acceptance criteria, issue already in_progress.
 
 ---

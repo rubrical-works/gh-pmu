@@ -1,5 +1,5 @@
 ---
-version: "v0.90.0"
+version: "v0.91.0"
 description: Add story to epic with charter compliance (project)
 argument-hint: "[epic-number] (e.g., 42 or #42)"
 copyright: "Rubrical Works (c) 2026"
@@ -29,39 +29,18 @@ Display options including "[Create new epic]". If no epics exist, offer create o
 **Step 2a: Create new epic (if selected)**
 **ASK USER:** Theme/feature area (e.g., "User Authentication").
 
-Charter compliance check: if `CHARTER.md` exists, validate theme against vision and scope; warn and ask to proceed if concerns.
-
-Create epic:
+Create epic via shared helper (#2408 — single source of truth: charter validation, body template, post-create label verification, branch assignment all live in the helper):
 ```bash
-gh pmu create --repo {repository} \
-  --title "Epic: {Theme}" \
-  --label "epic" \
-  --status backlog \
-  --assignee @me \
-  -F .tmp-epic-body.md
+node .claude/scripts/shared/create-epic.js --theme "{Theme}" --assign-branch
 ```
-Epic body template (`.tmp-epic-body.md`):
-```markdown
-## Epic: {Theme}
-### Vision
-{Brief description based on user's theme input}
-### Stories
-Stories will be linked via `/add-story`.
-### Acceptance Criteria
-- [ ] All stories completed
-- [ ] Integration tested
-- [ ] Documentation updated
+Parse JSON envelope:
+- `ok: false` → report `errors[]`, **STOP** (no orphan story).
+- `ok: true` → use `epicNumber`, `branchAssigned`, `branch`, `warnings[]`.
+- Surface every `warnings[]` entry (charter Out-of-Scope, missing CHARTER.md, branch-assign issues).
 
-**Note:** Created via `/add-story`. Expand with detailed acceptance criteria.
-```
-Clean up: `rm .tmp-epic-body.md`
+If charter warnings present: **ASK USER** to confirm before proceeding.
 
-Assign to current branch if active:
-```bash
-gh pmu branch current --json=name 2>/dev/null && \
-  gh pmu move {epic_num} --branch current
-```
-Report: `✅ Created Epic #{epic_num}: {Theme} — Assigned to branch: {branch_name}`
+Report: `✅ Created Epic #{epicNumber}: {Theme} — Branch: {branch} — Warnings: {count}`
 **Step 3: Validate epic**
 ```bash
 gh issue view $epic_num --json labels --jq '.labels[].name' | grep -q "epic"

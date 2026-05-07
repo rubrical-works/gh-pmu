@@ -1,5 +1,5 @@
 {
-  "version": "1.4.6",
+  "version": "1.4.9",
   "project": {
     "name": "gh-pmu",
     "number": 11,
@@ -14,6 +14,10 @@
     "status": "backlog"
   },
   "fields": {
+    "branch": {
+      "field": "Branch",
+      "values": null
+    },
     "priority": {
       "field": "Priority",
       "values": {
@@ -44,12 +48,11 @@
       }
     }
   },
-  "release": {},
   "acceptance": {
     "accepted": true,
     "user": "sbeals",
-    "date": "2026-03-25",
-    "version": "1.4.1"
+    "date": "2026-05-05",
+    "version": "1.4.9"
   },
   "metadata": {
     "project": {
@@ -88,16 +91,16 @@
             "id": "df73e18b"
           },
           {
-            "name": "Done",
-            "id": "98236657"
-          },
-          {
             "name": "Notes",
             "id": "db9f4455"
           },
           {
             "name": "Parking Lot",
             "id": "87752a74"
+          },
+          {
+            "name": "Done",
+            "id": "98236657"
           }
         ]
       },

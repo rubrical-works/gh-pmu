@@ -1,5 +1,5 @@
 ---
-version: "v0.90.0"
+version: "v0.91.0"
 description: Split story into smaller stories (project)
 argument-hint: "<story-number> (e.g., 123)"
 copyright: "Rubrical Works (c) 2026"
@@ -54,6 +54,12 @@ Parse: title, description (As/I want/So that), AC (checkboxes), priority, parent
 gh pmu sub list --child $story_num --json parent
 ```
 Or parse body for `Parent Epic: #N`.
+**Step 4a: Create epic if none exists** (#2408) — split stories must not be silently orphaned.
+**ASK USER:** No parent epic for #{story_num}. Create one? (yes/no). No → STOP ("Split cancelled — no parent epic"). Yes → **ASK USER:** theme/feature area, then:
+```bash
+node .claude/scripts/shared/create-epic.js --theme "{Theme}" --source-issue $story_num --assign-branch
+```
+Parse envelope: `ok: false` → report `errors[]`, **STOP** (no orphan split stories). `ok: true` → use `epicNumber` as `$epic_num` for Phases 4–7. Surface every `warnings[]`. Charter warnings → **ASK USER** to confirm.
 ---
 ## Phase 2: Split Criteria
 **ASK USER:** How should this story be split?
