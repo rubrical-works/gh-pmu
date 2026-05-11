@@ -1,5 +1,5 @@
 ---
-version: "v0.91.0"
+version: "v0.91.1"
 description: Create text-based or diagrammatic screen mockups (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -251,7 +251,18 @@ Auto-generate/update `Mockups/{Name}/README.md` as an index. Include sections fo
 
 ### Step 6: Issue Writeback (if applicable)
 
-If triggered with `#NN`, write mockup references back to the source.
+**Trigger:** `#NN` supplied AND at least one artifact written this invocation. Only skip condition: "no `#NN`".
+
+**Unconditional on discovery path:** Runs **regardless of which discovery path** produced the artifacts. The Step 1d question battery, Step 1c pipeline-context detection, and any short-circuit bypass all converge here — do not gate writeback on Q1–Q6 execution, on any specific answer, or on which sourcing option was chosen. Bypass paths that still trigger writeback when `#NN` is present:
+
+- `--from-image <path>` (bypasses Q4)
+- "From source code discovery" answer to Q4 (no per-screen Q4a)
+- "From issue #NN description" / "From screen catalog" / "From reference image" answers to Q4
+- Step 1c pipeline-context paths (screen-spec auto-match, path-analysis-driven generation)
+- Step 1b-ii ASCII-only conversion
+- Any future Step 1 bypass — contract: "artifact written + `#NN` supplied → writeback runs"
+
+Structural test `tests/commands/mockups-writeback-unconditional.test.js` (#2417 AC5) guards this property; do not relocate Step 6 or demote below `### Step 6` heading depth.
 
 **Proposal:** Read document; append or update a `## Mockups` section listing each created mockup file. If proposal path is invalid/deleted → warn, skip writeback, mockup still created.
 

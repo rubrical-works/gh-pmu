@@ -1,5 +1,5 @@
 ---
-version: "v0.91.0"
+version: "v0.91.1"
 description: Add story to epic with charter compliance (project)
 argument-hint: "[epic-number] (e.g., 42 or #42)"
 copyright: "Rubrical Works (c) 2026"
@@ -17,7 +17,7 @@ Add a story to an epic with charter compliance and test plan updates.
 2. **Track Progress:** `TaskUpdate` to mark `in_progress` → `completed`.
 3. **Resume:** `TaskList` to find incomplete tasks.
 
-Tasks: Phase 1 select/create epic; Phase 2 charter check; Phase 3 create story; Phase 4 update test plan; Phase 5 update PRD tracker; Phase 6 skill suggestions; Phase 7 report.
+Tasks: Phase 1 select/create epic; Phase 2 charter check; Phase 3 create story; Phase 4 update test plan; Phase 5 update PRD tracker; Phase 6 report.
 ## Phase 1: Select or Create Epic, Gather Story Details
 **Step 1:** Parse epic number — strip leading `#`: `epic_num="${1#\#}"`
 **Step 2:** If no epic specified, list and prompt:
@@ -234,31 +234,7 @@ Epic: #{epic_num}
 
 Refs #{prd_num}"
 ```
-## Phase 6: Skill Suggestions (Optional)
-Suggest relevant skills based on technologies in the new story.
-**Step 1:** Read `framework-config.json` — if `skillSuggestions: false`, skip phase.
-**Step 2: Keyword match** — combine story title + acceptance criteria text, write to temp file:
-```bash
-node .claude/scripts/shared/lib/skill-keyword-matcher.js \
-  --content-file .tmp-skill-content.txt \
-  --installed "{comma-separated projectSkills}"
-rm .tmp-skill-content.txt
-```
-Parse JSON output: `{skill, matchedKeywords}`. Already-installed excluded.
-**Step 3: If matches, prompt**
-```
-This story references technologies with available skills:
-  • playwright-setup - Playwright test automation setup
-
-Install suggested skills? (y/n)
-```
-**ASK USER:** Install?
-**Step 4: Install**
-```bash
-node .claude/scripts/shared/install-skill.js {skill-names...}
-```
-Report inline: `✓ playwright-setup - Installed (5 resources)`
-## Phase 7: Report Completion
+## Phase 6: Report Completion
 ```
 Story created: #{story_num}
 
@@ -271,7 +247,6 @@ Charter compliance: ✅ Aligned (or ⚠️ Proceeded with warning)
 Test plan: {Updated|Not applicable}
 PRD tracker: {Updated #{prd_num}|Not PRD-derived}
 PRD document: {Updated {prd_file}|Not found|Not PRD-derived}
-Skills suggested: {count} (installed: {installed_count})
 
 Next steps:
 1. Work the story: work #{story_num}

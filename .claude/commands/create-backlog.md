@@ -1,5 +1,5 @@
 ---
-version: "v0.91.0"
+version: "v0.91.1"
 description: Create GitHub epics/stories from PRD (project)
 argument-hint: "<issue-number> (e.g., 151)"
 copyright: "Rubrical Works (c) 2026"
@@ -16,7 +16,7 @@ Create GitHub epics and stories from an approved PRD with embedded TDD test case
 
 ## Execution
 
-Use `TaskCreate` to create tasks from phases below; mark `in_progress` → `completed`. Phases: 1 fetch/validate → 1c PRD review gate → 2 test plan approval gate → 3 parse PRD → 4 load test cases → 5 epics → 6 stories → 7 update PRD status → 8 skill suggestions (optional).
+Use `TaskCreate` to create tasks from phases below; mark `in_progress` → `completed`. Phases: 1 fetch/validate → 1c PRD review gate → 2 test plan approval gate → 3 parse PRD → 4 load test cases → 5 epics → 6 stories → 7 update PRD status.
 
 ## Prerequisites
 
@@ -258,39 +258,6 @@ gh issue comment $issue_num --body "## Backlog Created
 
 PRD remains open until `/complete-prd` verifies all stories Done.
 
-## Phase 8: Skill Suggestions (Optional)
-
-Suggest skills based on technologies in created stories.
-
-1. Check `framework-config.json` → if `skillSuggestions: false`, skip to Output Summary.
-2. Collect story titles/AC text to temp file:
-```bash
-node .claude/scripts/shared/lib/skill-keyword-matcher.js \
-  --content-file .tmp-skill-content.txt \
-  --installed "{comma-separated projectSkills}"
-rm .tmp-skill-content.txt
-```
-Parse JSON: array of `{skill, matchedKeywords}`. Already-installed excluded automatically.
-
-3. **If matches, display** a table with columns Skill / Matched Keywords / Stories.
-
-**ASK USER:** Install suggested skills? (y/n/select)
-
-| Response | Action |
-|---|---|
-| `y`/`yes` | Install all matched |
-| `n`/`no` | Skip |
-| `select` | Numbered list for individual selection |
-
-4. Install: `node .claude/scripts/shared/install-skill.js {skill-names...}`. Report per-skill `✓ installed` / `⊘ already installed (skipped)`.
-
-5. Persist confirmed for Praxis Hub Manager discovery:
-```javascript
-const { persistSuggestions } = require('./.claude/scripts/shared/lib/persist-skill-suggestions');
-persistSuggestions('framework-config.json', confirmedSuggestions, '#ISSUE');
-```
-Writes `suggestedSkills` in `framework-config.json`. Skills already in `projectSkills` excluded; declined not written.
-
 ## Output Summary
 
 ```
@@ -305,8 +272,6 @@ Total: {E} epics, {S} stories
 Test cases embedded:
   ✓ {T} test cases pulled from Test-Plan-{name}.md
   ✓ Test skeletons generated ({language} syntax)
-
-Skills suggested: {count} (installed: {installed_count})
 
 PRD status: Backlog Created
 

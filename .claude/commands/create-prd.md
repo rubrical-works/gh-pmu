@@ -1,5 +1,5 @@
 ---
-version: "v0.91.0"
+version: "v0.91.1"
 description: Transform proposal into Agile PRD
 argument-hint: "<issue-number> | extract [<directory>]"
 copyright: "Rubrical Works (c) 2026"
@@ -380,43 +380,5 @@ fi
 - [ ] Open questions flagged
 - [ ] PRD is Create-Backlog compatible
 
-## Technical Skills Mapping
-After PRD generation, check for additional skills based on technical requirements.
-
-**Step 1: Run skill matcher**
-```bash
-node .claude/scripts/shared/prd-skill-matcher.js --prd "PRD/{name}/PRD-{name}.md"
-```
-Parse JSON: `{ matchedSkills, existingSkills, newSkills, registryAvailable }`. Script reads `framework-config.json` (installed skills) and `.claude/metadata/skill-keywords.json` (keyword registry). Manual `framework-config.json` reads: use Read tool, NOT Glob (`.claude/metadata/` is symlinked in user projects, Glob skips symlinks). Script missing/crashes: warn `"Skill matching unavailable, skipping."`, continue (non-blocking).
-
-**Step 2: Present New Skills** — **ASK USER:**
-```
-PRD mentions technical requirements that suggest additional skills:
-
-- ci-cd-pipeline-design (CI/CD pipeline mentioned in Non-Functional Requirements)
-- api-versioning (API versioning needed for service integration)
-
-Add to project skills? (yes/no/edit)
-```
-
-**Step 3: Update framework-config.json** via `framework-config.js` helper (validates against `.claude/metadata/framework-config.schema.json`; schema-invalid rejected at write time):
-```javascript
-const fwconfig = require('./.claude/scripts/shared/lib/framework-config.js');
-const config = fwconfig.read(process.cwd());
-config.projectSkills = [...new Set([...(config.projectSkills || []), ...newSkills])].sort();
-fwconfig.write(process.cwd(), config);
-```
-Validation error: surface message, stop — do not retry with `fs.writeFileSync`. Report:
-```
-Added skills: ci-cd-pipeline-design, api-versioning
-Total project skills: 4
-```
-
-**Step 4: Persist Confirmed Suggestions** for px-manager discovery:
-```javascript
-const { persistSuggestions } = require('./.claude/scripts/shared/lib/persist-skill-suggestions');
-persistSuggestions('framework-config.json', confirmedSuggestions, '#ISSUE');
-```
-Writes `suggestedSkills` in `framework-config.json`. Skills already in `projectSkills` excluded. Declined suggestions not written.
 
 **End of /create-prd Command**

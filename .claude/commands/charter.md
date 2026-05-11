@@ -1,5 +1,5 @@
 ---
-version: "v0.91.0"
+version: "v0.91.1"
 description: View, create, or manage project charter
 argument-hint: "[update|refresh|validate|--create-domain-entities]"
 copyright: "Rubrical Works (c) 2026"
