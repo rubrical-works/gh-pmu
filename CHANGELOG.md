@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.10] - 2026-05-14
+
+### Fixed
+- `gh pmu` commands that translate project field names to option IDs (`create --status`, `move --status`, `move --priority`, `move --branch`, etc.) no longer fail when GitHub's `ProjectV2.fields` GraphQL resolver returns HTTP 500. When the bulk resolver crashes — observed 2026-05-14 after GitHub auto-provisioned new `Created`/`Closed`/`Updated` timestamp fields whose backing rows fail the `ProjectV2FieldCommon` `NON_NULL` contract — `GetProjectFields` now falls back to the `metadata.fields[]` cache in `.gh-pmu.json` and emits a single stderr warning. Commands keep working transparently. (#853)
+- `gh pmu init` no longer aborts when the bulk fields resolver is crashing. It now falls back to per-name `ProjectV2.field(name:)` lookups against a documented standard ProjectV2 field set (Title, Assignees, Status, Labels, Linked pull requests, Milestone, Repository, Reviewers, Parent issue, Sub-issues progress, Priority, Size, Estimate, Start date, Target date, Branch), populates `metadata.fields[]` with what's reachable, and reports any unreadable fields. (#853)
+
+### Added
+- `internal/api.ErrFieldResolverUnavailable` sentinel + `internal/api.IsFieldResolverUnavailable` classifier. Detection routes: `errors.Is` against the sentinel, HTTP 500 via `httpStatusCoder`, message contains "Something went wrong while executing", or "non-200 OK status code: 500" (shurcoolGraphQL wire format). 502/503/504 remain transient and retryable via `IsTransient5xx`. (#853)
+- `--no-cache-fallback` global flag — disables the cached-metadata fallback; resolver errors propagate unchanged (preserves the prior fail-loud behaviour for CI/strict automation). (#853)
+- `--refresh-cached-fields` global flag — when fallback engages, refreshes each cached field via per-name `ProjectV2.field(name:)` queries (the resolver path that survives the rollout bug). Partial failures retain the cached value and log a count. (#853)
+- `internal/api.FallbackOptions` + `internal/api.SetFallbackOptions` / `CurrentFallbackOptions` for programmatic control of the resilience layer. (#853)
+- `internal/api.Client.FetchFieldsByNames(projectID, names)` + exported `internal/api.StandardProjectV2FieldNames` constant — used by `gh pmu init`'s recovery path; reusable for callers that need a resilient field fetch by name. (#853)
+- `Resilience` section in README documenting the fallback behaviour, warning text, and flags. CHARTER `In Scope` updated with the new resilience commitment. (#853)
+
+### Changed
+- `getProjectFieldsPage` now wraps errors matching `IsFieldResolverUnavailable` with `errors.Join(ErrFieldResolverUnavailable, originalErr)` so callers can detect the resolver-crash class via `errors.Is` while preserving the original error chain (and trace IDs) for user-facing diagnostics. (#853)
+
 ## [1.4.9] - 2026-05-05
 
 ### Fixed
