@@ -855,6 +855,8 @@ These flags work with most commands:
 | `--repo owner/repo` | Specify repository (overrides config) |
 | `--json` | Output in JSON format |
 | `--help` | Show command help |
+| `--no-cache-fallback` | Disable cached-metadata fallback when GitHub's `ProjectV2.fields` resolver returns 5xx — propagate the error unchanged (fail-loud, for CI/strict automation). See the [Resilience](../README.md#resilience) section. |
+| `--refresh-cached-fields` | When the cache-fallback engages, refresh each cached field via per-name `ProjectV2.field(name:)` queries. Partial failures retain the cached value. |
 
 ## See Also
 

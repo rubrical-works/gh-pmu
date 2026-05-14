@@ -300,11 +300,38 @@ func runInitExistingProject(cmd *cobra.Command, opts *initOptions) error {
 		return fmt.Errorf("failed to load embedded defaults: %w", err)
 	}
 
-	// Fetch project fields
+	// Fetch project fields. Init runs with NoCacheFallback so we never read
+	// metadata.fields[] back into the in-memory state we're about to
+	// rewrite — the cache exists for runtime commands, not init itself
+	// (see #853 AC7). If the bulk resolver is crashing, fall back to a
+	// per-name fetch against the documented standard set so we can still
+	// recover a usable cache.
+	prevFallback := api.CurrentFallbackOptions()
+	api.SetFallbackOptions(api.FallbackOptions{NoCacheFallback: true})
+	defer api.SetFallbackOptions(prevFallback)
+
 	projectFields, err := client.GetProjectFields(project.ID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: could not fetch project fields: %v\n", err)
-		return fmt.Errorf("could not fetch project fields: %w", err)
+		if errors.Is(err, api.ErrFieldResolverUnavailable) {
+			recovered, missing := client.FetchFieldsByNames(project.ID, api.StandardProjectV2FieldNames)
+			total := len(api.StandardProjectV2FieldNames)
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"warning: ProjectV2 fields resolver unavailable (GraphQL 5xx); recovered %d/%d standard fields via per-name lookup.\n",
+				len(recovered), total)
+			if len(missing) > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"  unreadable: %s\n  re-run 'gh pmu init' once GitHub recovers to capture the full set.\n",
+					strings.Join(missing, ", "))
+			}
+			if len(recovered) == 0 {
+				fmt.Fprintf(os.Stderr, "error: could not fetch any project fields (resolver unavailable, no fields recovered)\n")
+				return fmt.Errorf("could not fetch project fields: %w", err)
+			}
+			projectFields = recovered
+		} else {
+			fmt.Fprintf(os.Stderr, "error: could not fetch project fields: %v\n", err)
+			return fmt.Errorf("could not fetch project fields: %w", err)
+		}
 	}
 
 	// Validate required fields exist (IDPF only)

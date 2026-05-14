@@ -138,6 +138,41 @@ Flags and features not available in base `gh` CLI:
 
 See [gh vs gh pmu](docs/gh-comparison.md) for detailed comparison.
 
+## Resilience
+
+`gh pmu` is hardened against GitHub's `ProjectV2.fields` GraphQL resolver
+returning HTTP 500 — a failure mode triggered when GitHub auto-provisions
+new field types whose backing rows don't satisfy the existing
+`ProjectV2FieldCommon` interface contract (observed 2026-05-14 with the
+Created / Closed / Updated timestamp field rollout).
+
+When the resolver crashes, `gh pmu` falls back to the `metadata.fields[]`
+cache in `.gh-pmu.json` (populated by `gh pmu init`) and emits a single
+stderr warning:
+
+```
+warning: ProjectV2 field resolver unavailable (GraphQL 5xx); using cached
+field metadata from .gh-pmu.json (<N> fields).
+```
+
+Commands that translate field names → option IDs (`create --status`,
+`move --priority`, `move --branch`, etc.) continue to work transparently.
+
+Two flags tune the behaviour:
+
+| Flag | Effect |
+|------|--------|
+| `--no-cache-fallback` | Disable the fallback. The resolver error propagates unchanged (preserves the prior fail-loud behaviour for CI / strict automation). |
+| `--refresh-cached-fields` | When fallback engages, refresh each cached field via per-name `ProjectV2.field(name:)` queries (the resolver path that survives the rollout bug). Partial failures retain the cached value and log a count. |
+
+`gh pmu init` has its own recovery path: when the bulk fetch crashes, init
+falls back to a per-name lookup against a documented standard ProjectV2
+field set (Title, Assignees, Status, Labels, Linked pull requests,
+Milestone, Repository, Reviewers, Parent issue, Sub-issues progress,
+Priority, Size, Estimate, Start date, Target date, Branch) so it can still
+populate the cache with what's reachable. Re-run after GitHub recovers to
+capture the full set.
+
 ## Framework Integration
 
 `gh-pmu` is the backbone of project management for framework-driven development. When paired with a process framework like IDPF-Praxis, it provides:

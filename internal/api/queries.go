@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -121,6 +122,13 @@ func (c *Client) getOrgProject(owner string, number int) (*Project, error) {
 
 // GetProjectFields fetches all fields for a project.
 // Uses cursor-based pagination to retrieve all fields regardless of project size.
+//
+// When GitHub's ProjectV2.fields resolver is unavailable (see
+// ErrFieldResolverUnavailable / issue #853), falls back to cached field
+// metadata from .gh-pmu.json so commands that need field name → option ID
+// translation keep working. The fallback emits a single stderr warning per
+// process and preserves the resolver sentinel through the error path when
+// the cache itself is missing.
 func (c *Client) GetProjectFields(projectID string) ([]ProjectField, error) {
 
 	var allFields []ProjectField
@@ -129,6 +137,25 @@ func (c *Client) GetProjectFields(projectID string) ([]ProjectField, error) {
 	for {
 		fields, pInfo, err := c.getProjectFieldsPage(projectID, cursor)
 		if err != nil {
+			if errors.Is(err, ErrFieldResolverUnavailable) && !fallbackOptions.NoCacheFallback {
+				cached, fallbackErr := loadCachedProjectFieldsOrError(err)
+				if fallbackErr != nil {
+					return nil, fallbackErr
+				}
+				if fallbackOptions.RefreshCachedFields {
+					fetcher := projectFieldByNameFetcher
+					if fetcher == nil {
+						fetcher = c.fetchProjectFieldByName
+					}
+					refreshed, ok, fail := refreshCachedFields(fetcher, projectID, cached)
+					if fail > 0 {
+						fmt.Fprintf(os.Stderr, "warning: refreshed %d/%d cached fields via field(name:); %d failed (cached values retained).\n",
+							ok, ok+fail, fail)
+					}
+					cached = refreshed
+				}
+				return cached, nil
+			}
 			return nil, err
 		}
 
@@ -187,6 +214,15 @@ func (c *Client) getProjectFieldsPage(projectID string, cursor *string) ([]Proje
 
 	err := c.gql.Query("GetProjectFields", &query, variables)
 	if err != nil {
+		// When GitHub's ProjectV2.fields resolver is crashing (e.g., the
+		// 2026-05-14 timestamp-fields auto-rollout), wrap the original error
+		// with ErrFieldResolverUnavailable so upstream callers can detect it
+		// via errors.Is and engage the cached-metadata fallback. The original
+		// error chain (including any trace IDs) is preserved so users still
+		// see the underlying detail.
+		if IsFieldResolverUnavailable(err) {
+			err = errors.Join(ErrFieldResolverUnavailable, err)
+		}
 		return nil, pageInfo{}, fmt.Errorf("failed to get project fields: %w", err)
 	}
 
@@ -221,6 +257,94 @@ func (c *Client) getProjectFieldsPage(projectID string, cursor *string) ([]Proje
 		HasNextPage: query.Node.ProjectV2.Fields.PageInfo.HasNextPage,
 		EndCursor:   query.Node.ProjectV2.Fields.PageInfo.EndCursor,
 	}, nil
+}
+
+// fetchProjectFieldByName resolves a single ProjectV2 field by name.
+//
+// This path uses ProjectV2.field(name: $name) rather than the
+// fields-connection iterator, which is the resolver that survives the
+// 2026-05-14 timestamp-fields rollout (see #853). Used by the Layer 3
+// refresh path when fallbackOptions.RefreshCachedFields is set.
+//
+// Returns (nil, nil) if the field is not found (so the refresh path can
+// distinguish "missing" from "fetch failed"). Returns an error for any
+// transport-level failure or partial response.
+func (c *Client) fetchProjectFieldByName(projectID, name string) (*ProjectField, error) {
+	var query struct {
+		Node struct {
+			ProjectV2 struct {
+				Field struct {
+					TypeName       string `graphql:"__typename"`
+					ProjectV2Field struct {
+						ID       string
+						Name     string
+						DataType string
+					} `graphql:"... on ProjectV2Field"`
+					ProjectV2SingleSelectField struct {
+						ID       string
+						Name     string
+						DataType string
+						Options  []struct {
+							ID   string
+							Name string
+						}
+					} `graphql:"... on ProjectV2SingleSelectField"`
+				} `graphql:"field(name: $name)"`
+			} `graphql:"... on ProjectV2"`
+		} `graphql:"node(id: $projectId)"`
+	}
+
+	variables := map[string]interface{}{
+		"projectId": graphql.ID(projectID),
+		"name":      graphql.String(name),
+	}
+
+	if err := c.gql.Query("GetProjectFieldByName", &query, variables); err != nil {
+		return nil, fmt.Errorf("failed to fetch field %q: %w", name, err)
+	}
+
+	node := query.Node.ProjectV2.Field
+	field := ProjectField{}
+	switch node.TypeName {
+	case "ProjectV2SingleSelectField":
+		field.ID = node.ProjectV2SingleSelectField.ID
+		field.Name = node.ProjectV2SingleSelectField.Name
+		field.DataType = node.ProjectV2SingleSelectField.DataType
+		for _, opt := range node.ProjectV2SingleSelectField.Options {
+			field.Options = append(field.Options, FieldOption{ID: opt.ID, Name: opt.Name})
+		}
+	case "ProjectV2Field":
+		field.ID = node.ProjectV2Field.ID
+		field.Name = node.ProjectV2Field.Name
+		field.DataType = node.ProjectV2Field.DataType
+	default:
+		// Field not found, or unsupported type (e.g., iteration field).
+		// Return nil so the refresh path retains the cached entry untouched.
+		return nil, nil
+	}
+	return &field, nil
+}
+
+// FetchFieldsByNames issues one ProjectV2.field(name:) lookup per name and
+// returns the fields it could resolve plus the names it couldn't. Used by
+// gh pmu init as a fallback when the bulk fields-connection fetch crashes
+// (see #853 / ErrFieldResolverUnavailable).
+//
+// The per-name resolver path is on a different code path from the bulk
+// fields connection — verified live to keep working when the bulk path
+// crashes from the timestamp-fields rollout. Errors against individual
+// names are absorbed into the `missing` return value so a partial recovery
+// can still surface to the caller.
+func (c *Client) FetchFieldsByNames(projectID string, names []string) (fields []ProjectField, missing []string) {
+	for _, name := range names {
+		f, err := c.fetchProjectFieldByName(projectID, name)
+		if err != nil || f == nil {
+			missing = append(missing, name)
+			continue
+		}
+		fields = append(fields, *f)
+	}
+	return fields, missing
 }
 
 // GetIssue fetches an issue by repository and number

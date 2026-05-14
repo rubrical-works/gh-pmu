@@ -364,6 +364,95 @@ func TestIsRetryable_WithNil(t *testing.T) {
 	}
 }
 
+// IsFieldResolverUnavailable classifies the ProjectV2.fields connection 500s
+// that GitHub returns when its resolver crashes on field rows that don't
+// satisfy the ProjectV2FieldCommon interface contract. The classifier must
+// recognise three signals: (1) errors that wrap ErrFieldResolverUnavailable,
+// (2) HTTP 500 via httpStatusCoder, (3) the canonical phrases that go-gh's
+// typed GraphQL client (shurcoolGraphQL) surfaces from GitHub's response body.
+// 502/503/504 are explicitly NOT field-resolver crashes — those are transient
+// and go through IsTransient5xx/WithRetry.
+
+func TestIsFieldResolverUnavailable_WithSentinel(t *testing.T) {
+	err := fmt.Errorf("failed to get project fields: %w", ErrFieldResolverUnavailable)
+	if !IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return true for wrapped sentinel")
+	}
+}
+
+func TestIsFieldResolverUnavailable_WithHTTP500(t *testing.T) {
+	err := &ghHTTPError{statusCode: 500, message: "Internal Server Error"}
+	if !IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return true for HTTP 500")
+	}
+}
+
+func TestIsFieldResolverUnavailable_WithSomethingWentWrongMessage(t *testing.T) {
+	// Canonical GitHub GraphQL 5xx phrasing surfaced as a plain string error
+	// (e.g., via shurcoolGraphQL when GitHub returns errors[] with no data).
+	err := errors.New("GraphQL: Something went wrong while executing your query on 2026-05-14T18:07:30Z. Please include `E290:183153:9C0F68F:2723794C:6A060F61` when reporting this issue.")
+	if !IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return true for 'Something went wrong while executing' message")
+	}
+}
+
+func TestIsFieldResolverUnavailable_With500StringFallback(t *testing.T) {
+	// shurcoolGraphQL "non-200 OK status code: 500" wire format — no httpStatusCoder available.
+	err := errors.New(`non-200 OK status code: 500 Internal Server Error body: "{\"errors\":[...]}"`)
+	if !IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return true for shurcoolGraphQL 500 string")
+	}
+}
+
+func TestIsFieldResolverUnavailable_WithNil(t *testing.T) {
+	if IsFieldResolverUnavailable(nil) {
+		t.Error("Expected IsFieldResolverUnavailable to return false for nil")
+	}
+}
+
+func TestIsFieldResolverUnavailable_With502NotMatched(t *testing.T) {
+	// 502 is transient/retryable — distinct from the resolver crash class.
+	err := &ghHTTPError{statusCode: 502, message: "Bad Gateway"}
+	if IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return false for 502 (transient, not resolver crash)")
+	}
+}
+
+func TestIsFieldResolverUnavailable_With503NotMatched(t *testing.T) {
+	err := &ghHTTPError{statusCode: 503, message: "Service Unavailable"}
+	if IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return false for 503 (transient, not resolver crash)")
+	}
+}
+
+func TestIsFieldResolverUnavailable_With504NotMatched(t *testing.T) {
+	err := &ghHTTPError{statusCode: 504, message: "Gateway Timeout"}
+	if IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return false for 504 (transient, not resolver crash)")
+	}
+}
+
+func TestIsFieldResolverUnavailable_WithNotFound(t *testing.T) {
+	err := &ghHTTPError{statusCode: 404, message: "Not Found"}
+	if IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return false for 404")
+	}
+}
+
+func TestIsFieldResolverUnavailable_WithAuthError(t *testing.T) {
+	err := &ghHTTPError{statusCode: 401, message: "Bad credentials"}
+	if IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return false for 401")
+	}
+}
+
+func TestIsFieldResolverUnavailable_WithRandomError(t *testing.T) {
+	err := errors.New("network unreachable")
+	if IsFieldResolverUnavailable(err) {
+		t.Error("Expected IsFieldResolverUnavailable to return false for unrelated errors")
+	}
+}
+
 // ghHTTPError simulates go-gh's api.HTTPError for testing within this package.
 // We can't import github.com/cli/go-gh/v2/pkg/api here (same package name),
 // so we use a local type and test that IsRateLimited handles the StatusCode interface.
