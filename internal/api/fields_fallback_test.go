@@ -233,6 +233,128 @@ func TestGetProjectFields_NoCacheFallback_PropagatesResolverError(t *testing.T) 
 	}
 }
 
+func TestRefreshCachedFields_AllSucceed(t *testing.T) {
+	cached := []ProjectField{
+		{ID: "old-1", Name: "Status", DataType: "SINGLE_SELECT", Options: []FieldOption{{ID: "stale", Name: "Backlog"}}},
+		{ID: "old-2", Name: "Branch", DataType: "TEXT"},
+	}
+	fetcher := func(_ string, name string) (*ProjectField, error) {
+		switch name {
+		case "Status":
+			return &ProjectField{ID: "fresh-1", Name: "Status", DataType: "SINGLE_SELECT", Options: []FieldOption{
+				{ID: "new-bl", Name: "Backlog"},
+				{ID: "new-rd", Name: "Ready"},
+			}}, nil
+		case "Branch":
+			return &ProjectField{ID: "fresh-2", Name: "Branch", DataType: "TEXT"}, nil
+		}
+		return nil, errors.New("unexpected name")
+	}
+
+	refreshed, ok, fail := refreshCachedFields(fetcher, "proj", cached)
+	if ok != 2 || fail != 0 {
+		t.Errorf("Expected 2 successes, 0 failures; got ok=%d fail=%d", ok, fail)
+	}
+	if refreshed[0].ID != "fresh-1" || len(refreshed[0].Options) != 2 {
+		t.Errorf("Status not refreshed correctly: %+v", refreshed[0])
+	}
+	if refreshed[1].ID != "fresh-2" {
+		t.Errorf("Branch not refreshed correctly: %+v", refreshed[1])
+	}
+}
+
+func TestRefreshCachedFields_AllFail_PreservesOriginal(t *testing.T) {
+	// If every per-name fetch fails (e.g., transient network blip mid-refresh),
+	// the cached entries must be returned unchanged — never zero out cache
+	// just because the refresh-path itself had trouble.
+	cached := []ProjectField{
+		{ID: "keep-1", Name: "Status", DataType: "SINGLE_SELECT", Options: []FieldOption{{ID: "x", Name: "Y"}}},
+		{ID: "keep-2", Name: "Branch", DataType: "TEXT"},
+	}
+	fetcher := func(_ string, _ string) (*ProjectField, error) {
+		return nil, errors.New("per-name fetch failed")
+	}
+
+	refreshed, ok, fail := refreshCachedFields(fetcher, "proj", cached)
+	if ok != 0 || fail != 2 {
+		t.Errorf("Expected 0 successes, 2 failures; got ok=%d fail=%d", ok, fail)
+	}
+	if len(refreshed) != 2 {
+		t.Fatalf("Original cache length must be preserved when refresh fails entirely; got %d", len(refreshed))
+	}
+	if refreshed[0].ID != "keep-1" || refreshed[1].ID != "keep-2" {
+		t.Errorf("Original IDs must be preserved on full failure; got %+v", refreshed)
+	}
+}
+
+func TestRefreshCachedFields_PartialFailure(t *testing.T) {
+	// Mix of successes and failures — refreshed entries replace, failed
+	// entries keep their cached value.
+	cached := []ProjectField{
+		{ID: "old-1", Name: "Status", DataType: "SINGLE_SELECT"},
+		{ID: "old-2", Name: "Custom", DataType: "TEXT"},
+		{ID: "old-3", Name: "Branch", DataType: "TEXT"},
+	}
+	fetcher := func(_ string, name string) (*ProjectField, error) {
+		if name == "Custom" {
+			return nil, errors.New("Custom field unreachable mid-refresh")
+		}
+		return &ProjectField{ID: "fresh-" + name, Name: name, DataType: "TEXT"}, nil
+	}
+
+	refreshed, ok, fail := refreshCachedFields(fetcher, "proj", cached)
+	if ok != 2 || fail != 1 {
+		t.Errorf("Expected ok=2 fail=1; got ok=%d fail=%d", ok, fail)
+	}
+	if refreshed[0].ID != "fresh-Status" {
+		t.Errorf("Status should be refreshed; got %+v", refreshed[0])
+	}
+	if refreshed[1].ID != "old-2" {
+		t.Errorf("Custom should retain cached value when refresh fails; got %+v", refreshed[1])
+	}
+	if refreshed[2].ID != "fresh-Branch" {
+		t.Errorf("Branch should be refreshed; got %+v", refreshed[2])
+	}
+}
+
+func TestGetProjectFields_RefreshFlag_EngagesRefresh(t *testing.T) {
+	// When RefreshCachedFields is set and fallback engages, GetProjectFields
+	// must return the refreshed fields (not the raw cached ones).
+	resetFieldsCacheWarningForTesting()
+	restoreL := SetCachedFieldsLoaderForTesting(func() ([]ProjectField, error) {
+		return []ProjectField{
+			{ID: "stale-1", Name: "Status", DataType: "SINGLE_SELECT"},
+			{ID: "stale-2", Name: "Branch", DataType: "TEXT"},
+		}, nil
+	})
+	defer restoreL()
+	restoreF := SetProjectFieldByNameFetcherForTesting(func(_ string, name string) (*ProjectField, error) {
+		return &ProjectField{ID: "fresh-" + name, Name: name, DataType: "TEXT"}, nil
+	})
+	defer restoreF()
+	restoreO := SetFallbackOptionsForTesting(FallbackOptions{RefreshCachedFields: true})
+	defer restoreO()
+
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			// Bulk fetch fails — only the refresh fetcher should succeed.
+			return errors.New("GraphQL: Something went wrong while executing your query")
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	fields, err := client.GetProjectFields("proj-id")
+
+	if err != nil {
+		t.Fatalf("Expected refresh path to succeed; got error: %v", err)
+	}
+	if len(fields) != 2 {
+		t.Fatalf("Expected 2 refreshed fields; got %d", len(fields))
+	}
+	if fields[0].ID != "fresh-Status" || fields[1].ID != "fresh-Branch" {
+		t.Errorf("Expected refreshed IDs; got %+v", fields)
+	}
+}
+
 func TestGetProjectFields_NoCacheFallback_Disabled_DefaultEngagesFallback(t *testing.T) {
 	// Sanity test: when NoCacheFallback is FALSE (default), fallback engages
 	// just like in the original AC2-4 tests. Ensures the flag is not

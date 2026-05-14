@@ -152,6 +152,37 @@ func loadCachedProjectFieldsOrError(origErr error) ([]ProjectField, error) {
 	return fields, nil
 }
 
+// ProjectFieldByNameFetcher fetches a single field by name from a given
+// project. Decoupled from Client so refreshCachedFields can be tested in
+// isolation and so production callers can plug in retry wrappers.
+type ProjectFieldByNameFetcher func(projectID, name string) (*ProjectField, error)
+
+// projectFieldByNameFetcher is the package-level fetcher. Defaults to nil
+// — production GetProjectFields path injects a Client-bound fetcher when
+// invoking refreshCachedFields. Tests override via SetProjectFieldByNameFetcherForTesting.
+var projectFieldByNameFetcher ProjectFieldByNameFetcher
+
+// refreshCachedFields iterates cached fields and re-fetches each by name
+// via ProjectV2.field(name: $name) — the resolver path that survives the
+// 2026-05-14 timestamp-fields rollout bug. Successful refreshes replace the
+// cache entry; failures are counted and the original cached entry is
+// retained. Returns (refreshedFields, successCount, failureCount).
+func refreshCachedFields(fetcher ProjectFieldByNameFetcher, projectID string, cached []ProjectField) ([]ProjectField, int, int) {
+	refreshed := make([]ProjectField, 0, len(cached))
+	var successes, failures int
+	for _, f := range cached {
+		fresh, err := fetcher(projectID, f.Name)
+		if err != nil || fresh == nil {
+			refreshed = append(refreshed, f)
+			failures++
+			continue
+		}
+		refreshed = append(refreshed, *fresh)
+		successes++
+	}
+	return refreshed, successes, failures
+}
+
 // ─── Test hooks ───
 // These are exported only so external packages' tests can configure the
 // fallback when integration-testing commands that consume field metadata.
@@ -186,4 +217,12 @@ func SetFallbackOptionsForTesting(opts FallbackOptions) func() {
 	prev := fallbackOptions
 	fallbackOptions = opts
 	return func() { fallbackOptions = prev }
+}
+
+// SetProjectFieldByNameFetcherForTesting overrides the per-name fetcher used
+// by the refresh path. Returns a defer-friendly restore function.
+func SetProjectFieldByNameFetcherForTesting(fn ProjectFieldByNameFetcher) func() {
+	prev := projectFieldByNameFetcher
+	projectFieldByNameFetcher = fn
+	return func() { projectFieldByNameFetcher = prev }
 }
