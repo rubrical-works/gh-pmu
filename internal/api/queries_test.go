@@ -995,10 +995,18 @@ func TestGetProjectFields_QueryError(t *testing.T) {
 }
 
 func TestGetProjectFields_ResolverUnavailableWrapsSentinel(t *testing.T) {
-	// When the GraphQL client returns the canonical GitHub 5xx body phrasing,
-	// GetProjectFields must wrap the error so callers can detect it with
-	// errors.Is(err, ErrFieldResolverUnavailable). Callers will use this
-	// detection to engage the cached-metadata fallback path.
+	// When the GraphQL client returns the canonical GitHub 5xx body phrasing
+	// AND no cached metadata is available, GetProjectFields surfaces an error
+	// that satisfies errors.Is(err, ErrFieldResolverUnavailable). This is the
+	// sentinel-propagation contract callers rely on when distinguishing
+	// "resolver crashed and we couldn't recover" from other failure modes.
+	// Cache loader is stubbed to "no cache" so the fallback path can't engage.
+	resetFieldsCacheWarningForTesting()
+	restore := SetCachedFieldsLoaderForTesting(func() ([]ProjectField, error) {
+		return nil, nil
+	})
+	defer restore()
+
 	mock := &queryMockClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
 			return errors.New("GraphQL: Something went wrong while executing your query on 2026-05-14T18:07:30Z. Please include `E290:183153:9C0F68F:2723794C:6A060F61` when reporting this issue.")
@@ -1009,20 +1017,18 @@ func TestGetProjectFields_ResolverUnavailableWrapsSentinel(t *testing.T) {
 	fields, err := client.GetProjectFields("proj-id")
 
 	if err == nil {
-		t.Fatal("Expected error when resolver returns 5xx")
+		t.Fatal("Expected error when resolver returns 5xx and cache is empty")
 	}
 	if fields != nil {
-		t.Error("Expected nil fields when resolver fails")
+		t.Error("Expected nil fields when resolver fails and cache is empty")
 	}
 	if !errors.Is(err, ErrFieldResolverUnavailable) {
 		t.Errorf("Expected errors.Is(err, ErrFieldResolverUnavailable) to be true; got error: %v", err)
 	}
-	// Original error chain must be preserved so users see the trace ID etc.
+	// Original error chain must be preserved through the empty-cache error so
+	// users see the trace ID etc.
 	if !strings.Contains(err.Error(), "E290:183153") {
 		t.Errorf("Expected wrapped error to preserve original message (trace ID); got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "failed to get project fields") {
-		t.Errorf("Expected legacy 'failed to get project fields' prefix to be retained; got: %v", err)
 	}
 }
 

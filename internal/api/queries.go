@@ -122,6 +122,13 @@ func (c *Client) getOrgProject(owner string, number int) (*Project, error) {
 
 // GetProjectFields fetches all fields for a project.
 // Uses cursor-based pagination to retrieve all fields regardless of project size.
+//
+// When GitHub's ProjectV2.fields resolver is unavailable (see
+// ErrFieldResolverUnavailable / issue #853), falls back to cached field
+// metadata from .gh-pmu.json so commands that need field name → option ID
+// translation keep working. The fallback emits a single stderr warning per
+// process and preserves the resolver sentinel through the error path when
+// the cache itself is missing.
 func (c *Client) GetProjectFields(projectID string) ([]ProjectField, error) {
 
 	var allFields []ProjectField
@@ -130,6 +137,9 @@ func (c *Client) GetProjectFields(projectID string) ([]ProjectField, error) {
 	for {
 		fields, pInfo, err := c.getProjectFieldsPage(projectID, cursor)
 		if err != nil {
+			if errors.Is(err, ErrFieldResolverUnavailable) {
+				return loadCachedProjectFieldsOrError(err)
+			}
 			return nil, err
 		}
 
