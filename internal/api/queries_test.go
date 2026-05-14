@@ -994,6 +994,82 @@ func TestGetProjectFields_QueryError(t *testing.T) {
 	}
 }
 
+// FetchFieldsByNames tests — exercised by gh pmu init's resolver-crash
+// fallback (see #853 AC7). Verifies the per-name path collects what it
+// can and reports the rest as missing.
+
+func TestFetchFieldsByNames_AllResolve(t *testing.T) {
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetProjectFieldByName" {
+				t.Errorf("Expected query named 'GetProjectFieldByName'; got %q", name)
+			}
+			// Mimic the live shape: TypeName=ProjectV2Field, populate that struct
+			v := reflect.ValueOf(query).Elem()
+			field := v.FieldByName("Node").FieldByName("ProjectV2").FieldByName("Field")
+			field.FieldByName("TypeName").SetString("ProjectV2Field")
+			pf := field.FieldByName("ProjectV2Field")
+			pf.FieldByName("ID").SetString("id-" + string(variables["name"].(graphql.String)))
+			pf.FieldByName("Name").SetString(string(variables["name"].(graphql.String)))
+			pf.FieldByName("DataType").SetString("TEXT")
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	got, missing := client.FetchFieldsByNames("proj-id", []string{"Title", "Branch"})
+
+	if len(got) != 2 {
+		t.Fatalf("Expected 2 resolved fields; got %d", len(got))
+	}
+	if len(missing) != 0 {
+		t.Errorf("Expected no missing names; got %v", missing)
+	}
+	if got[0].Name != "Title" || got[1].Name != "Branch" {
+		t.Errorf("Expected order preserved; got %+v", got)
+	}
+}
+
+func TestFetchFieldsByNames_PartialMissing(t *testing.T) {
+	// One name resolves, one fails with a fetcher-level error, one returns
+	// "type didn't match" (treated as missing). All three outcomes must be
+	// surfaced without dropping the resolved entry.
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			n := string(variables["name"].(graphql.String))
+			v := reflect.ValueOf(query).Elem()
+			field := v.FieldByName("Node").FieldByName("ProjectV2").FieldByName("Field")
+			switch n {
+			case "Title":
+				field.FieldByName("TypeName").SetString("ProjectV2Field")
+				pf := field.FieldByName("ProjectV2Field")
+				pf.FieldByName("ID").SetString("id-Title")
+				pf.FieldByName("Name").SetString("Title")
+				pf.FieldByName("DataType").SetString("TITLE")
+				return nil
+			case "Iteration":
+				// Unsupported type — TypeName won't match either fragment.
+				field.FieldByName("TypeName").SetString("ProjectV2IterationField")
+				return nil
+			case "Broken":
+				return errors.New("GraphQL: Something went wrong while executing your query")
+			}
+			return errors.New("unexpected name")
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	got, missing := client.FetchFieldsByNames("proj-id", []string{"Title", "Iteration", "Broken"})
+
+	if len(got) != 1 || got[0].Name != "Title" {
+		t.Errorf("Expected only Title resolved; got %+v", got)
+	}
+	if len(missing) != 2 {
+		t.Fatalf("Expected 2 missing; got %d (%v)", len(missing), missing)
+	}
+	if missing[0] != "Iteration" || missing[1] != "Broken" {
+		t.Errorf("Expected missing names preserved in order; got %v", missing)
+	}
+}
+
 func TestGetProjectFields_ResolverUnavailableWrapsSentinel(t *testing.T) {
 	// When the GraphQL client returns the canonical GitHub 5xx body phrasing
 	// AND no cached metadata is available, GetProjectFields surfaces an error

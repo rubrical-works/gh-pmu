@@ -325,6 +325,28 @@ func (c *Client) fetchProjectFieldByName(projectID, name string) (*ProjectField,
 	return &field, nil
 }
 
+// FetchFieldsByNames issues one ProjectV2.field(name:) lookup per name and
+// returns the fields it could resolve plus the names it couldn't. Used by
+// gh pmu init as a fallback when the bulk fields-connection fetch crashes
+// (see #853 / ErrFieldResolverUnavailable).
+//
+// The per-name resolver path is on a different code path from the bulk
+// fields connection — verified live to keep working when the bulk path
+// crashes from the timestamp-fields rollout. Errors against individual
+// names are absorbed into the `missing` return value so a partial recovery
+// can still surface to the caller.
+func (c *Client) FetchFieldsByNames(projectID string, names []string) (fields []ProjectField, missing []string) {
+	for _, name := range names {
+		f, err := c.fetchProjectFieldByName(projectID, name)
+		if err != nil || f == nil {
+			missing = append(missing, name)
+			continue
+		}
+		fields = append(fields, *f)
+	}
+	return fields, missing
+}
+
 // GetIssue fetches an issue by repository and number
 func (c *Client) GetIssue(owner, repo string, number int) (*Issue, error) {
 	if err := validateOwnerRepo(owner, repo); err != nil {

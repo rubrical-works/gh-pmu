@@ -152,6 +152,35 @@ func loadCachedProjectFieldsOrError(origErr error) ([]ProjectField, error) {
 	return fields, nil
 }
 
+// StandardProjectV2FieldNames lists the field names that init expects to
+// find on every ProjectV2 project gh pmu manages. Used by init's resolver-
+// crash fallback: when the bulk fetch fails with ErrFieldResolverUnavailable,
+// init issues a per-name lookup against this set instead so it can still
+// populate metadata.fields[] with what's reachable.
+//
+// Order is preserved in the output to keep cache files diff-friendly across
+// re-inits. The list intentionally excludes the timestamp fields
+// (Created/Closed/Updated) introduced by the 2026-05-14 rollout — those are
+// the ones that crash the resolver and aren't part of the IDPF managed set.
+var StandardProjectV2FieldNames = []string{
+	"Title",
+	"Assignees",
+	"Status",
+	"Labels",
+	"Linked pull requests",
+	"Milestone",
+	"Repository",
+	"Reviewers",
+	"Parent issue",
+	"Sub-issues progress",
+	"Priority",
+	"Size",
+	"Estimate",
+	"Start date",
+	"Target date",
+	"Branch",
+}
+
 // ProjectFieldByNameFetcher fetches a single field by name from a given
 // project. Decoupled from Client so refreshCachedFields can be tested in
 // isolation and so production callers can plug in retry wrappers.
