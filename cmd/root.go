@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
 	"github.com/rubrical-works/gh-pmu/internal/defaults"
 	pkgversion "github.com/rubrical-works/gh-pmu/internal/version"
@@ -52,6 +53,7 @@ This extension combines and replaces:
 Use 'gh pmu <command> --help' for more information about a command.`,
 		Version: getVersion(),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			applyFallbackFlags(cmd)
 			runYAMLMigration(cmd)
 			if err := checkAcceptance(cmd); err != nil {
 				return err
@@ -61,6 +63,14 @@ Use 'gh pmu <command> --help' for more information about a command.`,
 	}
 
 	cmd.SetVersionTemplate("{{.CommandPath}} version {{.Version}}\nRubrical Works (c) 2026\n")
+
+	// Persistent flags wired from #853 — resilience controls for the
+	// ProjectV2 fields resolver. Available on every subcommand; consumed
+	// by api.GetProjectFields via the package-level FallbackOptions.
+	cmd.PersistentFlags().Bool("no-cache-fallback", false,
+		"Disable cached-metadata fallback; propagate ProjectV2 fields resolver errors unchanged (fail-loud).")
+	cmd.PersistentFlags().Bool("refresh-cached-fields", false,
+		"When fallback engages, refresh cached field metadata via per-name ProjectV2.field(name:) queries.")
 
 	cmd.AddCommand(newInitCommand())
 	cmd.AddCommand(newListCommand())
@@ -88,6 +98,19 @@ Use 'gh pmu <command> --help' for more information about a command.`,
 
 func Execute() error {
 	return NewRootCommand().Execute()
+}
+
+// applyFallbackFlags propagates the resilience flags from cobra into the
+// api package so api.GetProjectFields can honour them. Both flags are
+// silent no-ops when unset. Errors from flag lookup are ignored — these are
+// optional controls and missing values default to the safe production path.
+func applyFallbackFlags(cmd *cobra.Command) {
+	noFallback, _ := cmd.Flags().GetBool("no-cache-fallback")
+	refresh, _ := cmd.Flags().GetBool("refresh-cached-fields")
+	api.SetFallbackOptions(api.FallbackOptions{
+		NoCacheFallback:     noFallback,
+		RefreshCachedFields: refresh,
+	})
 }
 
 // runYAMLMigration performs a one-time migration to remove the legacy .gh-pmu.yml

@@ -192,6 +192,75 @@ func TestGetProjectFields_Fallback_LoaderErrorReturnsActionableError(t *testing.
 	}
 }
 
+func TestGetProjectFields_NoCacheFallback_PropagatesResolverError(t *testing.T) {
+	// With NoCacheFallback set, the resolver crash propagates unchanged —
+	// callers in CI / strict-mode automation can rely on the prior fail-loud
+	// behaviour rather than silent fallback. The cache loader must NOT be
+	// called.
+	resetFieldsCacheWarningForTesting()
+	cacheCalled := false
+	restoreL := SetCachedFieldsLoaderForTesting(func() ([]ProjectField, error) {
+		cacheCalled = true
+		return []ProjectField{{ID: "f1", Name: "Status", DataType: "TEXT"}}, nil
+	})
+	defer restoreL()
+
+	restoreO := SetFallbackOptionsForTesting(FallbackOptions{NoCacheFallback: true})
+	defer restoreO()
+
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			return errors.New("GraphQL: Something went wrong while executing your query on 2026-05-14T19:00:00Z. Please include `STRICT:1:2:3:6A060000` when reporting this issue.")
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	fields, err := client.GetProjectFields("proj-id")
+
+	if err == nil {
+		t.Fatal("Expected error to propagate when NoCacheFallback is set")
+	}
+	if fields != nil {
+		t.Errorf("Expected nil fields under strict mode; got %d", len(fields))
+	}
+	if cacheCalled {
+		t.Error("Cache loader must NOT be called when NoCacheFallback is set")
+	}
+	if !errors.Is(err, ErrFieldResolverUnavailable) {
+		t.Errorf("Sentinel must propagate through strict mode; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "STRICT:1:2:3") {
+		t.Errorf("Original error chain (trace ID) must be preserved; got: %v", err)
+	}
+}
+
+func TestGetProjectFields_NoCacheFallback_Disabled_DefaultEngagesFallback(t *testing.T) {
+	// Sanity test: when NoCacheFallback is FALSE (default), fallback engages
+	// just like in the original AC2-4 tests. Ensures the flag is not
+	// accidentally inverted.
+	resetFieldsCacheWarningForTesting()
+	restoreL := SetCachedFieldsLoaderForTesting(func() ([]ProjectField, error) {
+		return []ProjectField{{ID: "f1", Name: "Status", DataType: "TEXT"}}, nil
+	})
+	defer restoreL()
+	restoreO := SetFallbackOptionsForTesting(FallbackOptions{NoCacheFallback: false})
+	defer restoreO()
+
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			return errors.New("GraphQL: Something went wrong while executing your query")
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	fields, err := client.GetProjectFields("proj-id")
+
+	if err != nil {
+		t.Fatalf("Default mode should engage fallback; got error: %v", err)
+	}
+	if len(fields) != 1 {
+		t.Errorf("Expected 1 cached field via fallback; got %d", len(fields))
+	}
+}
+
 func TestProjectFieldsFromMetadata_PreservesOptions(t *testing.T) {
 	// Pure converter test — no network, no config file.
 	// Mirrors the shape config.FieldMetadata produces from .gh-pmu.json.

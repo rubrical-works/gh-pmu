@@ -137,7 +137,7 @@ func (c *Client) GetProjectFields(projectID string) ([]ProjectField, error) {
 	for {
 		fields, pInfo, err := c.getProjectFieldsPage(projectID, cursor)
 		if err != nil {
-			if errors.Is(err, ErrFieldResolverUnavailable) {
+			if errors.Is(err, ErrFieldResolverUnavailable) && !fallbackOptions.NoCacheFallback {
 				return loadCachedProjectFieldsOrError(err)
 			}
 			return nil, err

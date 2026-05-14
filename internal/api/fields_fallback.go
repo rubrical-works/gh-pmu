@@ -31,13 +31,43 @@ type cachedOptionShape struct {
 	ID   string
 }
 
+// FallbackOptions controls how the resolver-unavailable path behaves.
+// Wired from cobra flags by the root command's PersistentPreRunE so commands
+// don't each need to thread the values into their api.Client.
+type FallbackOptions struct {
+	// NoCacheFallback disables the cached-metadata fallback. When true,
+	// ErrFieldResolverUnavailable propagates unchanged (preserves the
+	// pre-#853 fail-loud behaviour). Intended for CI / strict automation.
+	NoCacheFallback bool
+
+	// RefreshCachedFields enables Layer 3 refresh: when fallback engages,
+	// iterate cached field names and re-fetch each via ProjectV2.field(name:)
+	// (which works on broken projects). Successful per-name fetches replace
+	// the cache entry; failures are logged and the cached entry is retained.
+	RefreshCachedFields bool
+}
+
 // Module state. Defaults are production-safe; tests override via the
 // SetXxxForTesting helpers below.
 var (
 	fieldsCacheLoader        = defaultFieldsCacheLoader
 	fieldsCacheWarning       sync.Once
 	fieldsCacheWarningWriter io.Writer = os.Stderr
+	fallbackOptions          FallbackOptions
 )
+
+// SetFallbackOptions sets the package-level fallback behaviour. Production
+// callers (cmd package) invoke this from PersistentPreRunE after parsing
+// cobra flags. Safe to call multiple times.
+func SetFallbackOptions(opts FallbackOptions) {
+	fallbackOptions = opts
+}
+
+// CurrentFallbackOptions returns the current options (useful for diagnostics
+// and command-level decisions that depend on the configured behaviour).
+func CurrentFallbackOptions() FallbackOptions {
+	return fallbackOptions
+}
 
 // defaultFieldsCacheLoader reads .gh-pmu.json starting from the working
 // directory (walks up the tree) and returns its metadata.fields[] converted
@@ -147,4 +177,13 @@ func SetFieldsCacheWarningWriterForTesting(w io.Writer) func() {
 // reset has no production use.
 func resetFieldsCacheWarningForTesting() {
 	fieldsCacheWarning = sync.Once{}
+}
+
+// SetFallbackOptionsForTesting overrides fallbackOptions and returns a
+// defer-friendly restore function. Use instead of SetFallbackOptions in
+// tests so state is automatically restored across t.Run boundaries.
+func SetFallbackOptionsForTesting(opts FallbackOptions) func() {
+	prev := fallbackOptions
+	fallbackOptions = opts
+	return func() { fallbackOptions = prev }
 }
