@@ -274,8 +274,8 @@ func (c *Client) fetchProjectFieldByName(projectID, name string) (*ProjectField,
 		Node struct {
 			ProjectV2 struct {
 				Field struct {
-					TypeName                   string `graphql:"__typename"`
-					ProjectV2Field             struct {
+					TypeName       string `graphql:"__typename"`
+					ProjectV2Field struct {
 						ID       string
 						Name     string
 						DataType string
