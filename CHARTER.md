@@ -1,7 +1,7 @@
 # Project Charter: GitHub Praxis Management Utility
 
 **Status:** Active
-**Last Updated:** 2026-03-27
+**Last Updated:** 2026-05-14
 
 ## Vision
 
@@ -32,6 +32,7 @@ v1.4.x - Stability, security hardening, and documentation improvements
 - Config integrity verification
 - Status transition validation
 - E2E test infrastructure
+- Resilience to upstream GraphQL schema rollouts (cached-metadata fallback for ProjectV2 field resolver via `.gh-pmu.json`)
 
 ---
 *See Inception/ for full specifications*
