@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -187,6 +188,15 @@ func (c *Client) getProjectFieldsPage(projectID string, cursor *string) ([]Proje
 
 	err := c.gql.Query("GetProjectFields", &query, variables)
 	if err != nil {
+		// When GitHub's ProjectV2.fields resolver is crashing (e.g., the
+		// 2026-05-14 timestamp-fields auto-rollout), wrap the original error
+		// with ErrFieldResolverUnavailable so upstream callers can detect it
+		// via errors.Is and engage the cached-metadata fallback. The original
+		// error chain (including any trace IDs) is preserved so users still
+		// see the underlying detail.
+		if IsFieldResolverUnavailable(err) {
+			err = errors.Join(ErrFieldResolverUnavailable, err)
+		}
 		return nil, pageInfo{}, fmt.Errorf("failed to get project fields: %w", err)
 	}
 

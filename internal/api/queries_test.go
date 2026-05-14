@@ -986,6 +986,44 @@ func TestGetProjectFields_QueryError(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to get project fields") {
 		t.Errorf("Expected 'failed to get project fields' error, got: %v", err)
 	}
+	// Generic query failure must NOT be classified as resolver-unavailable —
+	// callers need to distinguish "the project doesn't exist" from "the new
+	// timestamp-fields rollout broke the resolver."
+	if errors.Is(err, ErrFieldResolverUnavailable) {
+		t.Error("Generic query failure must not match ErrFieldResolverUnavailable")
+	}
+}
+
+func TestGetProjectFields_ResolverUnavailableWrapsSentinel(t *testing.T) {
+	// When the GraphQL client returns the canonical GitHub 5xx body phrasing,
+	// GetProjectFields must wrap the error so callers can detect it with
+	// errors.Is(err, ErrFieldResolverUnavailable). Callers will use this
+	// detection to engage the cached-metadata fallback path.
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			return errors.New("GraphQL: Something went wrong while executing your query on 2026-05-14T18:07:30Z. Please include `E290:183153:9C0F68F:2723794C:6A060F61` when reporting this issue.")
+		},
+	}
+
+	client := NewClientWithGraphQL(mock)
+	fields, err := client.GetProjectFields("proj-id")
+
+	if err == nil {
+		t.Fatal("Expected error when resolver returns 5xx")
+	}
+	if fields != nil {
+		t.Error("Expected nil fields when resolver fails")
+	}
+	if !errors.Is(err, ErrFieldResolverUnavailable) {
+		t.Errorf("Expected errors.Is(err, ErrFieldResolverUnavailable) to be true; got error: %v", err)
+	}
+	// Original error chain must be preserved so users see the trace ID etc.
+	if !strings.Contains(err.Error(), "E290:183153") {
+		t.Errorf("Expected wrapped error to preserve original message (trace ID); got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to get project fields") {
+		t.Errorf("Expected legacy 'failed to get project fields' prefix to be retained; got: %v", err)
+	}
 }
 
 func TestGetProjectFields_Pagination(t *testing.T) {

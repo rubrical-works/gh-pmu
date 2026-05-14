@@ -13,6 +13,20 @@ var (
 	ErrNotAuthenticated = errors.New("not authenticated - run 'gh auth login' first")
 	ErrNotFound         = errors.New("resource not found")
 	ErrRateLimited      = errors.New("API rate limit exceeded")
+
+	// ErrFieldResolverUnavailable signals that GitHub's ProjectV2.fields GraphQL
+	// resolver returned HTTP 500 ("Something went wrong while executing your
+	// query"). This happens when project rows fail the ProjectV2FieldCommon
+	// interface contract — e.g., the 2026-05-14 auto-rollout of Created/Closed/
+	// Updated timestamp fields whose backing rows return null for required
+	// (NON_NULL) name/dataType/id. Bulk fetches via `fields(first: N) { ... }`
+	// crash; per-item reads and `field(name: ...)` lookups still work.
+	//
+	// Distinct from IsTransient5xx (502/503/504) which are retryable. 500 is
+	// not retryable — the data shape causes the same crash each time. Callers
+	// should detect this with IsFieldResolverUnavailable and fall back to
+	// cached metadata rather than retrying.
+	ErrFieldResolverUnavailable = errors.New("ProjectV2 field resolver unavailable")
 )
 
 // APIError wraps GitHub API errors with additional context
@@ -141,6 +155,40 @@ func GetRetryAfter(err error) time.Duration {
 		}
 	}
 	return 0
+}
+
+// IsFieldResolverUnavailable returns true when err signals that GitHub's
+// ProjectV2.fields resolver is failing. Detected via:
+//   - errors.Is match against ErrFieldResolverUnavailable (already-wrapped)
+//   - HTTP 500 via httpStatusCoder
+//   - Error message containing "Something went wrong while executing"
+//     (canonical GitHub GraphQL 5xx body phrasing — surfaces from
+//     shurcoolGraphQL as a plain string when errors[] is non-empty and data
+//     is null)
+//   - Error message containing "non-200 OK status code: 500" (shurcoolGraphQL
+//     wire format when go-gh's HTTPError interface isn't carried through)
+//
+// Excludes 502/503/504 — those are transient and retryable via WithRetry.
+// Excludes 401/403/404/429 — those have their own classifiers.
+func IsFieldResolverUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrFieldResolverUnavailable) {
+		return true
+	}
+
+	// HTTP status code via interface (primary detection when go-gh's
+	// HTTPError propagates through).
+	var sc httpStatusCoder
+	if errors.As(err, &sc) {
+		return sc.HTTPStatusCode() == 500
+	}
+
+	// String fallback for shurcoolGraphQL's plain fmt.Errorf path.
+	msg := err.Error()
+	return strings.Contains(msg, "Something went wrong while executing") ||
+		strings.Contains(msg, "non-200 OK status code: 500")
 }
 
 // IsAuthError checks if an error indicates authentication issues.
