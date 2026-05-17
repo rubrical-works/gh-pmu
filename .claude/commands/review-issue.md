@@ -1,5 +1,5 @@
 ---
-version: "v0.91.1"
+version: "v0.92.0"
 description: Review issues with type-specific criteria (project)
 argument-hint: "#issue [#issue...] [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -40,7 +40,15 @@ node ./.claude/scripts/shared/review-preamble.js $ISSUE [--with extensions] [--m
 ```
 Parse JSON. Branches:
 - `ok: false` → report `errors[0].message` → **STOP** (skip to next in batch)
-- `context.redirect` set → invoke skill with all original args preserved: `Skill("review-proposal", args: "#$ISSUE [--with extensions] [--mode mode] [--force]")`. Pass `--with`/`--mode`/`--force`. → **STOP**
+- `context.redirect` set → invoke skill **dynamically** using `context.redirect` (strip leading `/`) — all three rows below are equally normative (#2428):
+
+  | `context.redirect` | Skill invocation |
+  |---|---|
+  | `/review-proposal` (label `proposal`) | `Skill("review-proposal", args: "#$ISSUE [--with ...] [--mode ...] [--force]")` |
+  | `/review-prd` (label `prd`) | `Skill("review-prd", args: "#$ISSUE [--with ...] [--mode ...] [--force]")` |
+  | `/review-test-plan` (label `test-plan`) | `Skill("review-test-plan", args: "#$ISSUE [--with ...] [--mode ...] [--force]")` |
+
+  Pass `--with`/`--mode`/`--force`. → **STOP**. Do not dispatch only for the proposal case.
 - `context.issue.state === "closed"` → ask user to confirm before proceeding
 - `earlyExit: true` (has `reviewed` label, no `--force`) → report review count → **STOP**
 

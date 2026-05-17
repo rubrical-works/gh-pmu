@@ -1,5 +1,5 @@
 ---
-version: "v0.91.1"
+version: "v0.92.0"
 description: Discover and catalog screen elements from source code (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -18,12 +18,16 @@ Discovers and catalogs UI screen elements from source code, producing structured
 | `#NN` | No | Issue number (enhancement, bug, proposal). Reads body for context, enables writeback. |
 | `--from-screenshot <path>` | No | AC11 — single-screenshot extraction. Path validated by `validateScreenshotFile` from `.claude/scripts/shared/lib/screenshot-input.js` (NFR-3 mime allowlist). |
 | `--from-screenshots <dir>` | No | AC12 — bulk-extraction from directory. Non-image files skipped with warning. |
+| `--showcase` | No | Launch Living Style Guide showcase (#2429, Story 1.3). Bundles screen-catalog entries into UI Components and Iconography sections. Mutex with `--apply-decisions`. |
+| `--apply-decisions` | No | Apply pending decisions from `Design-System/showcase/decisions.json` without launching server (#2429, Story 1.4). `applyCatalogScreens` in `.claude/scripts/shared/showcase-resume.js` records rows to `Mockups/.showcase-applied.jsonl`. |
 
 ```
 /catalog-screens            # Interactive, no issue context
 /catalog-screens #42        # With issue #42 context (enables writeback)
 /catalog-screens --from-screenshot ./design/home.png
 /catalog-screens --from-screenshots ./design/screenshots/
+/catalog-screens --showcase                  # Browser-based review (#2429)
+/catalog-screens --apply-decisions           # Apply pending decisions headlessly
 ```
 Former arguments (screen names, `--scope`, `--update`) are incorporated into the interactive flow.
 ## Execution Instructions

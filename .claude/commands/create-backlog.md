@@ -1,5 +1,5 @@
 ---
-version: "v0.91.1"
+version: "v0.92.0"
 description: Create GitHub epics/stories from PRD (project)
 argument-hint: "<issue-number> (e.g., 151)"
 copyright: "Rubrical Works (c) 2026"
@@ -151,6 +151,9 @@ Stories will be linked as sub-issues.
 ```
 
 Cleanup: `rm .tmp-epic-body.md`
+
+## Phase 5.5: AC Feasibility Re-Check (#2425)
+For each PRD AC about to be materialized into a story body in Phase 6, apply the `verificationGate` prompt from `.claude/metadata/ac-feasibility-prompts.json`: scan against `triggerPhrases`; on match, Grep `tests/` for the mechanism; if absent, surface a warning. **Warn, do not block** — PRDs may pre-date the gate. Record warnings in materialized story body under a new `## AC Feasibility Warnings` section. **ASK USER** per warning (batched at end of phase): (a) rewrite AC inline, (b) accept + file follow-up, or (c) spike. Asymmetric with `/create-prd` Phase 4.6 (block) by design — drafting vs. materialization.
 
 ## Phase 6: Create Story Issues
 

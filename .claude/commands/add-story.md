@@ -1,5 +1,5 @@
 ---
-version: "v0.91.1"
+version: "v0.92.0"
 description: Add story to epic with charter compliance (project)
 argument-hint: "[epic-number] (e.g., 42 or #42)"
 copyright: "Rubrical Works (c) 2026"
@@ -48,6 +48,8 @@ gh issue view $epic_num --json labels --jq '.labels[].name' | grep -q "epic"
 If not an epic: `Error: Issue #$epic_num does not have the 'epic' label.`
 **Step 4: Gather story details**
 **ASK USER:** Describe the new story — what can the user do, benefit, acceptance criteria.
+**Step 4a: AC Feasibility Gate (#2424)**
+Re-read `.claude/metadata/ac-feasibility-prompts.json`. Apply `classify`, `verificationGate`, `deliverableSplit` to each AC. If any verification AC matches `triggerPhrases` and no existing test uses that mechanism (verify via Grep), **ASK USER** to (a) rewrite, (b) commit to a feasibility spike + issue number, or (c) accept weaker mechanism. Do not proceed to Step 5 until each flagged AC resolved. Trigger list is heuristic; prompts are load-bearing.
 **Step 5: Transform to story format**
 | User Input | Story Field |
 |------------|-------------|

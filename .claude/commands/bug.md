@@ -1,5 +1,5 @@
 ---
-version: "v0.91.1"
+version: "v0.92.0"
 description: Create a bug issue with standard template (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -34,6 +34,8 @@ Extract `<body>` from args.
 Describe the bug (steps to reproduce, expected vs actual behavior):
 ```
 **Description provided:** use as body. **Declined/"skip":** minimal body.
+### Step 2a: AC Feasibility Quick-Check (#2424)
+If AC text in description mentions a verification mechanism (see `.claude/metadata/ac-feasibility-prompts.json` `verificationGate.triggerPhrases`), apply the `verificationGate` prompt. Append warning to issue body's Scope section; do **not** block. Trigger list is heuristic.
 ### Step 2b: Detect Version
 Priority: `package.json` → `version` | git tag (`git describe --tags --abbrev=0`) | prompt user.
 **If detected**, confirm via `AskUserQuestion` with "Yes, use {version}" (default) / "No, let me specify".

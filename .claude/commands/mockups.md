@@ -1,5 +1,5 @@
 ---
-version: "v0.91.1"
+version: "v0.92.0"
 description: Create text-based or diagrammatic screen mockups (project)
 argument-hint: "[#NN]"
 copyright: "Rubrical Works (c) 2026"
@@ -25,6 +25,8 @@ Creates text-based or diagrammatic screen mockups. Fully interactive via `AskUse
 | `--serve [{Name}]` | No | Start a backgrounded zero-dep static server (`.claude/scripts/shared/mockups-serve.js`, http+fs+path only) on `Mockups/` (bare) or `Mockups/{Name}/` (scoped). Spawn via `Bash` `run_in_background: true`; read listening URL from helper's single-line banner via `BashOutput`; report URL + shell ID. Can run standalone or after normal generation. |
 | `--port <N>` / `-p <N>` | No | Pin port; default `3000`. Helper falls back to next free port on conflict; command reports the **actual** port. |
 | `--open` | No | Spawn platform default browser to the listening URL. `win32` → `start "" "<url>"`; `darwin` → `open "<url>"`; `linux` → `xdg-open "<url>"`. Launch failure warns, does not fail command. |
+| `--showcase` | No | Launch Living Style Guide showcase (#2429, Story 1.3). Mockups command bundles into showcase the same way `/design-system` does — categories sourced from screen catalog (UI Components, Iconography). Mutex with `--apply-decisions`. |
+| `--apply-decisions` | No | Apply pending decisions from `Design-System/showcase/decisions.json` without launching server (#2429, Story 1.4). Implicit resume on subsequent invocations: `applyMockups` in `.claude/scripts/shared/showcase-resume.js` appends rows to `Mockups/.showcase-applied.jsonl`. |
 
 ```
 /mockups                           # Fully interactive, no context

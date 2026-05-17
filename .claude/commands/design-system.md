@@ -1,5 +1,5 @@
 ---
-version: "v0.91.1"
+version: "v0.92.0"
 description: Produce DTCG-compliant design tokens with pluggable adapter architecture (project)
 argument-hint: "[--init | --discover | --export <adapter> | --theme <name>]"
 copyright: "Rubrical Works (c) 2026"
@@ -26,15 +26,19 @@ Produce DTCG-compliant design token file (`Design-System/idpf-design.tokens.json
 | `--from-screenshot <path>` | AC31 — extract token candidates (color, typography, spacing, gradient) from a visual reference. Path validated via `validateScreenshotFile` from `.claude/scripts/shared/lib/screenshot-input.js`. Multimodal Read produces candidates → `applyCandidateSelection` from `.claude/scripts/shared/lib/screenshot-token-candidates.js` applies user accept/reject/partial decision before any write (AC32). |
 | `--diff` | AC33 — 4-category drift report (additions/removals/mismatches/broken aliases) via each adapter's `diff(projectRoot, currentTokens)` (AC38), aggregated by `buildDriftReport` + rendered by `formatDriftReport` from `.claude/scripts/shared/lib/token-drift-report.js`. No writes. |
 | `--discover --diff` | AC34 — combine discovery + diff, then selectively apply via `applySelectedDiff` (AC39). User decline → no writes. |
+| `--showcase` | Launch Living Style Guide showcase (#2429, Story 1.3): build bundle via `.claude/scripts/shared/showcase-bundle.js`, start loopback server via `.claude/scripts/shared/showcase-server.js`, open browser. Mutex with `--apply-decisions`. |
+| `--apply-decisions` | Apply pending decisions from `Design-System/showcase/decisions.json` without launching the server (#2429, Story 1.4). Implicit resume on subsequent invocations: pending decisions detected via `.applied.json` cursor sidecar are dispatched to `applyDesignSystem` in `.claude/scripts/shared/showcase-resume.js`, stamping `$lifecycle` on the addressed token. |
 
 ```
-/design-system              # Init or status
+/design-system              # Init or status; auto-resumes pending decisions
 /design-system --init       # Force init; backup-and-replace if tokens exist
 /design-system --discover   # Discover from code
 /design-system --export css-vars   # CSS custom properties
 /design-system --export all        # All detected formats
 /design-system --theme dark        # Dark theme override
 /design-system --from-screenshot ./design/home.png   # Bootstrap tokens from image
+/design-system --showcase           # Browser-based design review (#2429)
+/design-system --apply-decisions    # Apply pending decisions headlessly
 ```
 ---
 ## Execution

@@ -1,5 +1,5 @@
 ---
-version: "v0.91.1"
+version: "v0.92.0"
 description: Transform proposal into Agile PRD
 argument-hint: "<issue-number> | extract [<directory>]"
 copyright: "Rubrical Works (c) 2026"
@@ -137,6 +137,8 @@ AskUserQuestion({
 });
 ```
 Confirmed: consolidate to 1 epic, title from proposal name (e.g. "Epic 1: {Feature Name}"), stories become Story 1.1, 1.2, ... Declined: standard multi-epic grouping. `team`/`enterprise`: skip entirely.
+### Phase 4.6: AC Feasibility Gate (#2425)
+Re-read `.claude/metadata/ac-feasibility-prompts.json`. For each AC produced in Phase 4.5, apply `classify`, `verificationGate`, `deliverableSplit` prompts. On `verificationGate.triggerPhrases` match + no existing test using that mechanism (Grep), **ASK USER**: (a) rewrite, (b) feasibility spike + issue, or (c) weaker mechanism. **Do not proceed to Phase 5 until each flagged AC resolved.** Trigger list heuristic; prompts load-bearing. No `prdLevel` block needed — existing three prompts handle coarse ACs.
 
 ### Phase 5: Priority Validation
 | Priority | Distribution |
