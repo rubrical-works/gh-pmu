@@ -109,3 +109,5 @@ runp_claude
 
 # Project defaults (managed by Praxis Hub Manager)
 .tmp-*
+.claude/skills/electron-cross-build/
+.claude/skills/electron-development/
