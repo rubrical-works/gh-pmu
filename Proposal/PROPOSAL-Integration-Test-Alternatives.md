@@ -3,8 +3,27 @@
 **Version:** 1.0
 **Date:** 2025-12-08
 **Author:** API-Integration-Specialist
-**Status:** Draft
+**Status:** Adopted (2026-07-13, via #876)
 **Predecessor:** PROPOSAL-Automated-Testing.md (v1.3)
+
+---
+
+## Decision (adopted 2026-07-13, #876)
+
+This proposal is **adopted**. The resolution combines the three alternatives:
+
+1. **Local-only live-API testing** — the `test/e2e` suite (`-tags e2e`) is the
+   primary live-API layer, run manually before releases; the sound
+   `cmd/*_integration_test.go` suite (`-tags integration`) is retained as
+   manual coverage. Neither runs in CI (account-lockout risk).
+2. **Lockout-safe CI** — CI compile-checks tag-gated tests via
+   `go vet -tags "integration e2e" ./...` (zero API calls) so they can't rot.
+3. **Improved mock-based coverage** — tracked as a follow-up in #884
+   (wrapper-harness scenarios, VCR record/replay, vendored-schema validation).
+
+The broken/stale remnants (`internal/api/integration_test.go`,
+`cmd/uat_epic*_test.go`) and the disabled `integration-tests.yml` workflow were
+deleted in #876.
 
 ---
 
