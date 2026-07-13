@@ -84,6 +84,14 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      # Compile-check tag-gated tests WITHOUT running them. Integration/e2e
+      # tests make live GitHub API calls and must never run in CI (caused an
+      # account lockout, 2025-12-08 — see #876). `go vet` only type-checks and
+      # compiles; it makes zero API calls, so this catches tag-gated rot
+      # (e.g. signature drift) that plain `go test -short` never compiles.
+      - name: Compile-check tag-gated tests (no API calls)
+        run: go vet -tags "integration e2e" ./...
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
