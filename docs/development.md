@@ -221,8 +221,14 @@ GitHub Actions workflows:
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | Push/PR/Tag | Test, lint, build, release |
-| `integration-tests.yml` | Manual | Integration tests |
+| `ci.yml` | Push/PR/Tag | Test (`-short`), lint (incl. compile-check of `integration`/`e2e`-tagged tests), build, release |
+
+> **Live-API tests never run in CI.** The integration (`-tags integration`)
+> and e2e (`-tags e2e`) suites make real GitHub API calls and are run
+> **locally, manually** (running them in CI caused an account lockout — see
+> `Proposal/Integration-Test-Alternatives` and #876). CI only *compiles* them
+> via `go vet -tags "integration e2e" ./...` so they can't rot unnoticed.
+> See [TESTING.md](../TESTING.md) for how to run them.
 
 ## See Also
 

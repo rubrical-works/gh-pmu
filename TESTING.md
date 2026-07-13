@@ -56,6 +56,38 @@ func TestRunList_LoadsConfig(t *testing.T) {
 - Flag parsing and validation
 - API client creation
 
+### Live-API Tests (manual only — never run in CI)
+
+Two suites exercise the real `gh pmu` binary against a live GitHub project.
+They make real API calls and **must not run in CI**: doing so caused a GitHub
+account lockout on 2025-12-08 (burst GraphQL traffic from shared-IP runners
+tripped abuse detection). See `Proposal/Integration-Test-Alternatives` and #876.
+
+| Suite | Tag | Location | Status |
+|-------|-----|----------|--------|
+| E2E | `e2e` | `test/e2e/` | **Primary** live-API layer — env-gated, retry-aware, self-cleaning |
+| Command integration | `integration` | `cmd/*_integration_test.go` | Retained as manual coverage for commands e2e doesn't cover (create, edit, intake, split, triage, fine-grained sub_*) |
+
+Run them **locally** (e.g. before a release):
+
+```bash
+go test -tags e2e ./test/e2e/ -v            # requires gh auth; runs against the real project
+go test -tags integration ./cmd/ -v         # manual integration suite
+```
+
+CI never executes these. It only **compiles** them — with zero API calls —
+via the lint job's compile-check so signature drift can't rot them unnoticed
+(this is what had broken the now-deleted `internal/api/integration_test.go`):
+
+```bash
+go vet -tags "integration e2e" ./...        # type-check only; makes no API calls
+```
+
+> The old `cmd/uat_epic*_test.go` UAT files and `internal/api/integration_test.go`
+> were deleted in #876 (stale/non-compiling). The disabled
+> `integration-tests.yml` CI workflow was also removed — do **not** re-enable
+> a live-API CI workflow. Future coverage work is mock-based (see #884).
+
 ### Manual Testing
 
 Functions that require visual verification or user interaction:
