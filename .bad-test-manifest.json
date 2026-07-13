@@ -1,368 +1,455 @@
 {
   "version": 1,
-  "lastRun": "2026-03-12",
+  "lastRun": "2026-07-13",
   "charter": {
-    "contentHash": "sha256:1bbd503b423c1cd2818c0de3cec6a8938874270845e99f48bb6b03ae19b5ba89"
+    "contentHash": "sha256:76b366bf93df508cec0b2b3dfa0fb8a5ea2cbb557ddaf5bea0598e475023350d"
   },
   "files": {
     "cmd/accept_test.go": {
-      "contentHash": "sha256:493eaf4e9736889bb285baa6e2a029f7980a2c2ac1e8bdfb5e6b0def84bb9844",
+      "contentHash": "sha256:e5d732ca80048ae26b7a76dc23040e89eb5ad1c68fd045c4e63ed763c5f737d0",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/acceptance_gate_test.go": {
-      "contentHash": "sha256:7486ac5fb8038976861a48e5e112f2b3af6f25bb6703a8586ed09a6db4e73225",
+      "contentHash": "sha256:e00352cb650815193591ca61d4264f8912b101c206c8a7bcb1a55cccd2c17ebd",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/board_test.go": {
-      "contentHash": "sha256:5df759c73f25dd8193411a3a7283d46b2ac4a9eaa7685fcb76b08164bc35b5e1",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "contentHash": "sha256:d4ee28daed2f5958d9a7ab6cb13ece477f0bd3029c8a1a96e8d880d8fb3150fb",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
       "issueRefs": [],
       "domains": []
     },
     "cmd/branch_test.go": {
-      "contentHash": "sha256:9c25ee44bf746d496b4067d7ecc2dda6f8ced81b764628a21123e394d9e8dc64",
+      "contentHash": "sha256:3afd992c69cfc4adc557f556741551fd15bf6a826e3f41ecd44f3c05ac417cd2",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/close_test.go": {
-      "contentHash": "sha256:74b0f85db5cc6e1daeca19d57041807e5aa902797dd005a777e98d59c0a4b2e5",
+      "contentHash": "sha256:d60274ac0f3e62bc2503e08e3df3f42de4e4f38a3dfb7511b7df6d6f3551a779",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 1,
       "issueRefs": [],
       "domains": []
     },
     "cmd/comment_test.go": {
-      "contentHash": "sha256:5b254dc8d78a99deeccd2507fdbcad7a9cff962d42d56423a5d5c7de724eda1a",
+      "contentHash": "sha256:614dede3edcb6494480d1106335a102d6ec6feb995fa3eaa3f7cbe354db80ad4",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 0,
+      "issueRefs": [],
+      "domains": []
+    },
+    "cmd/config_test.go": {
+      "contentHash": "sha256:3a2958b9528ca05121240cd2d8c45541ec4c2dd52b600c4e486c15040ba4edad",
+      "status": "approved",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/create_test.go": {
-      "contentHash": "sha256:a95778985721f47e9218f1980e80190b4effe43dcc6b6de232ef0d23238a1982",
+      "contentHash": "sha256:f63b60585fd3d077830222fe36a39e909a29eb9ddcaaf142ab1ba61db2ec91dc",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "issueRefs": [],
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
+      "issueRefs": [
+        "#878"
+      ],
       "domains": []
     },
     "cmd/create_integration_test.go": {
-      "contentHash": "sha256:4c8b54114584af37966241e6a697929425b3cc8cf90fbe8c0dc94bc03bb798ec",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
+      "contentHash": "sha256:a7956b05ed41b6190393bb20d255d6908ae986d65013ce9c7ec1cfd163ab437f",
+      "status": "approved",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 0,
       "issueRefs": [
         "#765"
       ],
       "domains": []
     },
     "cmd/edit_test.go": {
-      "contentHash": "sha256:785442c1eb534891d4918eb9b1da0b21d2f9cb829ce3d9926c559a4ab481c755",
+      "contentHash": "sha256:87af2d7f940be163d85da6bea6ec2837d697e5dedc54995f07de198fd7a71907",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 1,
       "issueRefs": [],
       "domains": []
     },
     "cmd/edit_integration_test.go": {
-      "contentHash": "sha256:dd6011e80bf0c9d0fc98ab3897c40c0917672b248a2aff43d99432f6364c177e",
+      "contentHash": "sha256:04763331d20b66166a3d3ca3b271a8363916a4e2f3701b1178555f2240dccc3c",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/field_test.go": {
-      "contentHash": "sha256:c0eac974aee17c7ec6611930198a37445810fa3c1a2952bb386becd680ad4eab",
+      "contentHash": "sha256:baaf9a29a742ca8b055c535f0d0379af8d05b71049cdc3b315fc3c948e11ed4e",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 3,
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
       "issueRefs": [
         "#764"
       ],
       "domains": []
     },
     "cmd/filter_test.go": {
-      "contentHash": "sha256:72cf235aff646a3e4d07e9447d960430fe2af621fd25f6ee8462070d8ef1af2a",
+      "contentHash": "sha256:12b289df000ad53fe4834a5e23eb7a519274112c2485465ba427b8b1b4008444",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
       "issueRefs": [
-        "#766"
+        "#766",
+        "#875"
       ],
       "domains": []
     },
     "cmd/history_test.go": {
-      "contentHash": "sha256:cab1ca4434a52ef9fc2192a395f50f1093e207d28cc9612b5485d1e806e0b16c",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
-      "issueRefs": [],
+      "contentHash": "sha256:80d9a3fe03aed222452a5d32e2252830251c8356e76f722eeb2b58ca3f2f7baf",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 4,
+      "issueRefs": [
+        "#878"
+      ],
       "domains": []
     },
     "cmd/init_test.go": {
-      "contentHash": "sha256:2380f2e45a10086f6238ef2903c44a7404ff599bceb3479207153a81ca3fa3e5",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "contentHash": "sha256:014bf1e11d2b9d52b91b719fb569e19fd0dd1ab7201a3614bba9b67892cb71eb",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
       "issueRefs": [],
       "domains": []
     },
     "cmd/init_integration_test.go": {
-      "contentHash": "sha256:4c35adeb4d2b20239476a5b28def9093521a5b3f9daf1feaa469ad713cac98f2",
+      "contentHash": "sha256:edf4d939a2dc2de25e81f8b379a2ba1a5a8d095ca42d09a4f7df332370c35edd",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "issueRefs": [],
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
+      "issueRefs": [
+        "#879"
+      ],
       "domains": []
     },
     "cmd/intake_test.go": {
-      "contentHash": "sha256:d25757128e44e5aa64ad64c1c6f15551b0e268851c814927d7dba824eca9338e",
+      "contentHash": "sha256:2e3bba4c16d6f93cd4496e8072a259e40eafe748fef543c9dcb15c103d18c946",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
       "issueRefs": [
-        "#766"
+        "#766",
+        "#875"
       ],
       "domains": []
     },
     "cmd/intake_integration_test.go": {
-      "contentHash": "sha256:f117c8c707d0693f4b1a3d32ade97c2c4662799af84fb0cd65a03fe43569fb64",
+      "contentHash": "sha256:e9b0ebaf0571cd78dde14715d616810d6ca69b3fcf9534802e6d7a604b9c6ec4",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
+      "issueRefs": [],
+      "domains": []
+    },
+    "cmd/integrity_check_test.go": {
+      "contentHash": "sha256:bab25163a1779b7466c4c89818f7889fbae50ee9c13e396a3d91b882c3f96068",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 0,
+      "issueRefs": [],
+      "domains": []
+    },
+    "cmd/label_test.go": {
+      "contentHash": "sha256:1939992f6b3a9154e9549a44757b670fbfb2183d346b7f393b5028a093feb13b",
+      "status": "approved",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/list_test.go": {
-      "contentHash": "sha256:48fd644fdcf6efe65461ed73fa91cc4e846a0891e96ebd4184250add99c4d820",
+      "contentHash": "sha256:f1c44b9a31653a5c23f6ebec124fee2c6333441ae80fb535eb08fe1da11042d7",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
+      "reviewedAt": "2026-07-13",
+      "findingCount": 4,
       "issueRefs": [
-        "#766"
+        "#766",
+        "#875"
       ],
       "domains": []
     },
     "cmd/list_integration_test.go": {
-      "contentHash": "sha256:b4630ee904272e66e4ef2a77ef13e963f00c26dc0ed85f159839d2876967e79c",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
-      "issueRefs": [],
+      "contentHash": "sha256:3b558c2dd786a0d61d32f646eb378b2eb7ad6f715e8ad1f091c8e205106bc1d5",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
+      "issueRefs": [
+        "#879"
+      ],
       "domains": []
     },
     "cmd/move_test.go": {
-      "contentHash": "sha256:ffab413f1a3a6eb4d6d2e512ec000fd015e4eb148d644c89a4b9ceb221491371",
-      "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 2,
+      "contentHash": "sha256:d2015363655bfdfb6a7d126bf31efb581e2802d420d21bf84cf31c03e07dfdab",
+      "status": "approved",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 0,
       "issueRefs": [
         "#766"
       ],
       "domains": []
     },
     "cmd/move_integration_test.go": {
-      "contentHash": "sha256:3c9049175d5569fef6c41d1ee32ba521c9f4b0f0868f998362a886171663d4d4",
+      "contentHash": "sha256:4d08d66c7a3882daa65aa891a9887610fb133f1bd286f5e90d1c8bcaa7b758dc",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/root_test.go": {
-      "contentHash": "sha256:b7d58813f67bd0bd666d7035aae41d3e5b348b4de0f297eebedebd6002420ed7",
+      "contentHash": "sha256:8b1ce6de7a219252f0fc0c0944a882a0257781e5822fd0977887f203ecf194e2",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/split_test.go": {
-      "contentHash": "sha256:2209da13df19f74ed10c543a046ea932ce4dfd1710282a52b798f2aa89843f45",
+      "contentHash": "sha256:16bbd414d4287f8aa39614545f3a349301bb0cbe41eeb6d4dda768e51f556bf4",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
+      "reviewedAt": "2026-07-13",
+      "findingCount": 3,
       "issueRefs": [
-        "#766"
+        "#766",
+        "#875",
+        "#878"
       ],
       "domains": []
     },
     "cmd/split_integration_test.go": {
-      "contentHash": "sha256:f07732c6a07f4cd998361c33f6dcd085ec0da06c566b85a2e0d90a3ce99da750",
+      "contentHash": "sha256:7ecf158cb4e040f43c41276e8c549ba601c36d1b762e4d49ee267344137c3e38",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/sub_test.go": {
-      "contentHash": "sha256:19a9d10c816b960cfae11f39b72a6de847500ffc853743b7c4850edfb0c1ce54",
+      "contentHash": "sha256:18c9a4edb6f2c8b1f89e3184e11cf5e4d04d05d4da9de4bf4629639faf3da36e",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
       "issueRefs": [
-        "#766"
+        "#766",
+        "#880"
       ],
       "domains": []
     },
     "cmd/sub_add_integration_test.go": {
-      "contentHash": "sha256:eca7c5392579db7208623c3c9b714644fdf44ebde1b360779ce78a4ff2e65e04",
+      "contentHash": "sha256:99dd9d6cd412c59459b7916b940af77d7b25436540a4ad6d60029b5d43668cd8",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/sub_create_integration_test.go": {
-      "contentHash": "sha256:50e22f65bc2101e1cdedf20eb2bec22e49c29001d8950eb3bffa82650650f05f",
+      "contentHash": "sha256:b4c8b147a32ccffae19997b9f1e84a3c2bb2590ea620a28f7a28c36e69482853",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "issueRefs": [],
+      "reviewedAt": "2026-07-13",
+      "findingCount": 3,
+      "issueRefs": [
+        "#880"
+      ],
       "domains": []
     },
     "cmd/sub_list_integration_test.go": {
-      "contentHash": "sha256:755e12bef64477a8f9407158f4e4980668f9df2c37207f71ab4fc52aeccdd4b2",
+      "contentHash": "sha256:4fa250cf225e7d89eaef61d445dc90a68261bcbb6d0c7976839d60b7501f5cd8",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/sub_remove_integration_test.go": {
-      "contentHash": "sha256:f2f2a621076040a696f26c8396ae4712b9c65445324de0a8ad342558871559fa",
+      "contentHash": "sha256:b6685f3bec8c95949000e7ddbc424420456f76277ac13a38e7a6f5531439ae19",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/triage_test.go": {
-      "contentHash": "sha256:d79189a4f157b6858b63d6b70bfb200308da37c1f665c47af91b0e0e9abc68db",
+      "contentHash": "sha256:0b0a497671270eb0c41460907cbf907d84db0bb2a3422b19ae110cc2b3d8f365",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "issueRefs": [],
+      "reviewedAt": "2026-07-13",
+      "findingCount": 3,
+      "issueRefs": [
+        "#875",
+        "#878"
+      ],
       "domains": []
     },
     "cmd/triage_integration_test.go": {
-      "contentHash": "sha256:0df4c433375f6648238cb177af2a4000f7daffb50cb7a692703e4785292fc127",
+      "contentHash": "sha256:12a388337add35308626622eeb10db9b7fca3e3c96bac22ef062d38bd1696cd4",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "issueRefs": [],
+      "reviewedAt": "2026-07-13",
+      "findingCount": 4,
+      "issueRefs": [
+        "#882"
+      ],
       "domains": []
     },
     "cmd/uat_epic1_test.go": {
-      "contentHash": "sha256:344a1124629fb9cabd6574c97ed0785510f493e72c67debd6e935f39656332ea",
+      "contentHash": "sha256:a40d314f595edd0e15931c788047962f0d93e4aae57fb0e14ebfbdcbf85efd1e",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "issueRefs": [],
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
+      "issueRefs": [
+        "#876"
+      ],
       "domains": []
     },
     "cmd/uat_epic3_test.go": {
-      "contentHash": "sha256:1bcc0e674b5fbc4d45bf1eacccd92071fb4f23e6f7bb00e0f4eca27e20df95cc",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
-      "issueRefs": [],
+      "contentHash": "sha256:348f56edae1f111e649f733ab3ee575c8c22ba01675517cc78383f41764828fc",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
+      "issueRefs": [
+        "#876"
+      ],
       "domains": []
     },
     "cmd/validation_test.go": {
-      "contentHash": "sha256:7366072db106f0e9cf626037404f88e698d637a35ae59e1024a7706ae0d37177",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "contentHash": "sha256:948ab9e4cafaacbf6b4c1c3de80b6de6cb73082573ffa0873dfaa822fe662eb7",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
       "issueRefs": [],
       "domains": []
     },
     "cmd/view_test.go": {
-      "contentHash": "sha256:8846dcb8ff600c7e014dcddb05734e9aaf179ea4d93eff9e3a31cf97b9bf8f97",
+      "contentHash": "sha256:f3c2237a45dcb2e8056d8a2a72d9b612dc125140fbf7274ac21731e05edf6bef",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
       "issueRefs": [
-        "#766"
+        "#766",
+        "#875",
+        "#878"
       ],
       "domains": []
     },
     "cmd/view_integration_test.go": {
-      "contentHash": "sha256:f38a5b3271d2d742e47cc00b5cfdbad90e70c2eb10be64d0b10e89fff2432da1",
+      "contentHash": "sha256:a7561a3973f29e5797650a8376501279ef61125c92a6af10e69c1abdf5750d7f",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "cmd/wrapper_test.go": {
-      "contentHash": "sha256:67f47908c2f97e0a582ec06faed3ed3bb108fb4a00cced3faad961ad5532fd3c",
+      "contentHash": "sha256:5e9e49766f5ec8b98852c8d4c7ed56334b5082c3e6db808e729b75d83ca70973",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 2,
       "issueRefs": [],
       "domains": []
     },
     "internal/api/client_test.go": {
-      "contentHash": "sha256:fe3adbc72fa8edf4abffff56ae6af5b5f4cca9ba6b6b6f770cd49ec38a8fe215",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "contentHash": "sha256:192cd4e6ce091fb358f234def663a8b1bbd1f54a9b857d9d7e351ed00a5e564b",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
       "issueRefs": [],
       "domains": []
     },
     "internal/api/errors_test.go": {
-      "contentHash": "sha256:d71dd6220d402ddfcb1aae64e8fe417c988d9ebed1836feae554c13c2668b939",
+      "contentHash": "sha256:5157b863565bd5de48128cb012005a55d7cd6edc808aab801a255da4b1cd1c4d",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 0,
+      "issueRefs": [],
+      "domains": []
+    },
+    "internal/api/fields_fallback_test.go": {
+      "contentHash": "sha256:c4b551b063eb3fc95272c2710d29f1188d89d9c6a4afca697c47ce854d8056e1",
+      "status": "approved",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "internal/api/integration_test.go": {
-      "contentHash": "sha256:5793791514a5cc146241cdb343007a6f6c0d0b5af3e0a6db4e576332004629ea",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
-      "issueRefs": [],
+      "contentHash": "sha256:2a245ce479a6d1d80bc13b9dc56475b21564cb333f46880f4e4a2a13e379c0a3",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
+      "issueRefs": [
+        "#876"
+      ],
       "domains": []
     },
     "internal/api/mutations_test.go": {
-      "contentHash": "sha256:ce7fee42bf452eb11329f55d37b7709b9002b13a3ad7e61b41f393496947010e",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
-      "issueRefs": [],
+      "contentHash": "sha256:ac0ec0a1b007190ca34ff05ce34f99fff9081addfc536e42b1c6684a0bea8630",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
+      "issueRefs": [
+        "#881"
+      ],
       "domains": []
     },
     "internal/api/queries_test.go": {
-      "contentHash": "sha256:388dd1c11fbf95913f90a8ccb45ecdf13015051b57413a3b51519c7af5d6f5e0",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "contentHash": "sha256:fce08144f29fbcb02cbbb70e9a86cbb10d9e5232410188f0f367c32bb488737e",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
       "issueRefs": [],
       "domains": []
     },
     "internal/api/retry_test.go": {
-      "contentHash": "sha256:08c442c3e4b66e724e8fb8ef07087f7d8342894cd761d3fd920b133e1035b881",
+      "contentHash": "sha256:2f63f54ab8048d0c7d752f8ace2e34395786e6bd2ded9ae59a6f8b2b6362a146",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 0,
+      "issueRefs": [],
+      "domains": []
+    },
+    "internal/api/retry_client_test.go": {
+      "contentHash": "sha256:10f5e137f893c44bd5448f310c4f7cdcd9871523710e08f5eb6836888d5524d2",
+      "status": "approved",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 0,
+      "issueRefs": [],
+      "domains": []
+    },
+    "internal/api/retry_integration_test.go": {
+      "contentHash": "sha256:ec27200947dbbcb7c27dc21c5483f3b09c4328071a2302ce0f6598f2423ac7df",
+      "status": "approved",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 0,
+      "issueRefs": [],
+      "domains": []
+    },
+    "internal/api/validate_test.go": {
+      "contentHash": "sha256:005ef0086cd05e7489e34b70ae049456993b49c8b97ce7d7a539159636cef096",
+      "status": "approved",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
@@ -370,79 +457,95 @@
     "internal/config/acceptance_test.go": {
       "contentHash": "sha256:feca96773aff9f8aa7e24c2035be4eb6b32656f7bb5f84571405085d2d280795",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "internal/config/config_test.go": {
-      "contentHash": "sha256:f6126c4a4eb3b8febb70acf852fcbbaf7048b48b97497f4f071d03d340c58fce",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "contentHash": "sha256:901b641c0ee6cb437ccd8c8bcc52afe0b4b9b18ba258c2262c4345b7b63218d7",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
       "issueRefs": [],
       "domains": []
     },
     "internal/defaults/embed_test.go": {
-      "contentHash": "sha256:a39be9744d0d6711f526b16de18870dabc743865d5732a0d56c8c1fdd1b0b92a",
+      "contentHash": "sha256:80f7c73e78d0c9e6d4c293868a870ef2dbf2c2ccf55d64ad5d88253dbbd82d92",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "internal/framework/detect_test.go": {
-      "contentHash": "sha256:5d8594eb74a515c2e04c385d1925300e32be1fdfab43d61ad17864ef3cdbb415",
+      "contentHash": "sha256:3589ab4ec2039343315b54d3aa502146d9398550535e5a847a0db5f5b64ca760",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 0,
+      "issueRefs": [],
+      "domains": []
+    },
+    "internal/integrity/integrity_test.go": {
+      "contentHash": "sha256:50f96437c35d083af6f2b253b9d8ad95bbf2ad5ec8335ec556cba1764697aa57",
+      "status": "approved",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "internal/ui/ui_test.go": {
-      "contentHash": "sha256:04f8e8817137c7aa4eb1326b34dbc44e572b8647aa1af4604be4df589e6f35c2",
+      "contentHash": "sha256:aec6accac9f776a0633fe0a9c2142f1aceb7ea560b730115426b08f361a543bf",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 1,
-      "issueRefs": [],
+      "reviewedAt": "2026-07-13",
+      "findingCount": 4,
+      "issueRefs": [
+        "#877"
+      ],
       "domains": []
     },
     "internal/version/version_test.go": {
       "contentHash": "sha256:94e8d7ba204a6d901b1e2cfd9dac98d4ebfbd7f01a16405f33bf6a3db0b544d5",
       "status": "flagged",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 1,
-      "issueRefs": [],
+      "issueRefs": [
+        "#878"
+      ],
       "domains": []
     },
     "test/e2e/board_test.go": {
       "contentHash": "sha256:0ede0c2aea16165ddf28ead90e248e23b957376a76937742e90bd3a0a87d7e21",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
-      "issueRefs": [],
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
+      "issueRefs": [
+        "#879"
+      ],
       "domains": []
     },
     "test/e2e/branch_test.go": {
       "contentHash": "sha256:58321296bcc021733f45fb1699c6acdf208aa90d0fabe13ce65b73db86353c69",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
-      "issueRefs": [],
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
+      "issueRefs": [
+        "#879"
+      ],
       "domains": []
     },
     "test/e2e/cleanup_test.go": {
-      "contentHash": "sha256:04e1a049a80ba6b88c536c5bd53d9644fada1517cbb20d079820fd726e032ca2",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "contentHash": "sha256:d3114a26be5c22e7d1005d6df3ca77bd789010f8edcc0c554cae9e5bf2fe2038",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
       "issueRefs": [],
       "domains": []
     },
     "test/e2e/config_test.go": {
-      "contentHash": "sha256:2feb49f5234dd497c9af9d4cf83dc15b9f06f3ea39c1b9519feaa3e790521819",
+      "contentHash": "sha256:cdf808059e35bd57bc3b318ae6e24065b1df0cf6012c46574aa13346aa4e13f7",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
@@ -450,48 +553,52 @@
     "test/e2e/e2e_test.go": {
       "contentHash": "sha256:09f4878da9b11ccb0eada60a86b0dcb7000dc45412f47f3b0ce291f1a2c0a00b",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "test/e2e/filter_test.go": {
       "contentHash": "sha256:7af922138de4109f8f46ff77faf5fcf9e08fbe652095a452d1c0449f76c54801",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
-      "issueRefs": [],
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 3,
+      "issueRefs": [
+        "#879"
+      ],
       "domains": []
     },
     "test/e2e/helpers_test.go": {
-      "contentHash": "sha256:edf451310acf8f8fe72c98ba3cdb9f64cf8229847695d95ed2ab90f89fbf96dd",
+      "contentHash": "sha256:d82bb1f35d1f918cf7f228843cb3f25cea6a79cfc0299dd370d44c9c9ef7353f",
       "status": "approved",
-      "reviewedAt": "2026-03-12",
+      "reviewedAt": "2026-07-13",
       "findingCount": 0,
       "issueRefs": [],
       "domains": []
     },
     "test/e2e/init_test.go": {
-      "contentHash": "sha256:b65e2003b828b7d688a6c0bf6d10363150b7d7dfbf676ee57af640846b42c266",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
-      "issueRefs": [],
+      "contentHash": "sha256:a204f36e092714f856fd869b63f0b11280d2b7cd55cdf797fd787ca79cd94c71",
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 3,
+      "issueRefs": [
+        "#879"
+      ],
       "domains": []
     },
     "test/e2e/view_test.go": {
       "contentHash": "sha256:8ccd6b25539e79a3c524e51ce4ce6751fab4d5deb59d2a12e8cfa1524eeaaf52",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 1,
       "issueRefs": [],
       "domains": []
     },
     "test/e2e/workflow_test.go": {
       "contentHash": "sha256:321cf4cd8c6dcb13517cb99456531eef0663a241fa257725b0199396148fbf9b",
-      "status": "approved",
-      "reviewedAt": "2026-03-12",
-      "findingCount": 0,
+      "status": "flagged",
+      "reviewedAt": "2026-07-13",
+      "findingCount": 2,
       "issueRefs": [],
       "domains": []
     }
