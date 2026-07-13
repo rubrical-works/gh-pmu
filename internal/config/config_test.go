@@ -1773,9 +1773,9 @@ func TestRealConfigFileNotCorrupted(t *testing.T) {
 			"Tests that call cfg.Save() must use setupBranchTestDir for isolation.")
 	}
 
-	// Verify it contains expected owner
-	if !strings.Contains(string(content), "rubrical-works") {
-		t.Error("Real config does not contain 'rubrical-works' - the config may be corrupted")
+	// Verify it contains expected owner (org renamed rubrical-works -> rubrical-worker)
+	if !strings.Contains(string(content), "rubrical-worker") {
+		t.Error("Real config does not contain 'rubrical-worker' - the config may be corrupted")
 	}
 }
 
