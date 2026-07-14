@@ -218,7 +218,9 @@ wc -c < testdata/graphql/schema.docs.graphql
 ```
 
 Update `testdata/graphql/schema-provenance.json` with the new `sha256`, `bytes`
-and `retrieved` date, then run `go test ./internal/api/`.
+and `retrieved` date, then run `go test -short ./internal/api/`. (Use `-short`:
+without it the package also runs `TestNewClient_HasGraphQLClient`, which needs
+`gh` auth and is unrelated to the schema.)
 
 Never edit the vendored file by hand — it is a verbatim upstream artifact.
 `.gitattributes` marks it `-text` because `core.autocrlf` would otherwise

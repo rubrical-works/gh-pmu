@@ -385,6 +385,43 @@ func TestRawDocuments_ValidateAgainstVendoredSchema(t *testing.T) {
 	}
 }
 
+// TestSchemaValidation_NoLiveAPITraffic asserts the claim the rest of this file
+// depends on: nothing here talks to GitHub. Live API calls are barred outright
+// (#876 — burst traffic from CI tripped abuse detection and locked the account),
+// so "we use a mock" has to be checked rather than believed.
+func TestSchemaValidation_NoLiveAPITraffic(t *testing.T) {
+	transport := &capturingTransport{responses: namedOperationResponses()}
+	SetTestTransport(transport)
+	defer SetTestTransport(nil)
+	SetTestAuthToken("test-token") // go-gh refuses to construct a client without one (CI lacks gh auth)
+	defer SetTestAuthToken("")
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+
+	// A sentinel only the capture transport can produce: no live endpoint would
+	// return this id for label "bug" on owner/repo. If SetTestTransport failed to
+	// take effect, this call would reach GitHub and could not return it.
+	got, err := c.getLabelID("owner", "repo", "bug")
+	if err != nil {
+		t.Fatalf("getLabelID returned an error, so the transport did not answer it: %v", err)
+	}
+	if got != "LA_kwDOTestLabel" {
+		t.Errorf("getLabelID returned %q, not the canned fixture id — the response did not come from the capture transport", got)
+	}
+
+	if len(transport.captured()) == 0 {
+		t.Fatal("capture transport received no requests — traffic escaped the test transport")
+	}
+
+	// The schema oracle is a file on disk, not a network fetch.
+	if _, err := os.Stat(vendoredSchemaPath); err != nil {
+		t.Errorf("validation must run against the vendored file, but it is not readable: %v", err)
+	}
+}
+
 // ============================================================================
 // Fail-Proof (#886)
 // ============================================================================
