@@ -442,7 +442,9 @@ func TestListTriageConfigs(t *testing.T) {
 		}
 
 		cmd := newTriageCommand()
-		// Output goes to os.Stdout via tabwriter, verify no error
+		// NOTE: the non-empty table path writes to os.Stdout directly (not
+		// cmd.OutOrStdout()); output content not capturable here — see #871
+		// which tracks routing these through the cobra writer.
 		err := listTriageConfigs(cmd, cfg, false)
 		if err != nil {
 			t.Fatalf("listTriageConfigs() error = %v", err)
@@ -462,7 +464,9 @@ func TestListTriageConfigs(t *testing.T) {
 		}
 
 		command := newTriageCommand()
-		// JSON goes to os.Stdout, so we just verify no error
+		// NOTE: the non-empty JSON path writes to os.Stdout directly (not
+		// cmd.OutOrStdout()); output content not capturable here — see #871
+		// which tracks routing these through the cobra writer.
 		err := listTriageConfigs(command, cfg, true)
 		if err != nil {
 			t.Fatalf("listTriageConfigs() error = %v", err)
@@ -508,7 +512,11 @@ func TestOutputTriageTable(t *testing.T) {
 		}
 
 		cmd := newTriageCommand()
-		// Output goes to os.Stdout, verify no error
+		// NOTE: outputTriageTable writes to os.Stdout directly (not
+		// cmd.OutOrStdout()); output content — including the "should be
+		// truncated" title above — is not capturable here. See #871 which
+		// tracks routing this through the cobra writer so content (truncated
+		// form present, full string absent) can be asserted.
 		err := outputTriageTable(cmd, issues)
 		if err != nil {
 			t.Fatalf("outputTriageTable() error = %v", err)
@@ -519,6 +527,8 @@ func TestOutputTriageTable(t *testing.T) {
 		issues := []api.Issue{}
 
 		cmd := newTriageCommand()
+		// NOTE: outputTriageTable writes to os.Stdout directly (not
+		// cmd.OutOrStdout()); output content not capturable here — see #871.
 		err := outputTriageTable(cmd, issues)
 		if err != nil {
 			t.Fatalf("outputTriageTable() error = %v", err)
@@ -536,6 +546,8 @@ func TestOutputTriageTable(t *testing.T) {
 		}
 
 		cmd := newTriageCommand()
+		// NOTE: outputTriageTable writes to os.Stdout directly (not
+		// cmd.OutOrStdout()); output content not capturable here — see #871.
 		err := outputTriageTable(cmd, issues)
 		if err != nil {
 			t.Fatalf("outputTriageTable() error = %v", err)
@@ -924,7 +936,10 @@ func TestOutputTriageJSON(t *testing.T) {
 		}
 
 		cmd := newTriageCommand()
-		// Output goes to os.Stdout, verify no error
+		// NOTE: outputTriageJSON writes to os.Stdout directly (not
+		// cmd.OutOrStdout()); JSON output not capturable/decodable here — see
+		// #871 which tracks routing this through the cobra writer so fields can
+		// be asserted via json.Unmarshal.
 		err := outputTriageJSON(cmd, issues, "dry-run", "tracked")
 		if err != nil {
 			t.Fatalf("outputTriageJSON() error = %v", err)
@@ -935,6 +950,8 @@ func TestOutputTriageJSON(t *testing.T) {
 		issues := []api.Issue{}
 
 		cmd := newTriageCommand()
+		// NOTE: outputTriageJSON writes to os.Stdout directly (not
+		// cmd.OutOrStdout()); JSON output not capturable here — see #871.
 		err := outputTriageJSON(cmd, issues, "no-matches", "estimate")
 		if err != nil {
 			t.Fatalf("outputTriageJSON() error = %v", err)
@@ -948,6 +965,8 @@ func TestOutputTriageJSON(t *testing.T) {
 
 		cmd := newTriageCommand()
 
+		// NOTE: outputTriageJSON writes to os.Stdout directly (not
+		// cmd.OutOrStdout()); JSON output not capturable here — see #871.
 		statuses := []string{"dry-run", "no-matches", "completed"}
 		for _, status := range statuses {
 			err := outputTriageJSON(cmd, issues, status, "config")
