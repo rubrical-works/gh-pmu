@@ -385,6 +385,105 @@ func TestRawDocuments_ValidateAgainstVendoredSchema(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Fail-Proof (#886)
+// ============================================================================
+//
+// A validator that cannot fail is worse than no validator: it reports safety it
+// is not providing. These tests take a real captured document, inject a field
+// GitHub does not have, and require the rejection — with a control asserting the
+// same document passes untouched, so the failure is provably caused by the
+// injection rather than by a document that was already broken.
+
+const bogusField = "bogusFieldThatDoesNotExist"
+
+// validationErrors returns the validation messages for doc against schema, or
+// nil when it validates cleanly.
+func validationErrors(schema *ast.Schema, doc string) []string {
+	_, gerrs := gqlparser.LoadQuery(schema, doc)
+	var out []string
+	for _, e := range gerrs {
+		out = append(out, e.Message)
+	}
+	return out
+}
+
+// injectBogusField splices a nonexistent field into a document's first
+// selection set after marker.
+func injectBogusField(t *testing.T, doc, marker string) string {
+	t.Helper()
+	i := strings.Index(doc, marker)
+	if i < 0 {
+		t.Fatalf("marker %q not found in document — the query shape changed and this test needs updating.\ndocument: %s",
+			marker, doc)
+	}
+	cut := i + len(marker)
+	return doc[:cut] + bogusField + "," + doc[cut:]
+}
+
+func TestFailProof_BogusFieldInNamedOperationIsRejected(t *testing.T) {
+	schema := loadVendoredSchema(t)
+	docs := captureNamedOperationDocuments(t)
+
+	doc, ok := docs["GetIssue"]
+	if !ok {
+		t.Fatal("GetIssue was not captured — cannot prove the validator fails")
+	}
+
+	// Control: the real document must pass, or the negative below proves nothing.
+	if errs := validationErrors(schema, doc); len(errs) > 0 {
+		t.Fatalf("control failed: the real GetIssue document does not validate: %v", errs)
+	}
+
+	mutated := injectBogusField(t, doc, "issue(number: $number){")
+
+	errs := validationErrors(schema, mutated)
+	if len(errs) == 0 {
+		t.Fatalf("injecting %q into GetIssue did not fail validation — the validator is not checking fields.\ndocument: %s",
+			bogusField, mutated)
+	}
+	if !strings.Contains(strings.Join(errs, " "), bogusField) {
+		t.Errorf("validation failed, but not because of the injected field. Errors: %v", errs)
+	}
+}
+
+func TestFailProof_BogusFieldInRawDocumentIsRejected(t *testing.T) {
+	schema := loadVendoredSchema(t)
+
+	transport := &capturingTransport{responses: namedOperationResponses()}
+	SetTestTransport(transport)
+	defer SetTestTransport(nil)
+	SetTestAuthToken("test-token") // go-gh refuses to construct a client without one (CI lacks gh auth)
+	defer SetTestAuthToken("")
+
+	c, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	_, _ = c.GetSubIssueCounts("owner", "repo", []int{1})
+
+	docs := transport.captured()
+	if len(docs) == 0 {
+		t.Fatal("GetSubIssueCounts sent no document — cannot prove the validator fails")
+	}
+	doc := docs[0]
+
+	// Control: the real document must pass.
+	if errs := validationErrors(schema, doc); len(errs) > 0 {
+		t.Fatalf("control failed: the real raw document does not validate: %v", errs)
+	}
+
+	mutated := injectBogusField(t, doc, "subIssues { ")
+
+	errs := validationErrors(schema, mutated)
+	if len(errs) == 0 {
+		t.Fatalf("injecting %q into a raw document did not fail validation.\ndocument: %s", bogusField, mutated)
+	}
+	if !strings.Contains(strings.Join(errs, " "), bogusField) {
+		t.Errorf("validation failed, but not because of the injected field. Errors: %v", errs)
+	}
+}
+
 // TestNamedOperations_CoverageIsComplete fails when an operation exists in the
 // sources but no invocation drives it. Without this the validation test above
 // silently shrinks as operations are added.
