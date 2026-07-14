@@ -206,6 +206,160 @@ func projectFieldsFixture() map[string]interface{} {
 }
 
 // ---------------------------------------------------------------------------
+// create scenarios (mutation path)
+// ---------------------------------------------------------------------------
+
+// TestScenario_Create_CreatesIssueAndAppliesProjectFields drives the full
+// create chain: resolve repo id -> CreateIssue -> look up project ->
+// AddProjectV2ItemById -> UpdateProjectV2ItemFieldValue with the resolved
+// status option.
+//
+// Assertions are on the mutation payloads rather than rendered output:
+// runCreate reports via fmt.Printf to os.Stdout (create.go), not
+// cmd.OutOrStdout(), so its output is not capturable through the cobra writer
+// — the same limitation #871 tracks for triage. The payloads are the stronger
+// assertion regardless: they are what actually reaches GitHub.
+func TestScenario_Create_CreatesIssueAndAppliesProjectFields(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondTo("GetRepositoryID", gqlData(map[string]interface{}{
+		"repository": map[string]interface{}{"id": "repo-node-1"},
+	}))
+	handler.respondTo("CreateIssue", gqlData(map[string]interface{}{
+		"createIssue": map[string]interface{}{
+			"issue": map[string]interface{}{
+				"id":     "issue-node-1",
+				"number": 77,
+				"title":  "Scenario created issue",
+				"url":    "https://github.com/test-org/test-repo/issues/77",
+			},
+		},
+	}))
+	handler.respondTo("GetUserProject", userProjectFixture("proj-1", "Test Project"))
+	handler.respondTo("GetProjectFields", projectFieldsFixture())
+	handler.respondTo("AddProjectV2ItemById", gqlData(map[string]interface{}{
+		"addProjectV2ItemById": map[string]interface{}{
+			"item": map[string]interface{}{"id": "item-new-1"},
+		},
+	}))
+	handler.respondTo("UpdateProjectV2ItemFieldValue", gqlData(map[string]interface{}{
+		"updateProjectV2ItemFieldValue": map[string]interface{}{
+			"projectV2Item": map[string]interface{}{"id": "item-new-1"},
+		},
+	}))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newCreateCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	opts := &createOptions{
+		title:  "Scenario created issue",
+		body:   "Scenario body",
+		status: "in_progress",
+	}
+	if err := runCreate(cmd, opts); err != nil {
+		t.Fatalf("runCreate() error = %v", err)
+	}
+
+	// The issue itself must carry the title and body through to the mutation.
+	created := handler.requestsFor("CreateIssue")
+	if len(created) != 1 {
+		t.Fatalf("expected exactly one CreateIssue mutation, got %d (ops: %v)",
+			len(created), handler.operationNames())
+	}
+	input, ok := created[0].Variables["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected input object, got %v", created[0].Variables)
+	}
+	if input["title"] != "Scenario created issue" {
+		t.Errorf("expected title to reach the mutation, got %v", input["title"])
+	}
+	if input["body"] != "Scenario body" {
+		t.Errorf("expected body to reach the mutation, got %v", input["body"])
+	}
+	if input["repositoryId"] != "repo-node-1" {
+		t.Errorf("expected the resolved repository id, got %v", input["repositoryId"])
+	}
+
+	// The new issue must be added to the configured project.
+	added := handler.requestsFor("AddProjectV2ItemById")
+	if len(added) != 1 {
+		t.Fatalf("expected the issue to be added to the project once, got %d", len(added))
+	}
+	addInput, _ := added[0].Variables["input"].(map[string]interface{})
+	if addInput["projectId"] != "proj-1" {
+		t.Errorf("expected projectId 'proj-1', got %v", addInput["projectId"])
+	}
+	if addInput["contentId"] != "issue-node-1" {
+		t.Errorf("expected the created issue's node id as contentId, got %v", addInput["contentId"])
+	}
+
+	// And the status alias must resolve to the option id, as in move.
+	updates := handler.requestsFor("UpdateProjectV2ItemFieldValue")
+	if len(updates) == 0 {
+		t.Fatal("expected a field update for --status")
+	}
+	upInput, _ := updates[0].Variables["input"].(map[string]interface{})
+	value, ok := upInput["value"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected value object, got %v", upInput["value"])
+	}
+	if value["singleSelectOptionId"] != "opt-inprog" {
+		t.Errorf("expected 'in_progress' to resolve to option id 'opt-inprog', got %v",
+			value["singleSelectOptionId"])
+	}
+}
+
+// TestScenario_Create_NoStatusSkipsFieldUpdate covers the branch where no
+// project field is requested: the issue is still created and tracked, but no
+// field mutation is sent.
+func TestScenario_Create_NoStatusSkipsFieldUpdate(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondTo("GetRepositoryID", gqlData(map[string]interface{}{
+		"repository": map[string]interface{}{"id": "repo-node-1"},
+	}))
+	handler.respondTo("CreateIssue", gqlData(map[string]interface{}{
+		"createIssue": map[string]interface{}{
+			"issue": map[string]interface{}{
+				"id":     "issue-node-1",
+				"number": 78,
+				"title":  "No status",
+				"url":    "https://github.com/test-org/test-repo/issues/78",
+			},
+		},
+	}))
+	handler.respondTo("GetUserProject", userProjectFixture("proj-1", "Test Project"))
+	handler.respondTo("GetProjectFields", projectFieldsFixture())
+	handler.respondTo("AddProjectV2ItemById", gqlData(map[string]interface{}{
+		"addProjectV2ItemById": map[string]interface{}{
+			"item": map[string]interface{}{"id": "item-new-2"},
+		},
+	}))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newCreateCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	if err := runCreate(cmd, &createOptions{title: "No status", body: "b"}); err != nil {
+		t.Fatalf("runCreate() error = %v", err)
+	}
+
+	if got := handler.requestsFor("CreateIssue"); len(got) != 1 {
+		t.Errorf("expected the issue to still be created, got %d CreateIssue calls", len(got))
+	}
+	if got := handler.requestsFor("UpdateProjectV2ItemFieldValue"); len(got) != 0 {
+		t.Errorf("expected no field update without --status, got %d", len(got))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // No-live-traffic guard (#884 AC5)
 // ---------------------------------------------------------------------------
 
