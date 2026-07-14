@@ -190,7 +190,7 @@ func namedOperationResponses() map[string]string {
 // vendored schema because the query itself is wrong, mapped to the issue
 // tracking the fix.
 //
-// This is a quarantine, not an exemption. TestNamedOperations_KnownInvalid
+// This is a quarantine, not an exemption. TestNamedOperations_KnownInvalidStillFail
 // asserts each entry STILL fails, so fixing the underlying bug turns that test
 // red until the entry is removed. A quarantine that silently rots is worse than
 // no quarantine — it reads as coverage while providing none.
