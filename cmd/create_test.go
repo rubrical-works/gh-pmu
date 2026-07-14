@@ -21,7 +21,10 @@ type mockCreateClient struct {
 	issuesByLabel []api.Issue
 
 	// Capture for verification
-	lastBody string
+	lastBody      string
+	lastLabels    []string
+	lastAssignees []string
+	lastMilestone string
 
 	// Error injection
 	createIssueErr          error
@@ -57,6 +60,9 @@ func (m *mockCreateClient) CreateIssueWithOptions(owner, repo, title, body strin
 		return nil, m.createIssueErr
 	}
 	m.lastBody = body
+	m.lastLabels = labels
+	m.lastAssignees = assignees
+	m.lastMilestone = milestone
 	issue := m.createdIssue
 	issue.Title = title
 	return issue, nil
@@ -264,108 +270,106 @@ func TestCreateCommand_RequiresTitleInNonInteractiveMode(t *testing.T) {
 }
 
 // ============================================================================
-// createOptions Tests
-// ============================================================================
-
-func TestCreateOptions_DefaultValues(t *testing.T) {
-	opts := &createOptions{}
-
-	if opts.title != "" {
-		t.Errorf("Expected empty title, got %q", opts.title)
-	}
-	if opts.body != "" {
-		t.Errorf("Expected empty body, got %q", opts.body)
-	}
-	if opts.status != "" {
-		t.Errorf("Expected empty status, got %q", opts.status)
-	}
-	if opts.priority != "" {
-		t.Errorf("Expected empty priority, got %q", opts.priority)
-	}
-	if opts.labels != nil {
-		t.Errorf("Expected nil labels, got %v", opts.labels)
-	}
-}
-
-func TestCreateOptions_WithValues(t *testing.T) {
-	opts := &createOptions{
-		title:    "Test Issue",
-		body:     "Test body content",
-		status:   "in_progress",
-		priority: "p1",
-		labels:   []string{"bug", "urgent"},
-	}
-
-	if opts.title != "Test Issue" {
-		t.Errorf("Expected title 'Test Issue', got %q", opts.title)
-	}
-	if opts.body != "Test body content" {
-		t.Errorf("Expected body 'Test body content', got %q", opts.body)
-	}
-	if len(opts.labels) != 2 {
-		t.Errorf("Expected 2 labels, got %d", len(opts.labels))
-	}
-}
-
-// ============================================================================
 // Label Merging Logic Tests
+//
+// These exercise the real merge in runCreateWithDeps (create.go:256-257) and
+// assert on the labels the mock client actually received, so a regression in
+// the merge — dropped config defaults, dropped CLI labels, or wrong order —
+// fails the test.
 // ============================================================================
+
+// runCreateForLabels invokes the real create path with the given config default
+// labels and CLI labels, returning the labels that reached the API client.
+func runCreateForLabels(t *testing.T, configLabels, cliLabels []string) []string {
+	t.Helper()
+
+	client := newMockCreateClient()
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"owner/repo"},
+		Defaults:     config.Defaults{Labels: configLabels},
+	}
+	opts := &createOptions{title: "Test Issue", labels: cliLabels}
+
+	cmd := NewRootCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	if err := runCreateWithDeps(cmd, opts, cfg, client, "owner", "repo"); err != nil {
+		t.Fatalf("runCreateWithDeps failed: %v", err)
+	}
+	return client.lastLabels
+}
 
 func TestLabelMerging_EmptyDefaults(t *testing.T) {
-	configLabels := []string{}
-	cliLabels := []string{"bug", "urgent"}
-
-	// Simulate the merging logic from runCreate
-	labels := append([]string{}, configLabels...)
-	labels = append(labels, cliLabels...)
+	labels := runCreateForLabels(t, []string{}, []string{"bug", "urgent"})
 
 	if len(labels) != 2 {
-		t.Errorf("Expected 2 labels, got %d", len(labels))
+		t.Fatalf("Expected 2 labels, got %d: %v", len(labels), labels)
 	}
 	if labels[0] != "bug" || labels[1] != "urgent" {
-		t.Errorf("Expected [bug, urgent], got %v", labels)
+		t.Errorf("Expected [bug urgent], got %v", labels)
 	}
 }
 
 func TestLabelMerging_WithDefaults(t *testing.T) {
-	configLabels := []string{"enhancement"}
-	cliLabels := []string{"bug", "urgent"}
-
-	// Simulate the merging logic from runCreate
-	labels := append([]string{}, configLabels...)
-	labels = append(labels, cliLabels...)
+	labels := runCreateForLabels(t, []string{"enhancement"}, []string{"bug", "urgent"})
 
 	if len(labels) != 3 {
-		t.Errorf("Expected 3 labels, got %d", len(labels))
+		t.Fatalf("Expected 3 labels, got %d: %v", len(labels), labels)
 	}
-	if labels[0] != "enhancement" {
-		t.Errorf("Expected first label 'enhancement', got %q", labels[0])
+	// Config defaults must precede CLI labels.
+	if labels[0] != "enhancement" || labels[1] != "bug" || labels[2] != "urgent" {
+		t.Errorf("Expected [enhancement bug urgent], got %v", labels)
 	}
 }
 
 func TestLabelMerging_NoCLILabels(t *testing.T) {
-	configLabels := []string{"enhancement", "auto-created"}
-	var cliLabels []string
-
-	// Simulate the merging logic from runCreate
-	labels := append([]string{}, configLabels...)
-	labels = append(labels, cliLabels...)
+	labels := runCreateForLabels(t, []string{"enhancement", "auto-created"}, nil)
 
 	if len(labels) != 2 {
-		t.Errorf("Expected 2 labels, got %d", len(labels))
+		t.Fatalf("Expected 2 labels, got %d: %v", len(labels), labels)
+	}
+	if labels[0] != "enhancement" || labels[1] != "auto-created" {
+		t.Errorf("Expected [enhancement auto-created], got %v", labels)
 	}
 }
 
 func TestLabelMerging_BothEmpty(t *testing.T) {
-	configLabels := []string{}
-	var cliLabels []string
-
-	// Simulate the merging logic from runCreate
-	labels := append([]string{}, configLabels...)
-	labels = append(labels, cliLabels...)
+	labels := runCreateForLabels(t, []string{}, nil)
 
 	if len(labels) != 0 {
-		t.Errorf("Expected 0 labels, got %d", len(labels))
+		t.Errorf("Expected 0 labels, got %d: %v", len(labels), labels)
+	}
+}
+
+func TestLabelMerging_PassesAssigneesAndMilestone(t *testing.T) {
+	client := newMockCreateClient()
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"owner/repo"},
+		Defaults:     config.Defaults{Labels: []string{"enhancement"}},
+	}
+	opts := &createOptions{
+		title:     "Test Issue",
+		labels:    []string{"bug"},
+		assignees: []string{"octocat"},
+		milestone: "v1.0.0",
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	if err := runCreateWithDeps(cmd, opts, cfg, client, "owner", "repo"); err != nil {
+		t.Fatalf("runCreateWithDeps failed: %v", err)
+	}
+
+	if len(client.lastAssignees) != 1 || client.lastAssignees[0] != "octocat" {
+		t.Errorf("Expected assignees [octocat], got %v", client.lastAssignees)
+	}
+	if client.lastMilestone != "v1.0.0" {
+		t.Errorf("Expected milestone 'v1.0.0', got %q", client.lastMilestone)
 	}
 }
 
