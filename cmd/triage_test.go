@@ -24,6 +24,7 @@ type mockTriageClient struct {
 	setFieldError      error
 	getIssuesCalled    bool
 	searchIssuesCalled bool
+	lastState          string
 	lastSearchFilters  api.SearchFilters
 	getProjectCalled   bool
 	addToProjectCalled bool
@@ -33,6 +34,7 @@ type mockTriageClient struct {
 
 func (m *mockTriageClient) GetRepositoryIssues(owner, repo, state string) ([]api.Issue, error) {
 	m.getIssuesCalled = true
+	m.lastState = state
 	return m.issues, m.issuesError
 }
 
@@ -145,31 +147,6 @@ func TestTriageCommand(t *testing.T) {
 		err := root.Execute()
 		if err != nil {
 			t.Errorf("triage command not registered: %v", err)
-		}
-	})
-}
-
-func TestTriageOptions(t *testing.T) {
-	t.Run("default options", func(t *testing.T) {
-		opts := &triageOptions{}
-
-		if opts.dryRun {
-			t.Error("dryRun should be false by default")
-		}
-		if opts.json {
-			t.Error("json should be false by default")
-		}
-		if opts.list {
-			t.Error("list should be false by default")
-		}
-		if opts.repo != "" {
-			t.Errorf("repo should be empty by default, got %q", opts.repo)
-		}
-		if opts.query != "" {
-			t.Errorf("query should be empty by default, got %q", opts.query)
-		}
-		if opts.apply != "" {
-			t.Errorf("apply should be empty by default, got %q", opts.apply)
 		}
 	})
 }
@@ -893,33 +870,81 @@ func TestEnsureIssueInProject(t *testing.T) {
 	})
 }
 
+// TestSearchIssuesForTriage_QueryParsing verifies that the real
+// searchIssuesForTriage translates the is:open/is:closed/is:all query tokens
+// into the state it passes to the API client. Queries carrying label filters
+// take the Search API path (state lands in SearchFilters.State); queries
+// without labels take the GetRepositoryIssues path (state is the third arg).
+// Asserting on what the client received means a regression in state detection
+// fails this test.
 func TestSearchIssuesForTriage_QueryParsing(t *testing.T) {
-	// Test the state detection from query strings
-	// This tests the logic inside searchIssuesForTriage without needing API calls
 	tests := []struct {
 		query         string
 		expectedState string
+		viaSearchAPI  bool
 	}{
-		{"is:open -label:bug", "open"},
-		{"is:closed label:done", "closed"},
-		{"is:all", "all"},
-		{"label:bug", "open"}, // default to open
+		{"is:open -label:bug", "open", true},
+		{"is:closed label:done", "closed", true},
+		{"is:all", "all", false},
+		{"label:bug", "open", true}, // default to open
+		{"", "open", false},         // no tokens at all: default to open
+		{"is:closed", "closed", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
-			// Determine state from query (same logic as searchIssuesForTriage)
-			state := "open"
-			if strings.Contains(tt.query, "is:closed") {
-				state = "closed"
-			} else if strings.Contains(tt.query, "is:all") {
-				state = "all"
+			client := &mockTriageClient{}
+			cfg := &config.Config{Repositories: []string{"owner/repo"}}
+
+			if _, err := searchIssuesForTriage(client, cfg, tt.query, ""); err != nil {
+				t.Fatalf("searchIssuesForTriage() error = %v", err)
 			}
 
-			if state != tt.expectedState {
-				t.Errorf("state detection for query %q = %q, want %q", tt.query, state, tt.expectedState)
+			if tt.viaSearchAPI {
+				if !client.searchIssuesCalled {
+					t.Fatalf("query %q: expected the Search API path to be used", tt.query)
+				}
+				if client.lastSearchFilters.State != tt.expectedState {
+					t.Errorf("query %q: SearchFilters.State = %q, want %q",
+						tt.query, client.lastSearchFilters.State, tt.expectedState)
+				}
+				return
+			}
+
+			if !client.getIssuesCalled {
+				t.Fatalf("query %q: expected GetRepositoryIssues to be called", tt.query)
+			}
+			if client.lastState != tt.expectedState {
+				t.Errorf("query %q: GetRepositoryIssues state = %q, want %q",
+					tt.query, client.lastState, tt.expectedState)
 			}
 		})
+	}
+}
+
+func TestSearchIssuesForTriage_NegatedLabelReachesSearchFilters(t *testing.T) {
+	client := &mockTriageClient{}
+	cfg := &config.Config{Repositories: []string{"owner/repo"}}
+
+	if _, err := searchIssuesForTriage(client, cfg, "is:open -label:wontfix", ""); err != nil {
+		t.Fatalf("searchIssuesForTriage() error = %v", err)
+	}
+
+	if !strings.Contains(client.lastSearchFilters.Search, "-label:wontfix") {
+		t.Errorf("expected negated label in SearchFilters.Search, got %q", client.lastSearchFilters.Search)
+	}
+}
+
+func TestSearchIssuesForTriage_InvalidTargetRepo(t *testing.T) {
+	client := &mockTriageClient{}
+	cfg := &config.Config{Repositories: []string{"owner/repo"}}
+
+	_, err := searchIssuesForTriage(client, cfg, "is:open", "no-slash")
+	if err == nil {
+		t.Fatal("expected error for repository without a slash")
+	}
+	if !strings.Contains(err.Error(), "invalid repository format") {
+		t.Errorf("expected 'invalid repository format' error, got: %v", err)
 	}
 }
 
