@@ -332,8 +332,8 @@ Some description here.
 func TestOutputSplitJSON(t *testing.T) {
 	t.Run("includes parent issue info", func(t *testing.T) {
 		cmd := newSplitCommand()
-		buf := new(bytes.Buffer)
-		cmd.SetOut(buf)
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
 
 		parent := &api.Issue{
 			Number: 123,
@@ -342,15 +342,52 @@ func TestOutputSplitJSON(t *testing.T) {
 		}
 		tasks := []string{"Task 1", "Task 2", "Task 3"}
 
-		// Note: outputSplitJSON writes to os.Stdout
 		err := outputSplitJSON(cmd, parent, tasks, "dry-run")
 		if err != nil {
 			t.Fatalf("outputSplitJSON failed: %v", err)
+		}
+
+		var decoded struct {
+			Status string `json:"status"`
+			Parent struct {
+				Number int    `json:"number"`
+				Title  string `json:"title"`
+				URL    string `json:"url"`
+			} `json:"parent"`
+			TaskCount int      `json:"taskCount"`
+			Tasks     []string `json:"tasks"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+			t.Fatalf("output was not valid JSON: %v\noutput: %s", err, buf.String())
+		}
+
+		if decoded.Status != "dry-run" {
+			t.Errorf("expected status 'dry-run', got %q", decoded.Status)
+		}
+		if decoded.Parent.Number != 123 {
+			t.Errorf("expected parent number 123, got %d", decoded.Parent.Number)
+		}
+		if decoded.Parent.Title != "Parent Epic" {
+			t.Errorf("expected parent title 'Parent Epic', got %q", decoded.Parent.Title)
+		}
+		if decoded.Parent.URL != "https://github.com/owner/repo/issues/123" {
+			t.Errorf("unexpected parent url: %q", decoded.Parent.URL)
+		}
+		if decoded.TaskCount != 3 {
+			t.Errorf("expected taskCount 3, got %d", decoded.TaskCount)
+		}
+		if len(decoded.Tasks) != 3 {
+			t.Fatalf("expected 3 tasks, got %d", len(decoded.Tasks))
+		}
+		if decoded.Tasks[0] != "Task 1" || decoded.Tasks[2] != "Task 3" {
+			t.Errorf("unexpected tasks content: %v", decoded.Tasks)
 		}
 	})
 
 	t.Run("handles nil tasks", func(t *testing.T) {
 		cmd := newSplitCommand()
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
 
 		parent := &api.Issue{
 			Number: 1,
@@ -362,25 +399,77 @@ func TestOutputSplitJSON(t *testing.T) {
 		if err != nil {
 			t.Fatalf("outputSplitJSON failed with nil tasks: %v", err)
 		}
+
+		var decoded struct {
+			Status    string   `json:"status"`
+			TaskCount int      `json:"taskCount"`
+			Tasks     []string `json:"tasks"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+			t.Fatalf("output was not valid JSON: %v\noutput: %s", err, buf.String())
+		}
+
+		if decoded.Status != "no-tasks" {
+			t.Errorf("expected status 'no-tasks', got %q", decoded.Status)
+		}
+		if decoded.TaskCount != 0 {
+			t.Errorf("expected taskCount 0 for nil tasks, got %d", decoded.TaskCount)
+		}
+		if len(decoded.Tasks) != 0 {
+			t.Errorf("expected empty tasks, got %v", decoded.Tasks)
+		}
 	})
 
 	t.Run("status field is preserved", func(t *testing.T) {
-		cmd := newSplitCommand()
 		parent := &api.Issue{Number: 1, Title: "Test"}
 
 		statuses := []string{"dry-run", "no-tasks", "completed"}
 		for _, status := range statuses {
+			cmd := newSplitCommand()
+			var buf bytes.Buffer
+			cmd.SetOut(&buf)
+
 			err := outputSplitJSON(cmd, parent, []string{}, status)
 			if err != nil {
 				t.Fatalf("outputSplitJSON failed with status %q: %v", status, err)
+			}
+
+			var decoded struct {
+				Status string `json:"status"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+				t.Fatalf("output was not valid JSON for status %q: %v\noutput: %s", status, err, buf.String())
+			}
+			if decoded.Status != status {
+				t.Errorf("expected status %q in output, got %q", status, decoded.Status)
 			}
 		}
 	})
 }
 
+// splitCreatedOutput mirrors the JSON shape emitted by outputSplitJSONCreated.
+type splitCreatedOutput struct {
+	Status string `json:"status"`
+	Parent struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		URL    string `json:"url"`
+	} `json:"parent"`
+	CreatedCount int `json:"createdCount"`
+	FailedCount  int `json:"failedCount"`
+	Created      []struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		URL    string `json:"url"`
+	} `json:"created"`
+	Failed []string `json:"failed"`
+}
+
 func TestOutputSplitJSONCreated(t *testing.T) {
 	t.Run("tracks created vs failed counts", func(t *testing.T) {
 		cmd := newSplitCommand()
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
 
 		parent := &api.Issue{
 			Number: 100,
@@ -399,20 +488,83 @@ func TestOutputSplitJSONCreated(t *testing.T) {
 		if err != nil {
 			t.Fatalf("outputSplitJSONCreated failed: %v", err)
 		}
+
+		var decoded splitCreatedOutput
+		if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+			t.Fatalf("output was not valid JSON: %v\noutput: %s", err, buf.String())
+		}
+
+		if decoded.Status != "completed" {
+			t.Errorf("expected status 'completed', got %q", decoded.Status)
+		}
+		if decoded.Parent.Number != 100 {
+			t.Errorf("expected parent number 100, got %d", decoded.Parent.Number)
+		}
+		if decoded.CreatedCount != 3 {
+			t.Errorf("expected createdCount 3, got %d", decoded.CreatedCount)
+		}
+		if decoded.FailedCount != 1 {
+			t.Errorf("expected failedCount 1, got %d", decoded.FailedCount)
+		}
+		if len(decoded.Created) != 3 {
+			t.Fatalf("expected 3 created entries, got %d", len(decoded.Created))
+		}
+		if decoded.Created[0].Number != 101 || decoded.Created[1].Number != 102 || decoded.Created[2].Number != 103 {
+			t.Errorf("unexpected created issue numbers: %+v", decoded.Created)
+		}
+		if decoded.Created[0].Title != "Sub 1" {
+			t.Errorf("expected first created title 'Sub 1', got %q", decoded.Created[0].Title)
+		}
+		if decoded.Created[2].URL != "https://github.com/owner/repo/issues/103" {
+			t.Errorf("unexpected created url: %q", decoded.Created[2].URL)
+		}
+		if len(decoded.Failed) != 1 || decoded.Failed[0] != "Failed task 1" {
+			t.Errorf("unexpected failed content: %v", decoded.Failed)
+		}
 	})
 
 	t.Run("handles empty created list", func(t *testing.T) {
 		cmd := newSplitCommand()
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
+
 		parent := &api.Issue{Number: 1, Title: "Parent"}
 
 		err := outputSplitJSONCreated(cmd, parent, []api.Issue{}, []string{"all", "failed"})
 		if err != nil {
 			t.Fatalf("outputSplitJSONCreated failed with empty created: %v", err)
 		}
+
+		var decoded splitCreatedOutput
+		if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+			t.Fatalf("output was not valid JSON: %v\noutput: %s", err, buf.String())
+		}
+
+		if decoded.Status != "completed" {
+			t.Errorf("expected status 'completed', got %q", decoded.Status)
+		}
+		if decoded.CreatedCount != 0 {
+			t.Errorf("expected createdCount 0, got %d", decoded.CreatedCount)
+		}
+		if len(decoded.Created) != 0 {
+			t.Errorf("expected no created entries, got %+v", decoded.Created)
+		}
+		if decoded.FailedCount != 2 {
+			t.Errorf("expected failedCount 2, got %d", decoded.FailedCount)
+		}
+		if len(decoded.Failed) != 2 {
+			t.Fatalf("expected 2 failed entries, got %d", len(decoded.Failed))
+		}
+		if decoded.Failed[0] != "all" || decoded.Failed[1] != "failed" {
+			t.Errorf("unexpected failed content: %v", decoded.Failed)
+		}
 	})
 
 	t.Run("handles empty failed list", func(t *testing.T) {
 		cmd := newSplitCommand()
+		var buf bytes.Buffer
+		cmd.SetOut(&buf)
+
 		parent := &api.Issue{Number: 1, Title: "Parent"}
 
 		created := []api.Issue{
@@ -422,6 +574,27 @@ func TestOutputSplitJSONCreated(t *testing.T) {
 		err := outputSplitJSONCreated(cmd, parent, created, []string{})
 		if err != nil {
 			t.Fatalf("outputSplitJSONCreated failed with empty failed: %v", err)
+		}
+
+		var decoded splitCreatedOutput
+		if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+			t.Fatalf("output was not valid JSON: %v\noutput: %s", err, buf.String())
+		}
+
+		if decoded.CreatedCount != 1 {
+			t.Errorf("expected createdCount 1, got %d", decoded.CreatedCount)
+		}
+		if len(decoded.Created) != 1 {
+			t.Fatalf("expected 1 created entry, got %d", len(decoded.Created))
+		}
+		if decoded.Created[0].Number != 2 || decoded.Created[0].Title != "Sub" {
+			t.Errorf("unexpected created entry: %+v", decoded.Created[0])
+		}
+		if decoded.FailedCount != 0 {
+			t.Errorf("expected failedCount 0, got %d", decoded.FailedCount)
+		}
+		if len(decoded.Failed) != 0 {
+			t.Errorf("expected no failed entries, got %v", decoded.Failed)
 		}
 	})
 }
