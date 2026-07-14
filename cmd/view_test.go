@@ -1184,112 +1184,196 @@ func TestOutputViewJSON_WithComments(t *testing.T) {
 // ViewJSONOutput Structure Tests
 // ============================================================================
 
+// TestViewJSONOutput_Structure and the sub-progress/parent-issue tests below
+// build their output with the real buildViewJSONOutput and assert on what it
+// produced, so a regression in the mapping (dropped assignees, mis-derived
+// progress, unset parent) fails the test. Previously they hand-built a
+// ViewJSONOutput and round-tripped it through encoding/json, which only ever
+// exercised the standard library.
 func TestViewJSONOutput_Structure(t *testing.T) {
-	output := ViewJSONOutput{
+	issue := &api.Issue{
 		Number:    42,
 		Title:     "Test Issue",
 		State:     "OPEN",
 		Body:      "Issue body",
 		URL:       "https://github.com/owner/repo/issues/42",
-		Author:    "testuser",
-		Assignees: []string{"user1", "user2"},
-		Labels:    []string{"bug", "urgent"},
-		Milestone: "v1.0",
-		FieldValues: map[string]string{
-			"Status":   "In Progress",
-			"Priority": "High",
-		},
+		Author:    api.Actor{Login: "testuser"},
+		Assignees: []api.Actor{{Login: "user1"}, {Login: "user2"}},
+		Labels:    []api.Label{{Name: "bug"}, {Name: "urgent"}},
+		Milestone: &api.Milestone{Title: "v1.0"},
 	}
+	fieldValues := []api.FieldValue{
+		{Field: "Status", Value: "In Progress"},
+		{Field: "Priority", Value: "High"},
+	}
+
+	output := buildViewJSONOutput(issue, fieldValues, nil, nil, nil)
+
+	if output.Number != 42 {
+		t.Errorf("Expected Number 42, got %d", output.Number)
+	}
+	if output.Title != "Test Issue" {
+		t.Errorf("Expected Title 'Test Issue', got %s", output.Title)
+	}
+	if output.State != "OPEN" {
+		t.Errorf("Expected State 'OPEN', got %s", output.State)
+	}
+	if output.Body != "Issue body" {
+		t.Errorf("Expected Body 'Issue body', got %s", output.Body)
+	}
+	if output.Author != "testuser" {
+		t.Errorf("Expected Author 'testuser', got %s", output.Author)
+	}
+	if output.Milestone != "v1.0" {
+		t.Errorf("Expected Milestone 'v1.0', got %s", output.Milestone)
+	}
+	if len(output.Assignees) != 2 || output.Assignees[0] != "user1" || output.Assignees[1] != "user2" {
+		t.Errorf("Expected assignees [user1 user2], got %v", output.Assignees)
+	}
+	if len(output.Labels) != 2 || output.Labels[0] != "bug" || output.Labels[1] != "urgent" {
+		t.Errorf("Expected labels [bug urgent], got %v", output.Labels)
+	}
+	if output.FieldValues["Status"] != "In Progress" {
+		t.Errorf("Expected Status 'In Progress', got %s", output.FieldValues["Status"])
+	}
+	if output.FieldValues["Priority"] != "High" {
+		t.Errorf("Expected Priority 'High', got %s", output.FieldValues["Priority"])
+	}
+
+	// Absent relationships must stay absent.
+	if output.SubProgress != nil {
+		t.Errorf("Expected no SubProgress without sub-issues, got %+v", output.SubProgress)
+	}
+	if output.ParentIssue != nil {
+		t.Errorf("Expected no ParentIssue when none passed, got %+v", output.ParentIssue)
+	}
+
+	// The mapped struct must survive encoding as the command emits it.
+	data, err := json.Marshal(output)
+	if err != nil {
+		t.Fatalf("Failed to marshal buildViewJSONOutput result: %v", err)
+	}
+	var parsed ViewJSONOutput
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal emitted JSON: %v", err)
+	}
+	if parsed.Number != 42 || parsed.FieldValues["Status"] != "In Progress" {
+		t.Errorf("Emitted JSON lost data: %+v", parsed)
+	}
+}
+
+func TestViewJSONOutput_EmptyAssigneesAndLabelsAreArrays(t *testing.T) {
+	issue := &api.Issue{Number: 1, Title: "Bare", State: "OPEN", URL: "url"}
+
+	output := buildViewJSONOutput(issue, nil, nil, nil, nil)
 
 	data, err := json.Marshal(output)
 	if err != nil {
-		t.Fatalf("Failed to marshal ViewJSONOutput: %v", err)
+		t.Fatalf("Failed to marshal: %v", err)
 	}
 
-	var parsed ViewJSONOutput
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Failed to unmarshal ViewJSONOutput: %v", err)
+	// buildViewJSONOutput uses make(...) so these encode as [] rather than null.
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
 	}
-
-	if parsed.Number != 42 {
-		t.Errorf("Expected Number 42, got %d", parsed.Number)
+	if _, ok := raw["assignees"].([]interface{}); !ok {
+		t.Errorf("Expected assignees to encode as an array, got %T", raw["assignees"])
 	}
-	if parsed.Title != "Test Issue" {
-		t.Errorf("Expected Title 'Test Issue', got %s", parsed.Title)
+	if _, ok := raw["labels"].([]interface{}); !ok {
+		t.Errorf("Expected labels to encode as an array, got %T", raw["labels"])
 	}
-	if len(parsed.Assignees) != 2 {
-		t.Errorf("Expected 2 assignees, got %d", len(parsed.Assignees))
-	}
-	if parsed.FieldValues["Status"] != "In Progress" {
-		t.Errorf("Expected Status 'In Progress', got %s", parsed.FieldValues["Status"])
+	if output.Milestone != "" {
+		t.Errorf("Expected empty milestone when issue has none, got %q", output.Milestone)
 	}
 }
 
 func TestViewJSONOutput_WithSubProgress(t *testing.T) {
-	output := ViewJSONOutput{
-		Number: 42,
-		Title:  "Parent",
-		State:  "OPEN",
-		URL:    "https://example.com",
-		Author: "user",
-		SubIssues: []SubIssueJSON{
-			{Number: 1, Title: "Sub 1", State: "CLOSED"},
-			{Number: 2, Title: "Sub 2", State: "OPEN"},
-		},
-		SubProgress: &SubProgressJSON{
-			Total:      2,
-			Completed:  1,
-			Percentage: 50,
-		},
+	issue := &api.Issue{Number: 42, Title: "Parent", State: "OPEN", URL: "https://example.com"}
+	subIssues := []api.SubIssue{
+		{Number: 1, Title: "Sub 1", State: "CLOSED", URL: "url1"},
+		{Number: 2, Title: "Sub 2", State: "OPEN", URL: "url2"},
 	}
 
-	data, err := json.Marshal(output)
-	if err != nil {
-		t.Fatalf("Failed to marshal: %v", err)
+	output := buildViewJSONOutput(issue, nil, subIssues, nil, nil)
+
+	if len(output.SubIssues) != 2 {
+		t.Fatalf("Expected 2 sub-issues, got %d", len(output.SubIssues))
+	}
+	if output.SubIssues[0].Number != 1 || output.SubIssues[0].Title != "Sub 1" {
+		t.Errorf("Expected first sub-issue #1 'Sub 1', got %+v", output.SubIssues[0])
 	}
 
-	var parsed ViewJSONOutput
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Failed to unmarshal: %v", err)
-	}
-
-	if parsed.SubProgress == nil {
+	if output.SubProgress == nil {
 		t.Fatal("Expected SubProgress to be present")
 	}
-	if parsed.SubProgress.Percentage != 50 {
-		t.Errorf("Expected 50%% progress, got %d%%", parsed.SubProgress.Percentage)
+	// Progress is derived from sub-issue state, not supplied.
+	if output.SubProgress.Total != 2 {
+		t.Errorf("Expected Total 2, got %d", output.SubProgress.Total)
+	}
+	if output.SubProgress.Completed != 1 {
+		t.Errorf("Expected Completed 1 (one CLOSED), got %d", output.SubProgress.Completed)
+	}
+	if output.SubProgress.Percentage != 50 {
+		t.Errorf("Expected 50%% progress, got %d%%", output.SubProgress.Percentage)
+	}
+}
+
+func TestViewJSONOutput_SubProgressAllClosed(t *testing.T) {
+	issue := &api.Issue{Number: 42, Title: "Parent", State: "OPEN", URL: "url"}
+	subIssues := []api.SubIssue{
+		{Number: 1, Title: "Sub 1", State: "CLOSED"},
+		{Number: 2, Title: "Sub 2", State: "CLOSED"},
+	}
+
+	output := buildViewJSONOutput(issue, nil, subIssues, nil, nil)
+
+	if output.SubProgress == nil {
+		t.Fatal("Expected SubProgress to be present")
+	}
+	if output.SubProgress.Completed != 2 || output.SubProgress.Percentage != 100 {
+		t.Errorf("Expected 2 completed at 100%%, got %d at %d%%",
+			output.SubProgress.Completed, output.SubProgress.Percentage)
 	}
 }
 
 func TestViewJSONOutput_WithParentIssue(t *testing.T) {
-	output := ViewJSONOutput{
-		Number: 42,
-		Title:  "Sub-Issue",
-		State:  "OPEN",
-		URL:    "https://example.com",
-		Author: "user",
-		ParentIssue: &ParentIssueJSON{
-			Number: 10,
-			Title:  "Parent Issue",
-			URL:    "https://example.com/10",
-		},
-	}
+	issue := &api.Issue{Number: 42, Title: "Sub-Issue", State: "OPEN", URL: "https://example.com"}
+	parent := &api.Issue{Number: 10, Title: "Parent Issue", URL: "https://example.com/10"}
 
-	data, err := json.Marshal(output)
-	if err != nil {
-		t.Fatalf("Failed to marshal: %v", err)
-	}
+	output := buildViewJSONOutput(issue, nil, nil, parent, nil)
 
-	var parsed ViewJSONOutput
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Failed to unmarshal: %v", err)
-	}
-
-	if parsed.ParentIssue == nil {
+	if output.ParentIssue == nil {
 		t.Fatal("Expected ParentIssue to be present")
 	}
-	if parsed.ParentIssue.Number != 10 {
-		t.Errorf("Expected parent number 10, got %d", parsed.ParentIssue.Number)
+	if output.ParentIssue.Number != 10 {
+		t.Errorf("Expected parent number 10, got %d", output.ParentIssue.Number)
+	}
+	if output.ParentIssue.Title != "Parent Issue" {
+		t.Errorf("Expected parent title 'Parent Issue', got %s", output.ParentIssue.Title)
+	}
+	if output.ParentIssue.URL != "https://example.com/10" {
+		t.Errorf("Expected parent url to match, got %s", output.ParentIssue.URL)
+	}
+}
+
+func TestViewJSONOutput_WithComments(t *testing.T) {
+	issue := &api.Issue{Number: 42, Title: "Commented", State: "OPEN", URL: "url"}
+	comments := []api.Comment{
+		{Author: "alice", Body: "First comment", CreatedAt: "2026-01-01T00:00:00Z"},
+		{Author: "bob", Body: "Second comment", CreatedAt: "2026-01-02T00:00:00Z"},
+	}
+
+	output := buildViewJSONOutput(issue, nil, nil, nil, comments)
+
+	if len(output.Comments) != 2 {
+		t.Fatalf("Expected 2 comments, got %d", len(output.Comments))
+	}
+	if output.Comments[0].Author != "alice" || output.Comments[0].Body != "First comment" {
+		t.Errorf("Expected first comment from alice, got %+v", output.Comments[0])
+	}
+	if output.Comments[1].CreatedAt != "2026-01-02T00:00:00Z" {
+		t.Errorf("Expected second comment timestamp to map, got %q", output.Comments[1].CreatedAt)
 	}
 }
 
@@ -1315,31 +1399,44 @@ func TestSubIssueJSON_Structure(t *testing.T) {
 	}
 }
 
+// TestSubProgressJSON_Structure verifies the sub-progress block as the view
+// command actually emits it: derived by buildViewJSONOutput from sub-issue
+// state, then encoded. It previously round-tripped a hand-built struct, which
+// asserted nothing about how progress is computed or named on the wire.
 func TestSubProgressJSON_Structure(t *testing.T) {
-	progress := SubProgressJSON{
-		Total:      10,
-		Completed:  6,
-		Percentage: 60,
+	subIssues := make([]api.SubIssue, 0, 10)
+	for i := 1; i <= 10; i++ {
+		state := "OPEN"
+		if i <= 6 {
+			state = "CLOSED"
+		}
+		subIssues = append(subIssues, api.SubIssue{Number: i, Title: "Sub", State: state})
 	}
 
-	data, err := json.Marshal(progress)
+	issue := &api.Issue{Number: 1, Title: "Parent", State: "OPEN", URL: "url"}
+	output := buildViewJSONOutput(issue, nil, subIssues, nil, nil)
+
+	if output.SubProgress == nil {
+		t.Fatal("Expected SubProgress to be present")
+	}
+	if output.SubProgress.Total != 10 {
+		t.Errorf("Expected Total 10, got %d", output.SubProgress.Total)
+	}
+	if output.SubProgress.Completed != 6 {
+		t.Errorf("Expected Completed 6, got %d", output.SubProgress.Completed)
+	}
+	if output.SubProgress.Percentage != 60 {
+		t.Errorf("Expected Percentage 60, got %d", output.SubProgress.Percentage)
+	}
+
+	data, err := json.Marshal(output.SubProgress)
 	if err != nil {
-		t.Fatalf("Failed to marshal SubProgressJSON: %v", err)
+		t.Fatalf("Failed to marshal SubProgress: %v", err)
 	}
-
-	var parsed SubProgressJSON
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Failed to unmarshal SubProgressJSON: %v", err)
-	}
-
-	if parsed.Total != 10 {
-		t.Errorf("Expected Total 10, got %d", parsed.Total)
-	}
-	if parsed.Completed != 6 {
-		t.Errorf("Expected Completed 6, got %d", parsed.Completed)
-	}
-	if parsed.Percentage != 60 {
-		t.Errorf("Expected Percentage 60, got %d", parsed.Percentage)
+	for _, field := range []string{"total", "completed", "percentage"} {
+		if !bytes.Contains(data, []byte(field)) {
+			t.Errorf("Expected emitted JSON to contain field %q, got: %s", field, data)
+		}
 	}
 }
 
