@@ -300,6 +300,91 @@ func TestNamedOperations_KnownInvalidStillFail(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Anonymous Runtime-Built Document Validation (#886)
+// ============================================================================
+//
+// Eight documents are assembled with fmt.Sprintf at call time instead of being
+// generated from a struct, so they carry no operation name and never appear in
+// the named-operation enumeration above. They still reach GitHub, so they still
+// need checking. All eight travel through the RawGraphQLDoer seam, which
+// NewClientWithOptions wires to the same transport as the typed client — so the
+// capture rig needs nothing extra.
+//
+// mutation BatchUpdate is included here rather than above: it IS named, but it
+// is Sprintf-built and dispatched via doRawGraphQLBody, so gql.Mutate never sees
+// it and the source enumeration cannot find it. It would otherwise fall through
+// the gap between the two tests.
+
+// rawDocumentInvocations drives each method that assembles a document by hand.
+func rawDocumentInvocations() []struct {
+	label  string
+	invoke func(c *Client)
+} {
+	refs := []IssueRef{{Owner: "owner", Repo: "repo", Number: 1}}
+	numbers := []int{1, 2}
+	fields := []ProjectField{{ID: "PVTF_notes", Name: "Notes", DataType: "TEXT"}}
+	updates := []FieldUpdate{{ItemID: "PVTI_1", FieldName: "Notes", Value: "hello"}}
+
+	return []struct {
+		label  string
+		invoke func(c *Client)
+	}{
+		{"GetProjectItemsByIssues", func(c *Client) { _, _ = c.GetProjectItemsByIssues("PVT_kw1", refs) }},
+		{"GetSubIssueCounts", func(c *Client) { _, _ = c.GetSubIssueCounts("owner", "repo", numbers) }},
+		{"GetSubIssuesBatch", func(c *Client) { _, _ = c.GetSubIssuesBatch("owner", "repo", numbers) }},
+		{"getProjectFieldsForIssuesBatch", func(c *Client) {
+			_, _ = c.getProjectFieldsForIssuesBatch("PVT_kw1", []string{"I_kw1", "I_kw2"})
+		}},
+		{"GetIssuesWithProjectFieldsBatch", func(c *Client) {
+			_, _, _, _ = c.GetIssuesWithProjectFieldsBatch("owner", "repo", numbers)
+		}},
+		{"GetParentIssueBatch", func(c *Client) { _, _ = c.GetParentIssueBatch("owner", "repo", numbers) }},
+		{"getLabelIDs", func(c *Client) { _, _ = c.getLabelIDs("owner", "repo", []string{"bug", "help wanted"}) }},
+		{"BatchUpdateProjectItemFields", func(c *Client) {
+			_, _ = c.BatchUpdateProjectItemFields("PVT_kw1", updates, fields)
+		}},
+	}
+}
+
+// TestRawDocuments_ValidateAgainstVendoredSchema checks the hand-assembled
+// documents. Each builder is driven separately so a failure names the builder
+// rather than a line of generated GraphQL.
+func TestRawDocuments_ValidateAgainstVendoredSchema(t *testing.T) {
+	schema := loadVendoredSchema(t)
+
+	for _, tc := range rawDocumentInvocations() {
+		t.Run(tc.label, func(t *testing.T) {
+			transport := &capturingTransport{responses: namedOperationResponses()}
+			SetTestTransport(transport)
+			defer SetTestTransport(nil)
+			SetTestAuthToken("test-token") // go-gh refuses to construct a client without one (CI lacks gh auth)
+			defer SetTestAuthToken("")
+
+			c, err := NewClient()
+			if err != nil {
+				t.Fatalf("NewClient failed: %v", err)
+			}
+
+			tc.invoke(c) // errors expected and ignored — only the sent document matters
+
+			docs := transport.captured()
+			if len(docs) == 0 {
+				t.Fatalf("%s sent no document — the invocation does not reach the send", tc.label)
+			}
+
+			for _, doc := range docs {
+				if _, errs := gqlparser.LoadQuery(schema, doc); len(errs) > 0 {
+					for _, e := range errs {
+						t.Errorf("%s does not validate against the vendored schema: %s", tc.label, e.Message)
+					}
+					t.Logf("document: %s", doc)
+				}
+			}
+		})
+	}
+}
+
 // TestNamedOperations_CoverageIsComplete fails when an operation exists in the
 // sources but no invocation drives it. Without this the validation test above
 // silently shrinks as operations are added.
