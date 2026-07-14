@@ -183,6 +183,72 @@ for i, r := range handler.requests {
 
 Then build the fixture against the observed document and iterate.
 
+### Vendored Schema Validation (`internal/api/schema_*_test.go`)
+
+Every GraphQL document this repo sends is checked against a vendored copy of
+GitHub's published schema. This is the only automated check that catches GitHub
+renaming or removing a field: the scenario tests and hand-written mocks encode
+*our assumptions* about GitHub's responses, so they keep passing when the real
+schema moves out from under a query. Zero API traffic — the capture transport
+answers every request itself.
+
+It earns its keep: on its first run it found a live bug (#888).
+
+| Layer | Test |
+|-------|------|
+| Named operations (40, struct-generated) | `TestNamedOperations_ValidateAgainstVendoredSchema` |
+| Anonymous documents (8, `fmt.Sprintf`-built) | `TestRawDocuments_ValidateAgainstVendoredSchema` |
+| Coverage completeness | `TestNamedOperations_CoverageIsComplete` |
+| Quarantined known-broken queries | `TestNamedOperations_KnownInvalidStillFail` |
+| Fail-proof (both paths) | `TestFailProof_*` |
+
+Coverage is enumerated from the production sources rather than a hardcoded list,
+so adding an operation without a matching invocation fails the build and names
+it. Documents are **captured, not requested**: `constructQuery` is unexported in
+shurcooL, so the client is pointed at a recording transport and the document is
+read off the wire.
+
+**Refreshing the schema**
+
+```bash
+curl -sS -o testdata/graphql/schema.docs.graphql \
+  https://docs.github.com/public/fpt/schema.docs.graphql
+sha256sum testdata/graphql/schema.docs.graphql
+wc -c < testdata/graphql/schema.docs.graphql
+```
+
+Update `testdata/graphql/schema-provenance.json` with the new `sha256`, `bytes`
+and `retrieved` date, then run `go test ./internal/api/`.
+
+Never edit the vendored file by hand — it is a verbatim upstream artifact.
+`.gitattributes` marks it `-text` because `core.autocrlf` would otherwise
+rewrite its line endings on checkout and break the digest check for everyone but
+the person who vendored it.
+
+**Cadence.** Refresh before a release, and whenever a query starts failing
+against the real API for no local reason. There is no value in chasing every
+upstream deploy: the schema is additive most weeks — it grew 4,147 bytes in a
+single day during #886 — and additive changes cannot break us.
+
+**Telling real drift from benign drift**
+
+| Symptom | Meaning | Action |
+|---------|---------|--------|
+| Digest mismatch, no refresh done | file hand-edited or partially written | restore: `git checkout -- testdata/graphql/` |
+| Schema grew, everything still validates | additive upstream change | benign — update the provenance record |
+| An operation stops validating **after** a refresh | real drift: GitHub changed a field we use | fix the query — the failure names the field and the type |
+| An operation fails but no refresh was done | our query was always wrong | fix the query — this is how #888 surfaced |
+
+The distinction that matters: only a **refresh** can introduce real drift. A
+validation failure without one means the query was already broken.
+
+**On failure.** Drift fails the build; it is not a warning. A query referencing
+a field GitHub has removed is broken in production, and the point is to learn
+that here rather than from a user. If the fix is not immediate, quarantine the
+operation in `knownInvalidOperations` against a filed issue — the quarantine is
+asserted rather than skipped, so it fails once the bug is fixed and cannot
+silently rot into fake coverage.
+
 ### Live-API Tests (manual only — never run in CI)
 
 Two suites exercise the real `gh pmu` binary against a live GitHub project.
