@@ -206,6 +206,44 @@ func projectFieldsFixture() map[string]interface{} {
 }
 
 // ---------------------------------------------------------------------------
+// No-live-traffic guard (#884 AC5)
+// ---------------------------------------------------------------------------
+
+// TestScenario_AllTrafficReachesMockServer is the empirical counterpart to the
+// structural guarantee that setupTestEnvironment installs a redirectTransport:
+// it proves the command's requests actually arrived at the mock rather than
+// leaving the process. If the transport hook regressed, the command would talk
+// to api.github.com and the handler would record nothing.
+func TestScenario_AllTrafficReachesMockServer(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondTo("GetUserProject", userProjectFixture("proj-1", "Test Project"))
+	handler.respondTo("SearchIssues", searchIssuesFixture(
+		issueNode(101, "Tracked", "OPEN", nil, nil),
+	))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	if err := runList(cmd, &listOptions{}); err != nil {
+		t.Fatalf("runList() error = %v", err)
+	}
+
+	if len(handler.operationNames()) == 0 {
+		t.Fatal("mock server received no requests — traffic escaped the test transport")
+	}
+	// A successful render proves the response came from the mock: no live
+	// endpoint would return this fixture's data for project test-org/1.
+	if !strings.Contains(buf.String(), "Tracked") {
+		t.Errorf("expected the mock fixture to drive output, got:\n%s", buf.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Harness self-tests
 // ---------------------------------------------------------------------------
 
