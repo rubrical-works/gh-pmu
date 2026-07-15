@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"strconv"
 	"strings"
@@ -922,6 +923,384 @@ func TestScenario_Move_UnknownIssueReportsError(t *testing.T) {
 
 	if got := handler.requestsFor("BatchUpdate"); len(got) != 0 {
 		t.Errorf("expected no mutation when the issue cannot be resolved, got %d", len(got))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// sub write scenarios (#887)
+// ---------------------------------------------------------------------------
+//
+// runSubAdd / runSubCreate / runSubRemove take no client dependency and have no
+// WithDeps seam, so sub_test.go can only reach their command structure (flags,
+// arg validation). Outside the retired //go:build integration tests these paths
+// had no automated verification at all — these scenarios are their only
+// coverage.
+
+// issueByNumberFixture answers GetIssue per request, keyed on the `number`
+// variable, so a flow that looks up several issues gets a distinct node id for
+// each. Numbers arrive as float64 after the JSON round-trip through the mock
+// server.
+//
+// Distinct ids are what gives the mutation assertions teeth: with one shared
+// fixture, issueId and subIssueId would be equal and a parent/child swap in
+// production would go undetected.
+func issueByNumberFixture(titlesByNumber map[int]string) func(graphQLRequest) interface{} {
+	return func(req graphQLRequest) interface{} {
+		raw, ok := req.Variables["number"].(float64)
+		if !ok {
+			return issueNotFoundFixture(0)
+		}
+		number := int(raw)
+		title, known := titlesByNumber[number]
+		if !known {
+			return issueNotFoundFixture(number)
+		}
+		return issueFixture(number, title, "OPEN")
+	}
+}
+
+// issueNotFoundFixture models GitHub's response for a lookup by a number that
+// does not exist: a NOT_FOUND error alongside a null issue node.
+//
+// The errors envelope is what makes GetIssue fail. A bare {"issue": null} with
+// no errors decodes into a zero-value Issue and the caller proceeds with an
+// empty node id — runSubAdd will happily send AddSubIssue with subIssueId "".
+// The retired live-API test TestRunSubAdd_Integration_ChildNotFound asserted
+// "failed to get child issue" against the real API, which is the evidence that
+// GitHub errors here rather than returning a bare null.
+func issueNotFoundFixture(number int) map[string]interface{} {
+	return map[string]interface{}{
+		"data": map[string]interface{}{
+			"repository": map[string]interface{}{"issue": nil},
+		},
+		"errors": []interface{}{
+			map[string]interface{}{
+				"type": "NOT_FOUND",
+				"message": fmt.Sprintf(
+					"Could not resolve to an Issue with the number of %d.", number),
+			},
+		},
+	}
+}
+
+// TestScenario_SubAdd_LinksChildToParentViaMutation drives runSubAdd end to end
+// and asserts the AddSubIssue payload carries the parent's node id as issueId
+// and the child's as subIssueId — the direction of the link, which is the whole
+// behavior of the command.
+func TestScenario_SubAdd_LinksChildToParentViaMutation(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondToFunc("GetIssue", issueByNumberFixture(map[int]string{
+		10: "Parent epic",
+		15: "Child task",
+	}))
+	handler.respondTo("AddSubIssue", gqlData(map[string]interface{}{
+		"addSubIssue": map[string]interface{}{
+			"issue":    map[string]interface{}{"id": "issue-10"},
+			"subIssue": map[string]interface{}{"id": "issue-15"},
+		},
+	}))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newSubAddCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	if err := runSubAdd(cmd, []string{"10", "15"}, &subAddOptions{}); err != nil {
+		t.Fatalf("runSubAdd() error = %v (output %q)", err, buf.String())
+	}
+
+	reqs := handler.requestsFor("AddSubIssue")
+	if len(reqs) != 1 {
+		t.Fatalf("expected exactly one AddSubIssue mutation, got %d (ops: %v)",
+			len(reqs), handler.operationNames())
+	}
+	input, ok := reqs[0].Variables["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected input object in mutation variables, got %v", reqs[0].Variables)
+	}
+	if input["issueId"] != "issue-10" {
+		t.Errorf("expected the parent's node id as issueId, got %v", input["issueId"])
+	}
+	if input["subIssueId"] != "issue-15" {
+		t.Errorf("expected the child's node id as subIssueId, got %v", input["subIssueId"])
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Linked issue #15 as sub-issue of #10") {
+		t.Errorf("expected the link confirmation, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Parent epic") || !strings.Contains(out, "Child task") {
+		t.Errorf("expected both looked-up titles in output, got:\n%s", out)
+	}
+}
+
+// TestScenario_SubAdd_ChildLookupFailureSendsNoMutation covers the guard path:
+// when an issue cannot be resolved, no link is attempted.
+func TestScenario_SubAdd_ChildLookupFailureSendsNoMutation(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondToFunc("GetIssue", issueByNumberFixture(map[int]string{
+		10: "Parent epic",
+		// 999 deliberately absent — the child lookup returns a null issue.
+	}))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newSubAddCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := runSubAdd(cmd, []string{"10", "999"}, &subAddOptions{})
+	if err == nil {
+		t.Fatalf("expected an error for an unresolvable child, got nil (output %q)", buf.String())
+	}
+
+	if got := handler.requestsFor("AddSubIssue"); len(got) != 0 {
+		t.Errorf("expected no link mutation when the child cannot be resolved, got %d", len(got))
+	}
+}
+
+// TestScenario_SubCreate_CreatesIssueAndLinksToParent drives the full create
+// chain: look up parent -> resolve repo id -> CreateIssue -> AddSubIssue with
+// the new issue's node id.
+func TestScenario_SubCreate_CreatesIssueAndLinksToParent(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondToFunc("GetIssue", issueByNumberFixture(map[int]string{
+		10: "Parent epic",
+	}))
+	handler.respondTo("GetRepositoryID", gqlData(map[string]interface{}{
+		"repository": map[string]interface{}{"id": "repo-node-1"},
+	}))
+	handler.respondTo("CreateIssue", gqlData(map[string]interface{}{
+		"createIssue": map[string]interface{}{
+			"issue": map[string]interface{}{
+				"id":     "issue-node-new",
+				"number": 21,
+				"title":  "Implement feature X",
+				"body":   "Task body",
+				"state":  "OPEN",
+				"url":    "https://github.com/test-org/test-repo/issues/21",
+			},
+		},
+	}))
+	handler.respondTo("AddSubIssue", gqlData(map[string]interface{}{
+		"addSubIssue": map[string]interface{}{
+			"issue":    map[string]interface{}{"id": "issue-10"},
+			"subIssue": map[string]interface{}{"id": "issue-node-new"},
+		},
+	}))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newSubCreateCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	opts := &subCreateOptions{
+		parent: "10",
+		title:  "Implement feature X",
+		body:   "Task body",
+	}
+	if err := runSubCreate(cmd, opts); err != nil {
+		t.Fatalf("runSubCreate() error = %v (output %q)", err, buf.String())
+	}
+
+	// The new issue must carry the requested title and body to the mutation.
+	created := handler.requestsFor("CreateIssue")
+	if len(created) != 1 {
+		t.Fatalf("expected exactly one CreateIssue mutation, got %d (ops: %v)",
+			len(created), handler.operationNames())
+	}
+	createInput, ok := created[0].Variables["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected input object, got %v", created[0].Variables)
+	}
+	if createInput["title"] != "Implement feature X" {
+		t.Errorf("expected the title to reach the mutation, got %v", createInput["title"])
+	}
+	if createInput["repositoryId"] != "repo-node-1" {
+		t.Errorf("expected the resolved repository id, got %v", createInput["repositoryId"])
+	}
+
+	// And the newly created issue — not the parent — must be linked as the child.
+	linked := handler.requestsFor("AddSubIssue")
+	if len(linked) != 1 {
+		t.Fatalf("expected exactly one AddSubIssue mutation, got %d (ops: %v)",
+			len(linked), handler.operationNames())
+	}
+	linkInput, ok := linked[0].Variables["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected input object, got %v", linked[0].Variables)
+	}
+	if linkInput["issueId"] != "issue-10" {
+		t.Errorf("expected the parent's node id as issueId, got %v", linkInput["issueId"])
+	}
+	if linkInput["subIssueId"] != "issue-node-new" {
+		t.Errorf("expected the created issue's node id as subIssueId, got %v", linkInput["subIssueId"])
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Created sub-issue #21 under parent #10") {
+		t.Errorf("expected the creation confirmation, got:\n%s", out)
+	}
+}
+
+// TestScenario_SubCreate_LinkFailureStillReportsCreatedIssue pins the partial
+// failure contract: the issue exists on GitHub even though the link failed, so
+// the command must report its number rather than swallow it.
+func TestScenario_SubCreate_LinkFailureStillReportsCreatedIssue(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondToFunc("GetIssue", issueByNumberFixture(map[int]string{
+		10: "Parent epic",
+	}))
+	handler.respondTo("GetRepositoryID", gqlData(map[string]interface{}{
+		"repository": map[string]interface{}{"id": "repo-node-1"},
+	}))
+	handler.respondTo("CreateIssue", gqlData(map[string]interface{}{
+		"createIssue": map[string]interface{}{
+			"issue": map[string]interface{}{
+				"id":     "issue-node-new",
+				"number": 22,
+				"title":  "Orphan task",
+				"url":    "https://github.com/test-org/test-repo/issues/22",
+			},
+		},
+	}))
+	// The link mutation fails: GraphQL errors envelope, no data.
+	handler.respondTo("AddSubIssue", map[string]interface{}{
+		"errors": []interface{}{
+			map[string]interface{}{"message": "Sub-issues are not enabled for this repository"},
+		},
+	})
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newSubCreateCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := runSubCreate(cmd, &subCreateOptions{parent: "10", title: "Orphan task"})
+	if err == nil {
+		t.Fatal("expected an error when the sub-issue link fails")
+	}
+
+	// The created issue must not be silently lost.
+	if !strings.Contains(buf.String(), "Created issue #22") {
+		t.Errorf("expected the created issue to be reported despite the link failure, got:\n%s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "created but failed to link") {
+		t.Errorf("expected a partial-failure error, got: %v", err)
+	}
+}
+
+// TestScenario_SubRemove_UnlinksChildViaMutation drives runSubRemove and asserts
+// the RemoveSubIssue payload carries parent and child node ids in that order.
+func TestScenario_SubRemove_UnlinksChildViaMutation(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondToFunc("GetIssue", issueByNumberFixture(map[int]string{
+		10: "Parent epic",
+		15: "Child task",
+	}))
+	handler.respondTo("RemoveSubIssue", gqlData(map[string]interface{}{
+		"removeSubIssue": map[string]interface{}{
+			"issue":    map[string]interface{}{"id": "issue-10"},
+			"subIssue": map[string]interface{}{"id": "issue-15"},
+		},
+	}))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newSubRemoveCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	if err := runSubRemove(cmd, []string{"10", "15"}, &subRemoveOptions{}); err != nil {
+		t.Fatalf("runSubRemove() error = %v (output %q)", err, buf.String())
+	}
+
+	reqs := handler.requestsFor("RemoveSubIssue")
+	if len(reqs) != 1 {
+		t.Fatalf("expected exactly one RemoveSubIssue mutation, got %d (ops: %v)",
+			len(reqs), handler.operationNames())
+	}
+	input, ok := reqs[0].Variables["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected input object in mutation variables, got %v", reqs[0].Variables)
+	}
+	if input["issueId"] != "issue-10" {
+		t.Errorf("expected the parent's node id as issueId, got %v", input["issueId"])
+	}
+	if input["subIssueId"] != "issue-15" {
+		t.Errorf("expected the child's node id as subIssueId, got %v", input["subIssueId"])
+	}
+
+	if !strings.Contains(buf.String(), "#15 is no longer a sub-issue of #10") {
+		t.Errorf("expected the unlink confirmation, got:\n%s", buf.String())
+	}
+}
+
+// TestScenario_SubRemove_BatchUnlinksEachChild covers the batch path: one
+// mutation per child, each carrying that child's own node id. The fixture is
+// asymmetric (two distinct children) so a loop that reused one id would fail.
+func TestScenario_SubRemove_BatchUnlinksEachChild(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondToFunc("GetIssue", issueByNumberFixture(map[int]string{
+		10: "Parent epic",
+		15: "First child",
+		16: "Second child",
+	}))
+	handler.respondTo("RemoveSubIssue", gqlData(map[string]interface{}{
+		"removeSubIssue": map[string]interface{}{
+			"issue":    map[string]interface{}{"id": "issue-10"},
+			"subIssue": map[string]interface{}{"id": "issue-15"},
+		},
+	}))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newSubRemoveCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	if err := runSubRemove(cmd, []string{"10", "15", "16"}, &subRemoveOptions{}); err != nil {
+		t.Fatalf("runSubRemove() error = %v (output %q)", err, buf.String())
+	}
+
+	reqs := handler.requestsFor("RemoveSubIssue")
+	if len(reqs) != 2 {
+		t.Fatalf("expected one RemoveSubIssue mutation per child, got %d (ops: %v)",
+			len(reqs), handler.operationNames())
+	}
+
+	var subIssueIDs []interface{}
+	for _, r := range reqs {
+		input, ok := r.Variables["input"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected input object, got %v", r.Variables)
+		}
+		if input["issueId"] != "issue-10" {
+			t.Errorf("expected every mutation to name the parent, got %v", input["issueId"])
+		}
+		subIssueIDs = append(subIssueIDs, input["subIssueId"])
+	}
+	if subIssueIDs[0] != "issue-15" || subIssueIDs[1] != "issue-16" {
+		t.Errorf("expected each child's own node id, got %v", subIssueIDs)
+	}
+
+	if !strings.Contains(buf.String(), "2 succeeded, 0 failed") {
+		t.Errorf("expected the batch summary, got:\n%s", buf.String())
 	}
 }
 

@@ -51,6 +51,10 @@ type queryMatcher struct {
 type mockGraphQLHandler struct {
 	// responses maps exact GraphQL operation names to their JSON responses
 	responses map[string]interface{}
+	// responders maps exact GraphQL operation names to a function that derives
+	// the response from the request, for flows that issue the same operation
+	// more than once and must be answered differently each time.
+	responders map[string]func(graphQLRequest) interface{}
 	// matchers holds ordered substring rules for anonymous documents
 	matchers []queryMatcher
 	// Default response for unmatched operations
@@ -68,8 +72,9 @@ type graphQLRequest struct {
 
 func newMockGraphQLHandler() *mockGraphQLHandler {
 	return &mockGraphQLHandler{
-		responses: make(map[string]interface{}),
-		requests:  []graphQLRequest{},
+		responses:  make(map[string]interface{}),
+		responders: make(map[string]func(graphQLRequest) interface{}),
+		requests:   []graphQLRequest{},
 	}
 }
 
@@ -78,6 +83,24 @@ func (h *mockGraphQLHandler) respondTo(opName string, response interface{}) *moc
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.responses[opName] = response
+	return h
+}
+
+// respondToFunc registers a per-request responder for an exact GraphQL
+// operation name. It takes precedence over respondTo for the same name.
+//
+// This exists because a single fixture per operation makes some flows
+// untestable rather than merely awkward: sub add issues GetIssue twice — once
+// for the parent, once for the child — and a static fixture answers both with
+// the same node id. The AddSubIssue payload would then carry identical ids for
+// issueId and subIssueId, so swapping parent and child in the production call
+// would still satisfy the assertion. TESTING.md calls this out under "Watch for
+// symmetric fixtures": when a test distinguishes two things, the fixtures must
+// differ.
+func (h *mockGraphQLHandler) respondToFunc(opName string, fn func(graphQLRequest) interface{}) *mockGraphQLHandler {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.responders[opName] = fn
 	return h
 }
 
@@ -126,10 +149,12 @@ func (h *mockGraphQLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	h.requests = append(h.requests, req)
 
-	// 1. Exact operation name.
+	// 1. Exact operation name — per-request responder first, then static.
 	var response interface{}
 	if op := graphQLOperationName(req.Query); op != "" {
-		if resp, ok := h.responses[op]; ok {
+		if fn, ok := h.responders[op]; ok {
+			response = fn(req)
+		} else if resp, ok := h.responses[op]; ok {
 			response = resp
 		}
 	}
