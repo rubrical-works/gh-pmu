@@ -989,9 +989,9 @@ func (c *scenarioBranchClient) GitTag(tag, message string) error {
 	c.gitTags = append(c.gitTags, tag)
 	return nil
 }
-func (c *scenarioBranchClient) GitAdd(paths ...string) error       { return nil }
+func (c *scenarioBranchClient) GitAdd(paths ...string) error         { return nil }
 func (c *scenarioBranchClient) WriteFile(path, content string) error { return nil }
-func (c *scenarioBranchClient) MkdirAll(path string) error         { return nil }
+func (c *scenarioBranchClient) MkdirAll(path string) error           { return nil }
 
 // newScenarioBranchClient builds the client above against the active test
 // transport. setupTestEnvironmentWithConfig must have run first.
