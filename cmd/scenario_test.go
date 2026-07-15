@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/rubrical-works/gh-pmu/internal/api"
+	"github.com/rubrical-works/gh-pmu/internal/config"
 )
 
 // Command-level scenario tests (#884).
@@ -923,6 +927,503 @@ func TestScenario_Move_UnknownIssueReportsError(t *testing.T) {
 
 	if got := handler.requestsFor("BatchUpdate"); len(got) != 0 {
 		t.Errorf("expected no mutation when the issue cannot be resolved, got %d", len(got))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// branch lifecycle scenarios (#887)
+// ---------------------------------------------------------------------------
+//
+// branch_test.go already drives runBranchStartWithDeps / AddWithDeps /
+// CloseWithDeps across ~85 tests, but it substitutes the whole client, so it
+// asserts what the code *intends* to send. These scenarios drive the real
+// api.Client and assert what reaches the wire.
+
+// branchTestConfig adds the "branch" text field the branch commands require;
+// defaultTestConfig declares only status and priority. Values mirror the real
+// .gh-pmu.json: Branch is a TEXT field, so SetProjectItemField routes through
+// setTextField rather than the single-select path Status uses.
+const branchTestConfig = `{
+  "project": {
+    "owner": "test-org",
+    "number": 1
+  },
+  "repositories": ["test-org/test-repo"],
+  "fields": {
+    "status": {
+      "field": "Status",
+      "values": {
+        "backlog": "Backlog",
+        "in_progress": "In Progress",
+        "done": "Done",
+        "parking_lot": "Parking Lot"
+      }
+    },
+    "branch": {
+      "field": "Branch"
+    }
+  }
+}`
+
+// scenarioBranchClient is a real *api.Client — so every GraphQL call builds a
+// real document and travels through redirectTransport to the mock server —
+// with only the local side-effect methods of branchClient overridden.
+//
+// branchClient mixes API calls with git and filesystem work
+// (GitCheckoutNewBranch, GitTag, GitAdd, WriteFile, MkdirAll). Those are the
+// one part of the interface that must not run for real in a test: they would
+// touch the working tree rather than the httptest server. Every method that
+// talks to GitHub is left to the embedded client, which is the entire point of
+// driving a scenario rather than a mock.
+type scenarioBranchClient struct {
+	*api.Client
+	gitBranches []string
+	gitTags     []string
+}
+
+func (c *scenarioBranchClient) GitCheckoutNewBranch(branch string) error {
+	c.gitBranches = append(c.gitBranches, branch)
+	return nil
+}
+func (c *scenarioBranchClient) GitTag(tag, message string) error {
+	c.gitTags = append(c.gitTags, tag)
+	return nil
+}
+func (c *scenarioBranchClient) GitAdd(paths ...string) error       { return nil }
+func (c *scenarioBranchClient) WriteFile(path, content string) error { return nil }
+func (c *scenarioBranchClient) MkdirAll(path string) error         { return nil }
+
+// newScenarioBranchClient builds the client above against the active test
+// transport. setupTestEnvironmentWithConfig must have run first.
+func newScenarioBranchClient(t *testing.T) *scenarioBranchClient {
+	t.Helper()
+	real, err := api.NewClient()
+	if err != nil {
+		t.Fatalf("api.NewClient() error = %v", err)
+	}
+	return &scenarioBranchClient{Client: real}
+}
+
+// loadScenarioConfig loads the config written by setupTestEnvironmentWithConfig
+// from the temp cwd, the same way the cobra RunE does.
+func loadScenarioConfig(t *testing.T) *config.Config {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd() error = %v", err)
+	}
+	cfg, err := config.LoadFromDirectory(cwd)
+	if err != nil {
+		t.Fatalf("config.LoadFromDirectory() error = %v", err)
+	}
+	return cfg
+}
+
+// branchTrackerNode builds one node of a GetIssuesByLabel response.
+func branchTrackerNode(id string, number int, title, state string) map[string]interface{} {
+	return map[string]interface{}{
+		"id":     id,
+		"number": number,
+		"title":  title,
+		"state":  state,
+		"url":    "https://github.com/test-org/test-repo/issues/" + strconv.Itoa(number),
+		"labels": map[string]interface{}{"nodes": []interface{}{
+			map[string]interface{}{"name": "branch"},
+		}},
+	}
+}
+
+// issuesByLabelFixture is the GetIssuesByLabel response.
+func issuesByLabelFixture(nodes ...map[string]interface{}) map[string]interface{} {
+	asAny := make([]interface{}, 0, len(nodes))
+	for _, n := range nodes {
+		asAny = append(asAny, n)
+	}
+	return gqlData(map[string]interface{}{
+		"repository": map[string]interface{}{
+			"issues": map[string]interface{}{
+				"nodes":    asAny,
+				"pageInfo": map[string]interface{}{"hasNextPage": false, "endCursor": ""},
+			},
+		},
+	})
+}
+
+// branchProjectFieldsFixture is GetProjectFields carrying both the Status
+// single-select and the Branch TEXT field, which the branch flows need in
+// order to route to setTextField.
+func branchProjectFieldsFixture() map[string]interface{} {
+	return gqlData(map[string]interface{}{
+		"node": map[string]interface{}{
+			"fields": map[string]interface{}{
+				"nodes": []interface{}{
+					map[string]interface{}{
+						"__typename": "ProjectV2SingleSelectField",
+						"id":         "field-status",
+						"name":       "Status",
+						"dataType":   "SINGLE_SELECT",
+						"options": []interface{}{
+							map[string]interface{}{"id": "opt-backlog", "name": "Backlog"},
+							map[string]interface{}{"id": "opt-inprog", "name": "In Progress"},
+							map[string]interface{}{"id": "opt-done", "name": "Done"},
+							map[string]interface{}{"id": "opt-parking", "name": "Parking Lot"},
+						},
+					},
+					map[string]interface{}{
+						"__typename": "ProjectV2Field",
+						"id":         "field-branch",
+						"name":       "Branch",
+						"dataType":   "TEXT",
+					},
+				},
+				"pageInfo": map[string]interface{}{"hasNextPage": false, "endCursor": ""},
+			},
+		},
+	})
+}
+
+// projectItemLookupFixture is the response to the GetProjectItemID flavour of
+// GetProjectItems.
+//
+// Note the collision: GetProjectItemID and the list/board path both send an
+// operation *named* GetProjectItems, but GetProjectItemID selects only
+// {id, content{... on Issue{id}}}. The richer projectItemsFixture used by the
+// list scenarios carries __typename and issue detail that this query never
+// asks for, and decoding it here fails. Same name, different document — so the
+// fixtures cannot be shared.
+func projectItemLookupFixture(itemID, issueID string) map[string]interface{} {
+	return gqlData(map[string]interface{}{
+		"node": map[string]interface{}{
+			"items": map[string]interface{}{
+				"nodes": []interface{}{
+					map[string]interface{}{
+						"id": itemID,
+						// `... on Issue` flattens into content.
+						"content": map[string]interface{}{"id": issueID},
+					},
+				},
+				"pageInfo": map[string]interface{}{"hasNextPage": false, "endCursor": ""},
+			},
+		},
+	})
+}
+
+// fieldUpdatesFor returns the UpdateProjectV2ItemFieldValue inputs whose
+// fieldId matches, so assertions can pick the Status update out of a flow that
+// also writes Branch (and vice versa).
+func fieldUpdatesFor(t *testing.T, handler *mockGraphQLHandler, fieldID string) []map[string]interface{} {
+	t.Helper()
+	var out []map[string]interface{}
+	for _, r := range handler.requestsFor("UpdateProjectV2ItemFieldValue") {
+		input, ok := r.Variables["input"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected input object in field update, got %v", r.Variables)
+		}
+		if input["fieldId"] == fieldID {
+			out = append(out, input)
+		}
+	}
+	return out
+}
+
+// TestScenario_BranchLifecycle_StartAddClose drives the whole lifecycle in one
+// pass — branch start -> branch add -> branch close — against a single handler
+// whose GetIssuesByLabel answer changes once the tracker is created, the way
+// GitHub's would. It asserts the tracker issue and the Branch field values that
+// actually reach the API at each stage.
+func TestScenario_BranchLifecycle_StartAddClose(t *testing.T) {
+	handler := newMockGraphQLHandler()
+
+	// GetIssuesByLabel is stateful: no tracker before start creates one, the
+	// tracker afterwards. branch start refuses to run when one already exists,
+	// and add/close both need to find it.
+	trackerExists := false
+	handler.respondToFunc("GetIssuesByLabel", func(graphQLRequest) interface{} {
+		if !trackerExists {
+			return issuesByLabelFixture()
+		}
+		return issuesByLabelFixture(
+			branchTrackerNode("tracker-node-1", 500, "Branch: release/v2.0.0", "OPEN"))
+	})
+	handler.respondToFunc("CreateIssue", func(graphQLRequest) interface{} {
+		trackerExists = true
+		return gqlData(map[string]interface{}{
+			"createIssue": map[string]interface{}{
+				"issue": map[string]interface{}{
+					"id":     "tracker-node-1",
+					"number": 500,
+					"title":  "Branch: release/v2.0.0",
+					"body":   "",
+					"state":  "OPEN",
+					"url":    "https://github.com/test-org/test-repo/issues/500",
+				},
+			},
+		})
+	})
+	handler.respondTo("GetRepositoryID", gqlData(map[string]interface{}{
+		"repository": map[string]interface{}{"id": "repo-node-1"},
+	}))
+	// The label lookup builds an anonymous aliased document
+	// (`query { repository(...) { l0: label(name: "branch") { id } } }`), so it
+	// has no operation name to match on — the one substring matcher here.
+	// Without it, CreateIssue's label resolution would not find "branch" and
+	// production would auto-create the label, adding CreateLabel/GetLabelID
+	// round trips that have nothing to do with what this test asserts.
+	handler.respondToQueryContaining("l0: label(name:", gqlData(map[string]interface{}{
+		"repository": map[string]interface{}{
+			"l0": map[string]interface{}{"id": "label-branch"},
+		},
+	}))
+	handler.respondTo("GetUserProject", userProjectFixture("proj-1", "Test Project"))
+	handler.respondTo("AddProjectV2ItemById", gqlData(map[string]interface{}{
+		"addProjectV2ItemById": map[string]interface{}{
+			"item": map[string]interface{}{"id": "item-tracker-1"},
+		},
+	}))
+	handler.respondTo("GetProjectFields", branchProjectFieldsFixture())
+	// SetProjectItemField selects only clientMutationId — returning a
+	// projectV2Item object here fails to decode.
+	handler.respondTo("UpdateProjectV2ItemFieldValue", gqlData(map[string]interface{}{
+		"updateProjectV2ItemFieldValue": map[string]interface{}{"clientMutationId": nil},
+	}))
+	// branch add looks the issue up by number, then finds its project item.
+	handler.respondToFunc("GetIssue", issueByNumberFixture(map[int]string{
+		42: "Issue to track on the branch",
+	}))
+	handler.respondTo("GetProjectItems", projectItemLookupFixture("item-42", "issue-42"))
+	// branch close reads the tracker's sub-issues; all closed means nothing to
+	// move to backlog, so the close path runs clean.
+	handler.respondTo("GetSubIssues", subIssuesFixture(
+		subIssueNode(42, "Issue to track on the branch", "CLOSED"),
+	))
+	handler.respondTo("CloseIssue", gqlData(map[string]interface{}{
+		"closeIssue": map[string]interface{}{
+			"issue": map[string]interface{}{"id": "tracker-node-1"},
+		},
+	}))
+
+	_, cleanup := setupTestEnvironmentWithConfig(t, handler, branchTestConfig)
+	defer cleanup()
+
+	cfg := loadScenarioConfig(t)
+	client := newScenarioBranchClient(t)
+
+	// --- branch start -----------------------------------------------------
+	startCmd := newBranchStartCommand()
+	var startBuf bytes.Buffer
+	startCmd.SetOut(&startBuf)
+	startCmd.SetErr(&startBuf)
+
+	err := runBranchStartWithDeps(startCmd, &branchStartOptions{branchName: "release/v2.0.0"}, cfg, client)
+	if err != nil {
+		t.Fatalf("runBranchStartWithDeps() error = %v (output %q)", err, startBuf.String())
+	}
+
+	// The tracker issue must reach the API with the branch-derived title and
+	// the branch label attached.
+	created := handler.requestsFor("CreateIssue")
+	if len(created) != 1 {
+		t.Fatalf("expected exactly one CreateIssue mutation, got %d (ops: %v)",
+			len(created), handler.operationNames())
+	}
+	createInput, ok := created[0].Variables["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected input object, got %v", created[0].Variables)
+	}
+	if createInput["title"] != "Branch: release/v2.0.0" {
+		t.Errorf("expected the tracker title to carry the branch name, got %v", createInput["title"])
+	}
+	if createInput["repositoryId"] != "repo-node-1" {
+		t.Errorf("expected the resolved repository id, got %v", createInput["repositoryId"])
+	}
+	labelIDs, ok := createInput["labelIds"].([]interface{})
+	if !ok || len(labelIDs) != 1 || labelIDs[0] != "label-branch" {
+		t.Errorf("expected the tracker to carry the resolved 'branch' label id, got %v", createInput["labelIds"])
+	}
+
+	// The tracker must be added to the configured project...
+	added := handler.requestsFor("AddProjectV2ItemById")
+	if len(added) != 1 {
+		t.Fatalf("expected the tracker to be added to the project once, got %d", len(added))
+	}
+	addInput, _ := added[0].Variables["input"].(map[string]interface{})
+	if addInput["projectId"] != "proj-1" || addInput["contentId"] != "tracker-node-1" {
+		t.Errorf("expected the tracker added to proj-1, got %v", addInput)
+	}
+
+	// ...and its Status set to In Progress via the resolved option id.
+	statusUpdates := fieldUpdatesFor(t, handler, "field-status")
+	if len(statusUpdates) != 1 {
+		t.Fatalf("expected exactly one Status update during start, got %d", len(statusUpdates))
+	}
+	statusValue, ok := statusUpdates[0]["value"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected value object, got %v", statusUpdates[0]["value"])
+	}
+	if statusValue["singleSelectOptionId"] != "opt-inprog" {
+		t.Errorf("expected Status to resolve to option id 'opt-inprog', got %v",
+			statusValue["singleSelectOptionId"])
+	}
+	if statusUpdates[0]["itemId"] != "item-tracker-1" {
+		t.Errorf("expected the Status update to target the tracker's item, got %v", statusUpdates[0]["itemId"])
+	}
+
+	// The git branch is created locally, not via the API.
+	if len(client.gitBranches) != 1 || client.gitBranches[0] != "release/v2.0.0" {
+		t.Errorf("expected the git branch to be created once, got %v", client.gitBranches)
+	}
+
+	// --- branch add -------------------------------------------------------
+	addCmd := newBranchAddCommand()
+	var addBuf bytes.Buffer
+	addCmd.SetOut(&addBuf)
+	addCmd.SetErr(&addBuf)
+
+	if err := runBranchAddWithDeps(addCmd, &branchAddOptions{issueNumber: 42}, cfg, client); err != nil {
+		t.Fatalf("runBranchAddWithDeps() error = %v (output %q)", err, addBuf.String())
+	}
+
+	// The Branch field is TEXT: the value must reach the API as the branch name
+	// extracted from the tracker title, under `text` rather than an option id.
+	branchUpdates := fieldUpdatesFor(t, handler, "field-branch")
+	if len(branchUpdates) != 1 {
+		t.Fatalf("expected exactly one Branch field update during add, got %d", len(branchUpdates))
+	}
+	if branchUpdates[0]["itemId"] != "item-42" {
+		t.Errorf("expected the Branch update to target issue #42's project item, got %v",
+			branchUpdates[0]["itemId"])
+	}
+	branchValue, ok := branchUpdates[0]["value"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected value object, got %v", branchUpdates[0]["value"])
+	}
+	if branchValue["text"] != "release/v2.0.0" {
+		t.Errorf("expected the Branch field to carry the branch name as text, got %v", branchValue["text"])
+	}
+	if !strings.Contains(addBuf.String(), "Added #42 to release release/v2.0.0") {
+		t.Errorf("expected the add confirmation, got:\n%s", addBuf.String())
+	}
+
+	// --- branch close -----------------------------------------------------
+	closeCmd := newBranchCloseCommand()
+	var closeBuf bytes.Buffer
+	closeCmd.SetOut(&closeBuf)
+	closeCmd.SetErr(&closeBuf)
+
+	closeOpts := &branchCloseOptions{branchName: "release/v2.0.0", yes: true}
+	if err := runBranchCloseWithDeps(closeCmd, closeOpts, cfg, client); err != nil {
+		t.Fatalf("runBranchCloseWithDeps() error = %v (output %q)", err, closeBuf.String())
+	}
+
+	// The tracker issue — not some other issue — must be the one closed.
+	closed := handler.requestsFor("CloseIssue")
+	if len(closed) != 1 {
+		t.Fatalf("expected exactly one CloseIssue mutation, got %d (ops: %v)",
+			len(closed), handler.operationNames())
+	}
+	closeInput, ok := closed[0].Variables["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected input object, got %v", closed[0].Variables)
+	}
+	if closeInput["issueId"] != "tracker-node-1" {
+		t.Errorf("expected the tracker's node id to be closed, got %v", closeInput["issueId"])
+	}
+
+	out := closeBuf.String()
+	if !strings.Contains(out, "Tracker issue: #500") {
+		t.Errorf("expected the tracker number in the close summary, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Branch closed: release/v2.0.0") {
+		t.Errorf("expected the close confirmation, got:\n%s", out)
+	}
+	// No tag requested, so none should have been cut.
+	if len(client.gitTags) != 0 {
+		t.Errorf("expected no git tag without --tag, got %v", client.gitTags)
+	}
+}
+
+// TestScenario_BranchStart_RefusesWhenBranchAlreadyActive covers the guard:
+// with a tracker already open, start must not create a second one — and must
+// not create the git branch either.
+func TestScenario_BranchStart_RefusesWhenBranchAlreadyActive(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondTo("GetIssuesByLabel", issuesByLabelFixture(
+		branchTrackerNode("tracker-node-1", 500, "Branch: release/v1.0.0", "OPEN"),
+	))
+
+	_, cleanup := setupTestEnvironmentWithConfig(t, handler, branchTestConfig)
+	defer cleanup()
+
+	cfg := loadScenarioConfig(t)
+	client := newScenarioBranchClient(t)
+
+	cmd := newBranchStartCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := runBranchStartWithDeps(cmd, &branchStartOptions{branchName: "release/v2.0.0"}, cfg, client)
+	if err == nil {
+		t.Fatalf("expected an error when a branch is already active, got nil (output %q)", buf.String())
+	}
+	if !strings.Contains(err.Error(), "active branch exists") {
+		t.Errorf("expected an active-branch error, got: %v", err)
+	}
+
+	if got := handler.requestsFor("CreateIssue"); len(got) != 0 {
+		t.Errorf("expected no tracker issue to be created, got %d", len(got))
+	}
+	if len(client.gitBranches) != 0 {
+		t.Errorf("expected no git branch to be created, got %v", client.gitBranches)
+	}
+}
+
+// TestScenario_BranchClose_TagsReleaseWhenRequested pins the --tag path: the
+// tag is cut, and the tracker is still closed.
+//
+// It deliberately does NOT claim the tag name is derived from the tracker
+// title rather than the flag. extractBranchVersion strips the "Branch: "
+// prefix and any " (codename)" suffix, so the extracted version is equal to
+// opts.branchName by construction for every title the close matcher accepts —
+// no fixture can make the two differ, and a test asserting the distinction
+// would be asserting its own arithmetic. The lifecycle test's no-tag-without
+// --tag assertion is what gives this flag its teeth.
+func TestScenario_BranchClose_TagsReleaseWhenRequested(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondTo("GetIssuesByLabel", issuesByLabelFixture(
+		branchTrackerNode("tracker-node-1", 500, "Branch: release/v2.0.0", "OPEN"),
+	))
+	handler.respondTo("GetSubIssues", subIssuesFixture(
+		subIssueNode(42, "Done work", "CLOSED"),
+	))
+	handler.respondTo("GetUserProject", userProjectFixture("proj-1", "Test Project"))
+	handler.respondTo("CloseIssue", gqlData(map[string]interface{}{
+		"closeIssue": map[string]interface{}{
+			"issue": map[string]interface{}{"id": "tracker-node-1"},
+		},
+	}))
+
+	_, cleanup := setupTestEnvironmentWithConfig(t, handler, branchTestConfig)
+	defer cleanup()
+
+	cfg := loadScenarioConfig(t)
+	client := newScenarioBranchClient(t)
+
+	cmd := newBranchCloseCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	opts := &branchCloseOptions{branchName: "release/v2.0.0", yes: true, tag: true}
+	if err := runBranchCloseWithDeps(cmd, opts, cfg, client); err != nil {
+		t.Fatalf("runBranchCloseWithDeps() error = %v (output %q)", err, buf.String())
+	}
+
+	if len(client.gitTags) != 1 || client.gitTags[0] != "release/v2.0.0" {
+		t.Errorf("expected the tag to be cut from the tracker's branch name, got %v", client.gitTags)
+	}
+	if got := handler.requestsFor("CloseIssue"); len(got) != 1 {
+		t.Errorf("expected the tracker to still be closed, got %d CloseIssue calls", len(got))
 	}
 }
 

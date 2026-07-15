@@ -209,19 +209,10 @@ func (t *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	return t.server.Client().Do(newReq)
 }
 
-// setupTestEnvironment creates a temp directory with a valid config file
-// and sets up the mock GraphQL server. Returns a cleanup function.
-func setupTestEnvironment(t *testing.T, handler *mockGraphQLHandler) (string, func()) {
-	t.Helper()
-
-	// Create temp directory
-	tmpDir, err := os.MkdirTemp("", "gh-pmu-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-
-	// Write config file
-	configContent := `{
+// defaultTestConfig is the config setupTestEnvironment writes. It carries no
+// "branch" field: the branch commands require one, so scenarios for those use
+// setupTestEnvironmentWithConfig and branchTestConfig instead.
+const defaultTestConfig = `{
   "project": {
     "owner": "test-org",
     "number": 1
@@ -246,6 +237,26 @@ func setupTestEnvironment(t *testing.T, handler *mockGraphQLHandler) (string, fu
     }
   }
 }`
+
+// setupTestEnvironment creates a temp directory with a valid config file
+// and sets up the mock GraphQL server. Returns a cleanup function.
+func setupTestEnvironment(t *testing.T, handler *mockGraphQLHandler) (string, func()) {
+	t.Helper()
+	return setupTestEnvironmentWithConfig(t, handler, defaultTestConfig)
+}
+
+// setupTestEnvironmentWithConfig is setupTestEnvironment with a caller-supplied
+// config document, for commands whose behavior depends on fields the default
+// config does not declare.
+func setupTestEnvironmentWithConfig(t *testing.T, handler *mockGraphQLHandler, configContent string) (string, func()) {
+	t.Helper()
+
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "gh-pmu-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+
 	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		os.RemoveAll(tmpDir)
