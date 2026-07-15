@@ -98,53 +98,6 @@ func searchIssuesFixture(nodes ...map[string]interface{}) map[string]interface{}
 	})
 }
 
-// projectItemNode builds one node of a GetProjectItems response. Both the
-// content and fieldValues inline fragments flatten into their node objects.
-func projectItemNode(itemID string, number int, title, state, status string) map[string]interface{} {
-	fieldValues := []interface{}{}
-	if status != "" {
-		fieldValues = append(fieldValues, map[string]interface{}{
-			"__typename": "ProjectV2ItemFieldSingleSelectValue",
-			"name":       status,
-			"field":      map[string]interface{}{"name": "Status"},
-		})
-	}
-
-	return map[string]interface{}{
-		"id": itemID,
-		"content": map[string]interface{}{
-			"__typename": "Issue",
-			"id":         "issue-" + strconv.Itoa(number),
-			"number":     number,
-			"title":      title,
-			"body":       "",
-			"state":      state,
-			"url":        "https://github.com/test-org/test-repo/issues/" + strconv.Itoa(number),
-			"repository": map[string]interface{}{"nameWithOwner": "test-org/test-repo"},
-			"assignees":  map[string]interface{}{"nodes": []interface{}{}},
-			"labels":     map[string]interface{}{"nodes": []interface{}{}},
-		},
-		"fieldValues": map[string]interface{}{"nodes": fieldValues},
-	}
-}
-
-// projectItemsFixture is the GetProjectItems response. The `... on ProjectV2`
-// inline fragment flattens, so items sits directly under node.
-func projectItemsFixture(nodes ...map[string]interface{}) map[string]interface{} {
-	asAny := make([]interface{}, 0, len(nodes))
-	for _, n := range nodes {
-		asAny = append(asAny, n)
-	}
-	return gqlData(map[string]interface{}{
-		"node": map[string]interface{}{
-			"items": map[string]interface{}{
-				"nodes":    asAny,
-				"pageInfo": map[string]interface{}{"hasNextPage": false, "endCursor": ""},
-			},
-		},
-	})
-}
-
 // batchIssueLookupFixture is the response to the aliased batch document that
 // move issues to resolve issues and their project items:
 //
@@ -1086,11 +1039,12 @@ func branchProjectFieldsFixture() map[string]interface{} {
 // GetProjectItems.
 //
 // Note the collision: GetProjectItemID and the list/board path both send an
-// operation *named* GetProjectItems, but GetProjectItemID selects only
-// {id, content{... on Issue{id}}}. The richer projectItemsFixture used by the
-// list scenarios carries __typename and issue detail that this query never
-// asks for, and decoding it here fails. Same name, different document — so the
-// fixtures cannot be shared.
+// operation *named* GetProjectItems, but they select different fields —
+// GetProjectItemID asks only for {id, content{... on Issue{id}}}. A fixture
+// carrying __typename and issue detail, as the board-shaped response does,
+// fails to decode against this query. Same operation name, different document,
+// so one fixture cannot serve both; a scenario covering the board path needs
+// its own.
 func projectItemLookupFixture(itemID, issueID string) map[string]interface{} {
 	return gqlData(map[string]interface{}{
 		"node": map[string]interface{}{

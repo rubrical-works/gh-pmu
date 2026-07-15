@@ -269,7 +269,7 @@ func TestNamedOperations_ValidateAgainstVendoredSchema(t *testing.T) {
 			continue // asserted separately by TestNamedOperations_KnownInvalidStillFail
 		}
 		t.Run(name, func(t *testing.T) {
-			if _, errs := gqlparser.LoadQuery(schema, docs[name]); len(errs) > 0 {
+			if _, errs := gqlparser.LoadQueryWithRules(schema, docs[name], nil); len(errs) > 0 {
 				for _, e := range errs {
 					t.Errorf("%s does not validate against the vendored schema: %s", name, e.Message)
 				}
@@ -293,7 +293,7 @@ func TestNamedOperations_KnownInvalidStillFail(t *testing.T) {
 				name, reason)
 			continue
 		}
-		if _, errs := gqlparser.LoadQuery(schema, doc); len(errs) == 0 {
+		if _, errs := gqlparser.LoadQueryWithRules(schema, doc, nil); len(errs) == 0 {
 			t.Errorf("%s is quarantined (%s) but now validates cleanly — remove it from knownInvalidOperations",
 				name, reason)
 		}
@@ -374,7 +374,7 @@ func TestRawDocuments_ValidateAgainstVendoredSchema(t *testing.T) {
 			}
 
 			for _, doc := range docs {
-				if _, errs := gqlparser.LoadQuery(schema, doc); len(errs) > 0 {
+				if _, errs := gqlparser.LoadQueryWithRules(schema, doc, nil); len(errs) > 0 {
 					for _, e := range errs {
 						t.Errorf("%s does not validate against the vendored schema: %s", tc.label, e.Message)
 					}
@@ -437,7 +437,7 @@ const bogusField = "bogusFieldThatDoesNotExist"
 // validationErrors returns the validation messages for doc against schema, or
 // nil when it validates cleanly.
 func validationErrors(schema *ast.Schema, doc string) []string {
-	_, gerrs := gqlparser.LoadQuery(schema, doc)
+	_, gerrs := gqlparser.LoadQueryWithRules(schema, doc, nil)
 	var out []string
 	for _, e := range gerrs {
 		out = append(out, e.Message)
