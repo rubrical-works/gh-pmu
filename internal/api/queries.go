@@ -441,6 +441,10 @@ func (c *Client) GetIssue(owner, repo string, number int) (*Issue, error) {
 // field), so only project items whose project ID matches projectID contribute
 // field values. An empty projectID disables filtering and returns values from all
 // boards (backward-compatible behavior for callers that cannot resolve a project).
+//
+// Only the first 10 project items are inspected; if the issue belongs to more
+// boards a truncation warning is emitted to stderr, since the configured
+// project's item could lie beyond the fetched page (#860).
 func (c *Client) GetIssueWithProjectFields(projectID, owner, repo string, number int) (*Issue, []FieldValue, error) {
 	if err := validateOwnerRepo(owner, repo); err != nil {
 		return nil, nil, err
@@ -501,6 +505,9 @@ func (c *Client) GetIssueWithProjectFields(projectID, owner, repo string, number
 							}
 						} `graphql:"fieldValues(first: 20)"`
 					}
+					PageInfo struct {
+						HasNextPage bool
+					}
 				} `graphql:"projectItems(first: 10)"`
 			} `graphql:"issue(number: $number)"`
 		} `graphql:"repository(owner: $owner, name: $repo)"`
@@ -520,6 +527,10 @@ func (c *Client) GetIssueWithProjectFields(projectID, owner, repo string, number
 	err = c.gql.Query("GetIssueWithProjectFields", &query, variables)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get issue %s/%s#%d: %w", owner, repo, number, err)
+	}
+
+	if query.Repository.Issue.ProjectItems.PageInfo.HasNextPage {
+		fmt.Fprintf(os.Stderr, "Warning: issue #%d belongs to more than 10 projects; only the first 10 were read, so its field values may be incomplete.\n", number)
 	}
 
 	issue := &Issue{
@@ -581,6 +592,11 @@ func (c *Client) GetIssueWithProjectFields(projectID, owner, repo string, number
 
 // GetProjectItemIDForIssue looks up the project item ID for a specific issue in a project.
 // This is more efficient than fetching all project items when you only need one.
+//
+// It inspects only the first 20 project items on the issue (issues rarely belong
+// to more than a handful of projects). If the target project is not among those
+// 20 and more exist, a truncation warning is emitted to stderr so a false
+// "not in the project" result is visible rather than silent (#860).
 func (c *Client) GetProjectItemIDForIssue(projectID, owner, repo string, number int) (string, error) {
 
 	var query struct {
@@ -592,6 +608,9 @@ func (c *Client) GetProjectItemIDForIssue(projectID, owner, repo string, number 
 						Project struct {
 							ID string
 						}
+					}
+					PageInfo struct {
+						HasNextPage bool
 					}
 				} `graphql:"projectItems(first: 20)"`
 			} `graphql:"issue(number: $number)"`
@@ -619,6 +638,10 @@ func (c *Client) GetProjectItemIDForIssue(projectID, owner, repo string, number 
 		if item.Project.ID == projectID {
 			return item.ID, nil
 		}
+	}
+
+	if query.Repository.Issue.ProjectItems.PageInfo.HasNextPage {
+		fmt.Fprintf(os.Stderr, "Warning: issue #%d belongs to more than 20 projects; only the first 20 were checked, so \"not in the project\" may be inaccurate.\n", number)
 	}
 
 	return "", fmt.Errorf("issue #%d is not in the project", number)

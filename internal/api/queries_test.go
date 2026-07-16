@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -4096,5 +4098,61 @@ func TestListOrgProjects_Pagination(t *testing.T) {
 	}
 	if len(projects) != 103 {
 		t.Errorf("expected 103 projects across 2 pages, got %d", len(projects))
+	}
+}
+
+// captureStderr runs fn with os.Stderr redirected to a pipe and returns what was
+// written. Used to assert #860 truncation warnings.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+	fn()
+	_ = w.Close()
+	os.Stderr = old
+	out, _ := io.ReadAll(r)
+	return string(out)
+}
+
+// TestGetProjectItemIDForIssue_TruncationWarning covers #860 AC2: when the issue
+// belongs to more than the fetched cap of project items and the target is not
+// among them, a truncation warning is emitted so the "not in the project" result
+// is not silently misleading.
+func TestGetProjectItemIDForIssue_TruncationWarning(t *testing.T) {
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetProjectItemIDForIssue" {
+				return nil
+			}
+			conn := reflect.ValueOf(query).Elem().FieldByName("Repository").FieldByName("Issue").FieldByName("ProjectItems")
+			// One item, in a different project, and there are more pages.
+			nodes := conn.FieldByName("Nodes")
+			nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+			nodes.Index(0).FieldByName("ID").SetString("PVTI_other")
+			nodes.Index(0).FieldByName("Project").FieldByName("ID").SetString("PVT_other")
+			conn.FieldByName("PageInfo").FieldByName("HasNextPage").SetBool(true)
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	var id string
+	var callErr error
+	stderr := captureStderr(t, func() {
+		id, callErr = client.GetProjectItemIDForIssue("PVT_configured", "owner", "repo", 7)
+	})
+
+	if callErr == nil {
+		t.Fatal("expected a 'not in the project' error")
+	}
+	if id != "" {
+		t.Errorf("expected empty item id, got %q", id)
+	}
+	if !strings.Contains(stderr, "Warning") || !strings.Contains(stderr, "more than 20 projects") {
+		t.Errorf("expected a truncation warning on stderr, got: %q", stderr)
 	}
 }
