@@ -107,7 +107,7 @@ Examples:
 	cmd.Flags().IntVar(&opts.depth, "depth", 10, "Maximum depth for recursive operations")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show what would be changed without making changes")
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Bypass checkbox validation (still requires body and branch)")
-	cmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Skip confirmation prompts (for --recursive and --force)")
+	cmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Skip confirmation prompts (for --recursive)")
 	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Repository for the issue (owner/repo format)")
 
 	return cmd
@@ -427,17 +427,17 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 		if !opts.dryRun && validationErrors.HasErrors() {
 			return &validationErrors
 		}
-		// Prompt for confirmation when --force bypasses checkbox validation
+		// Warn when --force bypasses checkbox validation. forceWarnings is only
+		// populated when opts.force is set, and --force is itself the explicit
+		// confirmation to bypass (issue #778: --force implies --yes), so no
+		// additional confirmation gate is required here. The previous
+		// `!opts.yes && !opts.force` guard was unreachable dead code.
 		if !opts.dryRun && len(forceWarnings) > 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "Warning: --force bypasses checkbox validation:\n")
 			for _, w := range forceWarnings {
 				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", w)
 			}
 			fmt.Fprintln(cmd.OutOrStdout())
-
-			if !opts.yes && !opts.force {
-				return fmt.Errorf("use --yes or --force to confirm")
-			}
 		}
 	}
 

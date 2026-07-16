@@ -477,6 +477,27 @@ func TestMoveCommand_HasYesFlag(t *testing.T) {
 	}
 }
 
+func TestMoveCommand_YesFlagHelpDoesNotGateForce(t *testing.T) {
+	// #867 finding 3: --force implies confirmation (issue #778, AC-778-1), so the
+	// `!opts.yes && !opts.force` guard was unreachable dead code. The --yes help
+	// text must not claim to gate --force — that was the documented contradiction.
+	cmd := NewRootCommand()
+	moveCmd, _, err := cmd.Find([]string{"move"})
+	if err != nil {
+		t.Fatalf("move command not found: %v", err)
+	}
+	flag := moveCmd.Flags().Lookup("yes")
+	if flag == nil {
+		t.Fatal("Expected --yes flag to exist")
+	}
+	if strings.Contains(flag.Usage, "--force") {
+		t.Errorf("--yes help must not claim to gate --force (force self-confirms); got %q", flag.Usage)
+	}
+	if !strings.Contains(flag.Usage, "--recursive") {
+		t.Errorf("--yes help should still mention --recursive; got %q", flag.Usage)
+	}
+}
+
 func TestMoveCommand_RecursiveHelpText(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetArgs([]string{"move", "--help"})
