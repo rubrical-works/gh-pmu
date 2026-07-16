@@ -24,7 +24,9 @@ type mockListClient struct {
 
 	// Call tracking
 	searchCalls           []api.SearchFilters
+	searchLimits          []int
 	getProjectItemsCalled bool
+	projectItemsFilter    *api.ProjectItemsFilter
 
 	// Error injection
 	getProjectErr               error
@@ -58,6 +60,7 @@ func (m *mockListClient) GetProject(owner string, number int) (*api.Project, err
 
 func (m *mockListClient) GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error) {
 	m.getProjectItemsCalled = true
+	m.projectItemsFilter = filter
 	if m.getProjectItemsErr != nil {
 		return nil, m.getProjectItemsErr
 	}
@@ -80,6 +83,7 @@ func (m *mockListClient) GetSubIssueCounts(owner, repo string, numbers []int) (m
 
 func (m *mockListClient) SearchRepositoryIssues(owner, repo string, filters api.SearchFilters, limit int) ([]api.Issue, error) {
 	m.searchCalls = append(m.searchCalls, filters)
+	m.searchLimits = append(m.searchLimits, limit)
 	if m.searchRepositoryIssuesErr != nil {
 		return nil, m.searchRepositoryIssuesErr
 	}
@@ -740,6 +744,70 @@ func TestRunListWithDeps_WithLimit(t *testing.T) {
 		if strings.Contains(output, notWant) {
 			t.Errorf("expected %q beyond limit to be excluded, got: %s", notWant, output)
 		}
+	}
+}
+
+func TestRunListWithDeps_OverFetchesWhenClientSideFilterActive(t *testing.T) {
+	// #868 finding 2: a client-side-only filter (status) must not have the API
+	// fetch capped at --limit, or `--status done --limit 5` fetches only 5 issues
+	// of any status and can return 0. Over-fetch, apply --limit after filtering.
+	mock := newMockListClient()
+	mock.searchResults = []api.Issue{
+		{Number: 1, Title: "Issue 1", State: "OPEN"},
+	}
+
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"test-org/test-repo"},
+		Fields: map[string]config.Field{
+			"status": {Field: "Status", Values: map[string]string{"done": "Done"}},
+		},
+	}
+
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{status: "done", limit: 5}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mock.searchLimits) == 0 {
+		t.Fatal("expected SearchRepositoryIssues to be called")
+	}
+	if mock.searchLimits[0] != 0 {
+		t.Errorf("expected unlimited fetch (0) when --status filter active, got limit %d", mock.searchLimits[0])
+	}
+}
+
+func TestRunListWithDeps_UsesLimitWhenNoClientSideFilter(t *testing.T) {
+	// Companion: without client-side filters, the fetch is still capped at --limit
+	// (the optimization must not regress).
+	mock := newMockListClient()
+	mock.searchResults = []api.Issue{
+		{Number: 1, Title: "Issue 1", State: "OPEN"},
+	}
+
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"test-org/test-repo"},
+	}
+
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{limit: 5}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mock.searchLimits) == 0 {
+		t.Fatal("expected SearchRepositoryIssues to be called")
+	}
+	if mock.searchLimits[0] != 5 {
+		t.Errorf("expected fetch capped at --limit 5 with no client-side filter, got %d", mock.searchLimits[0])
 	}
 }
 

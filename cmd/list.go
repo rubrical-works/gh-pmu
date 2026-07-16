@@ -149,6 +149,25 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 	stateLower := strings.ToLower(opts.state)
 	useSearchAPI := repoFilter != ""
 
+	// When a client-side-only filter (a project field like status/priority/branch,
+	// no-branch, or sub-issue presence) runs after the fetch, capping the fetch at
+	// --limit can starve it — e.g. `--status done --limit 5` fetches 5 issues of any
+	// status, then filters to done and can yield 0. In that case fetch without a cap
+	// and apply --limit after filtering (below). Server-side filters (assignee/label/
+	// search/state in the search path) are already applied during the fetch and do
+	// not require over-fetching.
+	clientSideFilterActive := opts.status != "" || opts.priority != "" ||
+		opts.branch != "" || opts.noBranch || opts.hasSubIssues
+	if !useSearchAPI {
+		clientSideFilterActive = clientSideFilterActive ||
+			opts.assignee != "" || opts.label != "" || opts.search != "" ||
+			(opts.state != "" && stateLower != "all")
+	}
+	fetchLimit := opts.limit
+	if clientSideFilterActive {
+		fetchLimit = 0 // fetch all; --limit is applied after client-side filtering
+	}
+
 	var items []api.ProjectItem
 
 	if useSearchAPI {
@@ -173,11 +192,11 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 				closedFilters.Labels = []string{opts.label}
 			}
 
-			openIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], openFilters, opts.limit)
+			openIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], openFilters, fetchLimit)
 			if err != nil {
 				return fmt.Errorf("failed to search open issues: %w", err)
 			}
-			closedIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], closedFilters, opts.limit)
+			closedIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], closedFilters, fetchLimit)
 			if err != nil {
 				return fmt.Errorf("failed to search closed issues: %w", err)
 			}
@@ -200,7 +219,7 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 				searchFilters.Labels = []string{opts.label}
 			}
 
-			issues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], searchFilters, opts.limit)
+			issues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], searchFilters, fetchLimit)
 			if err != nil {
 				return fmt.Errorf("failed to search issues: %w", err)
 			}
@@ -213,9 +232,9 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 	} else {
 		// Full fetch strategy: Use GetProjectItems when no repo filter is available
 		var filter *api.ProjectItemsFilter
-		if opts.limit > 0 {
+		if fetchLimit > 0 {
 			filter = &api.ProjectItemsFilter{
-				Limit: opts.limit,
+				Limit: fetchLimit,
 			}
 		}
 
