@@ -844,12 +844,17 @@ func TestListProjects_UserSucceeds(t *testing.T) {
 	}
 }
 
-func TestListProjects_UserEmptyFallsToOrg(t *testing.T) {
+// TestListProjects_UserErrorFallsToOrg verifies the org fallback triggers when
+// the user path FAILS (as GitHub does for an org login: "Could not resolve to a
+// User"). Post-#861, a *successful* user query — even with zero projects — no
+// longer falls through to org (see TestListProjects_ZeroProjectUser); only a
+// user-path error does.
+func TestListProjects_UserErrorFallsToOrg(t *testing.T) {
 	mock := &queryMockClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
 			if name == "ListUserProjects" {
-				// Return empty (no projects)
-				return nil
+				// An org login cannot resolve as a user — GitHub returns an error.
+				return errors.New("Could not resolve to a User with the login of 'myorg'")
 			}
 			if name == "ListOrgProjects" {
 				v := reflect.ValueOf(query).Elem()
@@ -3861,5 +3866,99 @@ func TestDoRawGraphQLBody_NilClient(t *testing.T) {
 	_, err := client.doRawGraphQLBody([]byte(`{}`), nil)
 	if err == nil {
 		t.Fatal("expected error for nil rawGQL")
+	}
+}
+
+// ============================================================================
+// #861: response-handling / attribution
+// ============================================================================
+
+// TestParseIssuesBatchResponse_IntegerPathSegment covers #861 case 1: a GraphQL
+// error whose path contains a list index (integer) must not abort the whole
+// batch. Before the fix, Path []string made json.Unmarshal fail for the entire
+// response.
+func TestParseIssuesBatchResponse_IntegerPathSegment(t *testing.T) {
+	data := []byte(`{
+		"data": {
+			"repository": {
+				"i0": null,
+				"i1": {
+					"id": "ID2", "number": 43, "title": "Second", "body": "",
+					"state": "OPEN", "url": "https://example.com/43",
+					"author": {"login": "u"}, "assignees": {"nodes": []},
+					"labels": {"nodes": []}, "milestone": {"title": ""},
+					"projectItems": {"nodes": []}
+				}
+			}
+		},
+		"errors": [
+			{"message": "boom deep in a list", "path": ["repository", "i0", "projectItems", "nodes", 3, "fieldValues"]}
+		]
+	}`)
+
+	issues, _, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 43}, "", "owner", "repo")
+	if err != nil {
+		t.Fatalf("integer path segment must not abort the batch, got top-level error: %v", err)
+	}
+	if _, ok := issues[43]; !ok {
+		t.Errorf("expected the healthy issue 43 to still parse")
+	}
+	if issueErrors[42] == nil {
+		t.Errorf("expected issue 42 (the errored alias i0) to be mapped to issueErrors")
+	}
+}
+
+// TestListProjects_ZeroProjectUser covers #861 case 2: a user with zero open
+// projects must yield an empty list, not an error from the org fallback.
+func TestListProjects_ZeroProjectUser(t *testing.T) {
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name == "ListUserProjects" {
+				return nil // success, zero open projects (empty result)
+			}
+			if name == "ListOrgProjects" {
+				return errors.New("Could not resolve to an Organization with the login of 'someuser'")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	projects, err := client.ListProjects("someuser")
+	if err != nil {
+		t.Fatalf("zero-project user must return an empty list, got error: %v", err)
+	}
+	if len(projects) != 0 {
+		t.Errorf("expected empty project list, got %d", len(projects))
+	}
+}
+
+// TestGetProject_PreservesBothErrors covers #861 case 3: when both the user and
+// org paths fail, the returned error must preserve both causes, not just the org
+// failure.
+func TestGetProject_PreservesBothErrors(t *testing.T) {
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name == "GetUserProject" {
+				return errors.New("user-path transient boom")
+			}
+			if name == "GetOrgProject" {
+				return errors.New("Could not resolve to an Organization")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	_, err := client.GetProject("someowner", 5)
+	if err == nil {
+		t.Fatal("expected an error when both paths fail")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "user-path transient boom") {
+		t.Errorf("expected the user-path error to be preserved, got: %v", msg)
+	}
+	if !strings.Contains(msg, "Could not resolve to an Organization") {
+		t.Errorf("expected the org-path error to be preserved, got: %v", msg)
 	}
 }

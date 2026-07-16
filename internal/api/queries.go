@@ -20,19 +20,24 @@ func safeGraphQLInt(n int) (graphql.Int, error) {
 	return graphql.Int(n), nil
 }
 
-// GetProject fetches a project by owner and number
+// GetProject fetches a project by owner and number.
+//
+// It tries the user-owned project first, then falls back to an org-owned
+// project. If both fail, both errors are preserved (errors.Join) so a genuine
+// user-path failure (e.g. a transient error on a user-owned project) is not
+// masked by the org fallback's "Could not resolve to an Organization" (#861).
 func (c *Client) GetProject(owner string, number int) (*Project, error) {
 
 	// First try as user project
-	project, err := c.getUserProject(owner, number)
-	if err == nil {
+	project, userErr := c.getUserProject(owner, number)
+	if userErr == nil {
 		return project, nil
 	}
 
 	// If that fails, try as organization project
-	project, err = c.getOrgProject(owner, number)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get project %s/%d: %w", owner, number, err)
+	project, orgErr := c.getOrgProject(owner, number)
+	if orgErr != nil {
+		return nil, fmt.Errorf("failed to get project %s/%d: %w", owner, number, errors.Join(userErr, orgErr))
 	}
 
 	return project, nil
@@ -2361,20 +2366,19 @@ func (c *Client) GetParentIssue(owner, repo string, number int) (*Issue, error) 
 // ListProjects fetches all projects for an owner (user or organization)
 func (c *Client) ListProjects(owner string) ([]Project, error) {
 
-	// First try as user projects
-	projects, err := c.listUserProjects(owner)
-	if err == nil && len(projects) > 0 {
+	// First try as user projects. A successful user query means the owner IS a
+	// user, so return its projects even when empty — a user with zero open
+	// projects must yield an empty list, not fall through to the org path and
+	// surface "Could not resolve to an Organization" (#861).
+	projects, userErr := c.listUserProjects(owner)
+	if userErr == nil {
 		return projects, nil
 	}
 
-	// If that fails or returns empty, try as organization projects
-	orgProjects, err := c.listOrgProjects(owner)
-	if err != nil {
-		// If both fail, return user error if we had one
-		if projects != nil {
-			return projects, nil
-		}
-		return nil, fmt.Errorf("failed to list projects for %s: %w", owner, err)
+	// User path failed (owner is likely an organization); try org projects.
+	orgProjects, orgErr := c.listOrgProjects(owner)
+	if orgErr != nil {
+		return nil, fmt.Errorf("failed to list projects for %s: %w", owner, errors.Join(userErr, orgErr))
 	}
 
 	return orgProjects, nil
@@ -2608,8 +2612,12 @@ func parseIssuesBatchResponse(data []byte, numbers []int, projectID, owner, repo
 			Repository map[string]json.RawMessage `json:"repository"`
 		} `json:"data"`
 		Errors []struct {
-			Message string   `json:"message"`
-			Path    []string `json:"path"`
+			Message string `json:"message"`
+			// Path segments may be strings (field/alias names) or integers (list
+			// indices) per the GraphQL spec, so decode as []interface{}; a numeric
+			// segment must not fail the whole response unmarshal and abort the
+			// batch (#861).
+			Path []interface{} `json:"path"`
 		} `json:"errors"`
 	}
 
@@ -2621,11 +2629,14 @@ func parseIssuesBatchResponse(data []byte, numbers []int, projectID, owner, repo
 	fieldValues := make(map[int][]FieldValue)
 	issueErrors := make(map[int]error)
 
-	// Map GraphQL errors to specific aliases
+	// Map GraphQL errors to specific aliases. The alias segment (path[1], e.g.
+	// "i0") is a string; ignore errors whose second segment is not a string.
 	aliasErrors := make(map[string]string)
 	for _, gqlErr := range response.Errors {
 		if len(gqlErr.Path) >= 2 {
-			aliasErrors[gqlErr.Path[1]] = gqlErr.Message
+			if alias, ok := gqlErr.Path[1].(string); ok {
+				aliasErrors[alias] = gqlErr.Message
+			}
 		}
 	}
 

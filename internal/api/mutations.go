@@ -1874,12 +1874,20 @@ func (c *Client) executeBatchMutation(projectID string, updates []FieldUpdate) (
 		return nil, fmt.Errorf("batch mutation failed: %w", err)
 	}
 
-	// Parse response
+	return parseBatchMutationResponse(output, updates)
+}
+
+// parseBatchMutationResponse decodes a batch mutation response into per-update
+// results. Extracted for testability, mirroring parseIssuesBatchResponse.
+func parseBatchMutationResponse(output []byte, updates []FieldUpdate) ([]BatchUpdateResult, error) {
 	var response struct {
-		Data   map[string]json.RawMessage `json:"data"`
+		Data map[string]json.RawMessage `json:"data"`
 		Errors []struct {
-			Message string   `json:"message"`
-			Path    []string `json:"path"`
+			Message string `json:"message"`
+			// Path segments may be strings (alias names) or integers (list
+			// indices); decode as []interface{} so a numeric segment does not
+			// abort the whole response unmarshal (#861).
+			Path []interface{} `json:"path"`
 		} `json:"errors"`
 	}
 
@@ -1897,12 +1905,15 @@ func (c *Client) executeBatchMutation(projectID string, updates []FieldUpdate) (
 			Success:   true,
 		}
 
-		// Check if this specific update failed
+		// Check if this specific update failed. The leading path segment is the
+		// alias (a string); non-string segments never match an alias.
 		for _, graphErr := range response.Errors {
-			if len(graphErr.Path) > 0 && graphErr.Path[0] == alias {
-				result.Success = false
-				result.Error = graphErr.Message
-				break
+			if len(graphErr.Path) > 0 {
+				if seg, ok := graphErr.Path[0].(string); ok && seg == alias {
+					result.Success = false
+					result.Error = graphErr.Message
+					break
+				}
 			}
 		}
 

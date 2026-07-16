@@ -3278,3 +3278,36 @@ func TestSingleAndBatchZeroValueEquivalent(t *testing.T) {
 		t.Errorf("batch path did not serialize value:{number:0}, got %s", batchBody)
 	}
 }
+
+// TestParseBatchMutationResponse_IntegerPathSegment covers #861 case 1 for the
+// mutations batch parser: an integer path segment must not abort the parse, and
+// the alias-keyed error must still attribute to the right update.
+func TestParseBatchMutationResponse_IntegerPathSegment(t *testing.T) {
+	updates := []FieldUpdate{
+		{ItemID: "item-0", FieldName: "Status"},
+		{ItemID: "item-1", FieldName: "Priority"},
+	}
+	output := []byte(`{
+		"data": { "u1": { "projectV2Item": { "id": "item-1" } } },
+		"errors": [
+			{"message": "field update failed", "path": ["u0", "projectV2Item", 0, "field"]}
+		]
+	}`)
+
+	results, err := parseBatchMutationResponse(output, updates)
+	if err != nil {
+		t.Fatalf("integer path segment must not abort the parse, got: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Success {
+		t.Errorf("expected update u0 to be marked failed via its aliased error")
+	}
+	if results[0].Error != "field update failed" {
+		t.Errorf("expected u0 error to be attributed, got %q", results[0].Error)
+	}
+	if !results[1].Success {
+		t.Errorf("expected update u1 to succeed")
+	}
+}
