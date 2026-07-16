@@ -1110,10 +1110,24 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 		}
 		fmt.Fprintf(w, "\nSummary: %d succeeded, %d failed\n", successCount, failCount)
 
-		if failCount > 0 && successCount == 0 {
-			return fmt.Errorf("all removals failed")
+		if err := subRemoveBatchError(successCount, failCount, len(children)); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+// subRemoveBatchError returns the error for a batch sub-remove result: any
+// failure yields a non-nil error (partial or total), so scripts see a non-zero
+// exit consistent with the single-child path. Returns nil only when nothing
+// failed.
+func subRemoveBatchError(successCount, failCount, total int) error {
+	if failCount == 0 {
+		return nil
+	}
+	if successCount == 0 {
+		return fmt.Errorf("all %d removals failed", failCount)
+	}
+	return fmt.Errorf("%d of %d removals failed", failCount, total)
 }

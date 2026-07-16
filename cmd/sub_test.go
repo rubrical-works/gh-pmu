@@ -507,6 +507,30 @@ func TestResolveInheritedMilestone(t *testing.T) {
 	}
 }
 
+func TestSubRemoveBatchError(t *testing.T) {
+	// #871 finding 5: batch `sub remove` previously returned nil on partial failure
+	// (error only when successCount == 0), inconsistent with the single-child path.
+	// Any failure must now yield a non-nil error.
+	tests := []struct {
+		name                 string
+		success, fail, total int
+		wantErr              bool
+	}{
+		{"all succeeded", 3, 0, 3, false},
+		{"partial failure", 2, 1, 3, true},
+		{"all failed", 0, 3, 3, true},
+		{"none processed", 0, 0, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := subRemoveBatchError(tt.success, tt.fail, tt.total)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("subRemoveBatchError(%d,%d,%d) err=%v, wantErr=%v", tt.success, tt.fail, tt.total, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestSubCreateCommand_HasBodyFlag(t *testing.T) {
 	cmd := NewRootCommand()
 	subCmd, _, err := cmd.Find([]string{"sub", "create"})
