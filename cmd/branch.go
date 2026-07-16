@@ -120,8 +120,9 @@ type branchClient interface {
 	GetIssueByNumber(owner, repo string, number int) (*api.Issue, error)
 	// GetProjectItemID returns the project item ID for an issue
 	GetProjectItemID(projectID, issueID string) (string, error)
-	// GetProjectItemFieldValue returns the current value of a field on a project item
-	GetProjectItemFieldValue(projectID, itemID, fieldID string) (string, error)
+	// GetProjectItemFieldValue returns the current value of a field on a project
+	// item; the bool reports whether the field was present (empty is a value).
+	GetProjectItemFieldValue(projectID, itemID, fieldID string) (string, bool, error)
 	// GetProjectItems returns all items in a project with their field values
 	GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error)
 	// GetProjectItemsMinimal returns project items with minimal issue data for filtering
@@ -692,7 +693,7 @@ func runBranchRemoveWithDeps(cmd *cobra.Command, opts *branchRemoveOptions, cfg 
 	}
 
 	// Check current field value (AC-039-3)
-	currentValue, err := client.GetProjectItemFieldValue(project.ID, itemID, branchField.Field)
+	currentValue, _, err := client.GetProjectItemFieldValue(project.ID, itemID, branchField.Field)
 	if err != nil {
 		return fmt.Errorf("failed to get current branch field value: %w", err)
 	}
@@ -972,7 +973,7 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 			continue
 		}
 
-		status, _ := client.GetProjectItemFieldValue(proj.ID, itemID, statusFieldName)
+		status, _, _ := client.GetProjectItemFieldValue(proj.ID, itemID, statusFieldName)
 		if status == parkingLotValue {
 			parkingLotIssues = append(parkingLotIssues, issue)
 		} else {

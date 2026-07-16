@@ -130,7 +130,7 @@ func namedOperationInvocations() []func(c *Client) {
 		func(c *Client) { _ = c.RemoveLabelFromIssue("owner", "repo", "I_kw1", "bug") },
 		func(c *Client) { _, _ = c.getLabelID("owner", "repo", "bug") },
 		func(c *Client) { _, _ = c.getMilestoneID("owner", "repo", "v1.0") },
-		func(c *Client) { _, _ = c.GetProjectItemFieldValue("PVT_kw1", "PVTI_1", "Status") },
+		func(c *Client) { _, _, _ = c.GetProjectItemFieldValue("PVT_kw1", "PVTI_1", "Status") },
 		func(c *Client) { _, _ = c.GetAuthenticatedUser() },
 		func(c *Client) { _ = c.CreateLabel("owner", "repo", "bug", "d73a4a", "desc") },
 		func(c *Client) { _, _ = c.AddIssueComment("I_kw1", "body") },

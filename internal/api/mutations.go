@@ -1309,8 +1309,29 @@ func (c *Client) GetProjectItemID(projectID, issueID string) (string, error) {
 }
 
 // GetProjectItemFieldValue returns the value of a field on a project item
-func (c *Client) GetProjectItemFieldValue(projectID, itemID, fieldName string) (string, error) {
+func (c *Client) GetProjectItemFieldValue(projectID, itemID, fieldName string) (string, bool, error) {
+	var cursor *string
+	for {
+		value, found, pi, err := c.getProjectItemFieldValuePage(itemID, fieldName, cursor)
+		if err != nil {
+			return "", false, err
+		}
+		if found {
+			return value, true, nil
+		}
+		if !pi.HasNextPage {
+			return "", false, nil
+		}
+		cursor = &pi.EndCursor
+	}
+}
 
+// getProjectItemFieldValuePage scans a single page of an item's field values for
+// fieldName. It reports found=true with the value when the field is present on
+// the page (empty string is a valid value), and returns the page info so the
+// caller can continue paginating — an item can carry more than a page of
+// populated values (#860).
+func (c *Client) getProjectItemFieldValuePage(itemID, fieldName string, cursor *string) (string, bool, pageInfo, error) {
 	var query struct {
 		Node struct {
 			ProjectV2Item struct {
@@ -1329,30 +1350,40 @@ func (c *Client) GetProjectItemFieldValue(projectID, itemID, fieldName string) (
 							} `graphql:"field"`
 						} `graphql:"... on ProjectV2ItemFieldSingleSelectValue"`
 					}
-				} `graphql:"fieldValues(first: 20)"`
+					PageInfo struct {
+						HasNextPage bool
+						EndCursor   string
+					}
+				} `graphql:"fieldValues(first: 100, after: $cursor)"`
 			} `graphql:"... on ProjectV2Item"`
 		} `graphql:"node(id: $itemId)"`
 	}
 
 	variables := map[string]interface{}{
 		"itemId": graphql.ID(itemID),
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
-	err := c.gql.Query("GetProjectItemFieldValue", &query, variables)
-	if err != nil {
-		return "", fmt.Errorf("failed to get field value: %w", err)
+	if err := c.gql.Query("GetProjectItemFieldValue", &query, variables); err != nil {
+		return "", false, pageInfo{}, fmt.Errorf("failed to get field value: %w", err)
 	}
 
 	for _, fv := range query.Node.ProjectV2Item.FieldValues.Nodes {
 		if fv.ProjectV2ItemFieldTextValue.Field.Name == fieldName {
-			return fv.ProjectV2ItemFieldTextValue.Text, nil
+			return fv.ProjectV2ItemFieldTextValue.Text, true, pageInfo{}, nil
 		}
 		if fv.ProjectV2ItemFieldSingleSelectValue.Field.Name == fieldName {
-			return fv.ProjectV2ItemFieldSingleSelectValue.Name, nil
+			return fv.ProjectV2ItemFieldSingleSelectValue.Name, true, pageInfo{}, nil
 		}
 	}
 
-	return "", nil
+	return "", false, pageInfo{
+		HasNextPage: query.Node.ProjectV2Item.FieldValues.PageInfo.HasNextPage,
+		EndCursor:   query.Node.ProjectV2Item.FieldValues.PageInfo.EndCursor,
+	}, nil
 }
 
 // WriteFile writes content to a file path

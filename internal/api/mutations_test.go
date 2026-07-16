@@ -3311,3 +3311,115 @@ func TestParseBatchMutationResponse_IntegerPathSegment(t *testing.T) {
 		t.Errorf("expected update u1 to succeed")
 	}
 }
+
+// ============================================================================
+// #860: GetProjectItemFieldValue found-bool + pagination (AC3)
+// ============================================================================
+
+// setFieldValueNode populates one fieldValues node as a text field with the
+// given name/value, via reflection.
+func setFieldValueNode(node reflect.Value, fieldName, text string) {
+	tv := node.FieldByName("ProjectV2ItemFieldTextValue")
+	tv.FieldByName("Text").SetString(text)
+	tv.FieldByName("Field").FieldByName("Name").SetString(fieldName)
+}
+
+func fieldValuesConn(query interface{}) reflect.Value {
+	return reflect.ValueOf(query).Elem().
+		FieldByName("Node").FieldByName("ProjectV2Item").FieldByName("FieldValues")
+}
+
+func TestGetProjectItemFieldValue_EmptyIsFound(t *testing.T) {
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetProjectItemFieldValue" {
+				return nil
+			}
+			conn := fieldValuesConn(query)
+			nodes := conn.FieldByName("Nodes")
+			nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+			setFieldValueNode(nodes.Index(0), "Status", "") // present, empty value
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	value, found, err := client.GetProjectItemFieldValue("PVT", "PVTI", "Status")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !found {
+		t.Errorf("expected found=true for a present-but-empty field")
+	}
+	if value != "" {
+		t.Errorf("expected empty value, got %q", value)
+	}
+}
+
+func TestGetProjectItemFieldValue_MissingIsNotFound(t *testing.T) {
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetProjectItemFieldValue" {
+				return nil
+			}
+			conn := fieldValuesConn(query)
+			nodes := conn.FieldByName("Nodes")
+			nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+			setFieldValueNode(nodes.Index(0), "SomethingElse", "x")
+			// single page
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	value, found, err := client.GetProjectItemFieldValue("PVT", "PVTI", "Status")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if found {
+		t.Errorf("expected found=false when the field is absent")
+	}
+	if value != "" {
+		t.Errorf("expected empty value, got %q", value)
+	}
+}
+
+func TestGetProjectItemFieldValue_Pagination(t *testing.T) {
+	calls := 0
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetProjectItemFieldValue" {
+				return nil
+			}
+			calls++
+			conn := fieldValuesConn(query)
+			nodes := conn.FieldByName("Nodes")
+			pi := conn.FieldByName("PageInfo")
+			if calls == 1 {
+				// First page: target field absent, more pages available.
+				nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+				setFieldValueNode(nodes.Index(0), "Other", "v")
+				pi.FieldByName("HasNextPage").SetBool(true)
+				pi.FieldByName("EndCursor").SetString("c1")
+			} else {
+				// Second page: target field present.
+				nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+				setFieldValueNode(nodes.Index(0), "Status", "Done")
+				pi.FieldByName("HasNextPage").SetBool(false)
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	value, found, err := client.GetProjectItemFieldValue("PVT", "PVTI", "Status")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if !found || value != "Done" {
+		t.Errorf("expected found Status=Done on page 2, got found=%v value=%q", found, value)
+	}
+}

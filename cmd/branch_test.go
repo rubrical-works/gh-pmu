@@ -276,17 +276,17 @@ func (m *mockBranchClient) GetProjectItemID(projectID, issueID string) (string, 
 	return m.projectItemID, nil
 }
 
-func (m *mockBranchClient) GetProjectItemFieldValue(projectID, itemID, fieldID string) (string, error) {
+func (m *mockBranchClient) GetProjectItemFieldValue(projectID, itemID, fieldID string) (string, bool, error) {
 	if m.getProjectItemFieldErr != nil {
-		return "", m.getProjectItemFieldErr
+		return "", false, m.getProjectItemFieldErr
 	}
 	// Check per-item mapping first
 	if m.projectItemFieldValues != nil {
 		if value, ok := m.projectItemFieldValues[itemID]; ok {
-			return value, nil
+			return value, true, nil
 		}
 	}
-	return m.projectItemFieldValue, nil
+	return m.projectItemFieldValue, m.projectItemFieldValue != "", nil
 }
 
 func (m *mockBranchClient) GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error) {
