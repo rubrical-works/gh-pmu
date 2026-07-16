@@ -257,7 +257,7 @@ func runViewMulti(cmd *cobra.Command, opts *viewOptions, client viewClient, refs
 	for _, ref := range refs {
 		key := repoKey{ref.owner, ref.repo}
 		grouped[key] = append(grouped[key], ref.number)
-		refOrder = append(refOrder, issueKey{ref.owner, ref.repo, ref.number})
+		refOrder = append(refOrder, issueKey(ref))
 	}
 
 	// Fetch all data with batch calls
@@ -319,7 +319,7 @@ func runViewMulti(cmd *cobra.Command, opts *viewOptions, client viewClient, refs
 	allComments := make(map[issueKey][]api.Comment)
 	if opts.comments {
 		for _, ref := range refs {
-			k := issueKey{ref.owner, ref.repo, ref.number}
+			k := issueKey(ref)
 			if _, ok := allIssues[k]; ok {
 				comments, _ := client.GetIssueComments(ref.owner, ref.repo, ref.number)
 				allComments[k] = comments
