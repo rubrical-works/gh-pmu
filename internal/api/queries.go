@@ -1551,10 +1551,20 @@ func parseSubIssueCountsResponse(data []byte, numbers []int) (map[int]int, error
 				} `json:"subIssues"`
 			} `json:"repository"`
 		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
 	}
 
 	if err := json.Unmarshal(data, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse batch sub-issue response: %w", err)
+	}
+
+	// Inspect the GraphQL errors array (as parseSubIssuesBatchResponse does).
+	// Without this, a partial/total failure silently yields count 0 for every
+	// issue — indistinguishable from a genuine "no sub-issues".
+	if len(response.Errors) > 0 {
+		return nil, fmt.Errorf("GraphQL errors: %s", response.Errors[0].Message)
 	}
 
 	result := make(map[int]int)

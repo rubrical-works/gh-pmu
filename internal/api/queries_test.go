@@ -561,6 +561,19 @@ func TestParseSubIssueCountsResponse_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestParseSubIssueCountsResponse_GraphQLErrors(t *testing.T) {
+	// #872 finding 1: a GraphQL errors array must be inspected, not ignored —
+	// otherwise every issue silently gets count 0, indistinguishable from "no
+	// sub-issues".
+	jsonData := []byte(`{"data":{"repository":{}},"errors":[{"message":"rate limited"}]}`)
+	numbers := []int{1, 2}
+
+	_, err := parseSubIssueCountsResponse(jsonData, numbers)
+	if err == nil {
+		t.Fatal("expected error when GraphQL errors array is present, got nil")
+	}
+}
+
 // ============================================================================
 // parseSubIssuesBatchResponse Tests
 // ============================================================================
