@@ -303,6 +303,11 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 				}
 				if len(missingRefs) > 0 {
 					subItems, serr := client.GetProjectItemsByIssues(project.ID, missingRefs)
+					if serr != nil {
+						// Swallowing this made the affected sub-issues look like they
+						// were "(not in project, will skip)". Surface the real cause.
+						fmt.Fprintf(os.Stderr, "Warning: failed to enrich %d sub-issue(s) with project data; they may be misreported as not in project: %v\n", len(missingRefs), serr)
+					}
 					if serr == nil {
 						for _, item := range subItems {
 							if item.Issue != nil {
