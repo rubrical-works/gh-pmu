@@ -151,6 +151,10 @@ type branchClient interface {
 	AddLabelToIssue(owner, repo, issueID, labelName string) error
 	// RemoveLabelFromIssue removes a label from an issue
 	RemoveLabelFromIssue(owner, repo, issueID, labelName string) error
+	// AddSubIssue links a child issue as a sub-issue of a parent (tracker) issue
+	AddSubIssue(parentIssueID, childIssueID string) error
+	// RemoveSubIssue unlinks a child issue from its parent (tracker) issue
+	RemoveSubIssue(parentIssueID, childIssueID string) error
 }
 
 // branchStartOptions holds the options for the branch start command
@@ -542,6 +546,32 @@ func findAllActiveBranches(issues []api.Issue) []api.Issue {
 	return branches
 }
 
+// errMultipleActiveBranches builds the disambiguation error listing active branch
+// names. Shared by add/remove/current/close so the message format stays consistent.
+func errMultipleActiveBranches(branches []api.Issue) error {
+	names := make([]string, 0, len(branches))
+	for i := range branches {
+		names = append(names, extractBranchVersion(branches[i].Title))
+	}
+	return fmt.Errorf("multiple active branches. Specify one: %s", strings.Join(names, ", "))
+}
+
+// resolveSingleActiveBranchTracker returns the sole active branch tracker from the
+// given issues. It errors with "no active branch found" when none are active and
+// with a disambiguation list when more than one is active. This prevents add/remove
+// from silently mutating an arbitrary tracker when multiple branches are active.
+func resolveSingleActiveBranchTracker(issues []api.Issue) (*api.Issue, error) {
+	active := findAllActiveBranches(issues)
+	switch len(active) {
+	case 0:
+		return nil, fmt.Errorf("no active branch found")
+	case 1:
+		return &active[0], nil
+	default:
+		return nil, errMultipleActiveBranches(active)
+	}
+}
+
 // resolveCurrentBranch resolves the current branch name when no argument is provided
 // Returns error if no branches or multiple branches are active
 func resolveCurrentBranch(cfg *config.Config, client branchClient) (string, error) {
@@ -555,22 +585,12 @@ func resolveCurrentBranch(cfg *config.Config, client branchClient) (string, erro
 		return "", fmt.Errorf("failed to get branch issues: %w", err)
 	}
 
-	activeBranches := findAllActiveBranches(issues)
-
-	switch len(activeBranches) {
-	case 0:
-		return "", fmt.Errorf("no active branch found")
-	case 1:
-		// Extract branch name from title (e.g., "Branch: patch/0.9.7" -> "patch/0.9.7")
-		return extractBranchVersion(activeBranches[0].Title), nil
-	default:
-		// Multiple branches - build error message with list
-		var names []string
-		for _, b := range activeBranches {
-			names = append(names, extractBranchVersion(b.Title))
-		}
-		return "", fmt.Errorf("multiple active branches. Specify one: %s", strings.Join(names, ", "))
+	tracker, err := resolveSingleActiveBranchTracker(issues)
+	if err != nil {
+		return "", err
 	}
+	// Extract branch name from title (e.g., "Branch: patch/0.9.7" -> "patch/0.9.7")
+	return extractBranchVersion(tracker.Title), nil
 }
 
 // runBranchAddWithDeps is the testable entry point for branch add
@@ -587,10 +607,11 @@ func runBranchAddWithDeps(cmd *cobra.Command, opts *branchAddOptions, cfg *confi
 		return fmt.Errorf("failed to get release issues: %w", err)
 	}
 
-	// Find active release tracker
-	activeRelease := findActiveBranch(issues)
-	if activeRelease == nil {
-		return fmt.Errorf("no active release found")
+	// Resolve the single active branch tracker. Errors with a disambiguation list
+	// when multiple branches are active rather than silently picking an arbitrary one.
+	activeRelease, err := resolveSingleActiveBranchTracker(issues)
+	if err != nil {
+		return err
 	}
 
 	// Extract version from title (e.g., "Release: v1.2.0" or "Release: v1.2.0 (Phoenix)" -> "v1.2.0")
@@ -623,6 +644,14 @@ func runBranchAddWithDeps(cmd *cobra.Command, opts *branchAddOptions, cfg *confi
 	err = client.SetProjectItemField(project.ID, itemID, branchField.Field, releaseVersion)
 	if err != nil {
 		return fmt.Errorf("failed to set branch field: %w", err)
+	}
+
+	// Link the issue as a sub-issue of the tracker so `branch close` (which
+	// enumerates via GetSubIssues) sees it. Keeps add/close membership symmetric —
+	// without this, an added issue is orphaned at close with a stale Branch field.
+	if err := client.AddSubIssue(activeRelease.ID, issue.ID); err != nil {
+		return fmt.Errorf("failed to link issue #%d as a sub-issue of tracker #%d: %w",
+			opts.issueNumber, activeRelease.Number, err)
 	}
 
 	// Output confirmation (AC-019-2)
@@ -659,10 +688,11 @@ func runBranchRemoveWithDeps(cmd *cobra.Command, opts *branchRemoveOptions, cfg 
 		return fmt.Errorf("failed to get release issues: %w", err)
 	}
 
-	// Find active release tracker
-	activeRelease := findActiveBranch(issues)
-	if activeRelease == nil {
-		return fmt.Errorf("no active release found")
+	// Resolve the single active branch tracker. Errors with a disambiguation list
+	// when multiple branches are active rather than silently picking an arbitrary one.
+	activeRelease, err := resolveSingleActiveBranchTracker(issues)
+	if err != nil {
+		return err
 	}
 
 	// Extract version from title
@@ -710,6 +740,13 @@ func runBranchRemoveWithDeps(cmd *cobra.Command, opts *branchRemoveOptions, cfg 
 		return fmt.Errorf("failed to clear branch field: %w", err)
 	}
 
+	// Unlink the sub-issue relationship established by `branch add`. Non-fatal: an
+	// issue assigned by field only (legacy, or another tool) may not be a sub-issue.
+	if err := client.RemoveSubIssue(activeRelease.ID, issue.ID); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to unlink #%d from tracker #%d: %v\n",
+			opts.issueNumber, activeRelease.Number, err)
+	}
+
 	// Remove 'assigned' label if issue is open
 	if issue.State == "OPEN" || issue.State == "open" {
 		if err := client.RemoveLabelFromIssue(owner, repo, issue.ID, "assigned"); err != nil {
@@ -738,14 +775,21 @@ func runBranchCurrentWithDeps(cmd *cobra.Command, opts *branchCurrentOptions, cf
 		return err
 	}
 
-	// Fast path: try active+branch label query (O(1) lookup)
+	// Fast path: try active+branch label query (O(1) lookup). Filter to genuine
+	// branch trackers by title — an issue can carry both labels without being one.
 	var activeRelease *api.Issue
 	issues, err := client.GetOpenIssuesByLabels(owner, repo, []string{"active", "branch"})
 	if err != nil {
 		return fmt.Errorf("failed to get branch issues: %w", err)
 	}
-	if len(issues) > 0 {
-		activeRelease = &issues[0]
+	fastTrackers := findAllActiveBranches(issues)
+	switch len(fastTrackers) {
+	case 1:
+		activeRelease = &fastTrackers[0]
+	case 0:
+		// fall through to the title-scan fallback
+	default:
+		return errMultipleActiveBranches(fastTrackers)
 	}
 
 	// Fallback: scan all branch-labeled issues by title pattern
@@ -754,7 +798,15 @@ func runBranchCurrentWithDeps(cmd *cobra.Command, opts *branchCurrentOptions, cf
 		if err != nil {
 			return fmt.Errorf("failed to get release issues: %w", err)
 		}
-		activeRelease = findActiveBranch(fallbackIssues)
+		fallbackTrackers := findAllActiveBranches(fallbackIssues)
+		switch len(fallbackTrackers) {
+		case 1:
+			activeRelease = &fallbackTrackers[0]
+		case 0:
+			// no active branch
+		default:
+			return errMultipleActiveBranches(fallbackTrackers)
+		}
 	}
 
 	if activeRelease == nil {
