@@ -79,8 +79,9 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 		return fmt.Errorf("failed to read local config: %w", err)
 	}
 
-	// Read committed config via git show
-	committedContent, err := gitShowFile(configDir, "HEAD:"+configName)
+	// Read committed config via git show (cwd-relative pathspec — correct in a
+	// monorepo subdirectory, not just at the repo root)
+	committedContent, err := gitShowFile(configDir, configPathspec("HEAD", configName))
 	if err != nil {
 		fmt.Fprintf(out, "Warning: could not read committed config: %v\n", err)
 		committedContent = nil
@@ -143,7 +144,7 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 
 	// Remote comparison
 	if opts.remote {
-		remoteContent, err := gitShowFile(configDir, "origin/main:"+configName)
+		remoteContent, err := gitShowFile(configDir, configPathspec("origin/main", configName))
 		if err != nil {
 			fmt.Fprintf(out, "\nRemote: could not read origin/main config: %v\n", err)
 		} else {
@@ -175,8 +176,9 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 		}
 	}
 
-	// Strict mode check
-	if (result.Drifted || hasCriticalDrift) && isStrictMode(localContent) {
+	// Strict mode check — decided from HEAD-or-local so removing the strict key
+	// locally cannot disable enforcement while HEAD still declares it.
+	if (result.Drifted || hasCriticalDrift) && isStrictModeEither(localContent, committedContent) {
 		return fmt.Errorf("config integrity check failed (strict mode) — resolve drift before continuing")
 	}
 
@@ -285,6 +287,15 @@ func gitShowFile(dir, ref string) ([]byte, error) {
 	return out, nil
 }
 
+// configPathspec builds a git pathspec (e.g. "HEAD:./.gh-pmu.json") that resolves
+// the config file relative to the invocation directory (gitShowFile's cmd.Dir),
+// NOT the repository root. git resolves "<rev>:<path>" from the repo root unless
+// the path is prefixed with "./", which silently compares against the wrong file
+// (or none) when the config lives in a monorepo subdirectory.
+func configPathspec(ref, name string) string {
+	return ref + ":./" + name
+}
+
 // isStrictMode checks if the config has configIntegrity set to "strict".
 func isStrictMode(content []byte) bool {
 	var raw map[string]interface{}
@@ -297,4 +308,14 @@ func isStrictMode(content []byte) bool {
 	}
 	s, ok := val.(string)
 	return ok && strings.EqualFold(s, "strict")
+}
+
+// isStrictModeEither reports strict mode when EITHER the committed (HEAD) config or
+// the local config declares configIntegrity: "strict". Deciding strict mode from
+// the local file alone is self-referential — an edit to .gh-pmu.json can remove the
+// key and disable its own enforcement. Consulting HEAD makes strict mode monotonic:
+// it cannot be turned off by editing the working copy while HEAD still declares it.
+// committedContent may be nil (no HEAD), in which case it falls back to local only.
+func isStrictModeEither(localContent, committedContent []byte) bool {
+	return isStrictMode(localContent) || isStrictMode(committedContent)
 }
