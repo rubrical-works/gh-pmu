@@ -234,11 +234,13 @@ func validateHistorySafety(paths []string, opts *historyOptions) error {
 		return nil
 	}
 
-	// Check for repository root
+	// Check for repository root. git returns a forward-slash path even on Windows,
+	// so normalize it to OS-native separators for a reliable comparison below.
 	repoRoot, err := getRepoRoot()
 	if err != nil {
 		return nil // Can't determine, let git handle it
 	}
+	repoRoot = filepath.Clean(repoRoot)
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -252,12 +254,12 @@ func validateHistorySafety(paths []string, opts *historyOptions) error {
 		}
 		absPath = filepath.Clean(absPath)
 
-		if absPath == repoRoot || path == "." {
-			// Check if we're at repo root
-			if cwd == repoRoot {
-				return fmt.Errorf("refusing to run at repository root\n" +
-					"Specify a subdirectory or file, or use --force to override")
-			}
+		// Refuse whenever the path resolves to the repository root, regardless of
+		// the working directory. The previous inner `cwd == repoRoot` gate let a
+		// subdirectory target the root via `..` or an absolute path.
+		if absPath == repoRoot {
+			return fmt.Errorf("refusing to run at repository root\n" +
+				"Specify a subdirectory or file, or use --force to override")
 		}
 	}
 

@@ -597,6 +597,32 @@ func TestValidateHistorySafety_NormalPath(t *testing.T) {
 	}
 }
 
+func TestValidateHistorySafety_RefusesRepoRootFromSubdir(t *testing.T) {
+	// #868 finding 4: targeting the repo root from a subdirectory (absolute path
+	// or `..`) must still be refused. The old inner `cwd == repoRoot` gate let it
+	// through whenever the working directory was not itself the repo root.
+	repoRoot, err := getRepoRoot()
+	if err != nil {
+		t.Skipf("not in a git repo: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+
+	if err := os.Chdir(filepath.Join(repoRoot, "cmd")); err != nil {
+		t.Fatalf("chdir to subdir: %v", err)
+	}
+
+	opts := &historyOptions{force: false}
+	err = validateHistorySafety([]string{repoRoot}, opts)
+	if err == nil || !strings.Contains(err.Error(), "repository root") {
+		t.Errorf("expected refusal when targeting repo root from a subdirectory, got: %v", err)
+	}
+}
+
 // ============================================================================
 // parseRepoFromConfig Tests
 // ============================================================================
