@@ -222,7 +222,7 @@ func (c *Client) setSingleSelectField(projectID, itemID string, field *ProjectFi
 		ItemID:    graphql.ID(itemID),
 		FieldID:   graphql.ID(field.ID),
 		Value: ProjectV2FieldValue{
-			SingleSelectOptionId: graphql.String(optionID),
+			SingleSelectOptionId: graphql.NewString(graphql.String(optionID)),
 		},
 	}
 
@@ -250,7 +250,7 @@ func (c *Client) setTextField(projectID, itemID, fieldID, value string) error {
 		ItemID:    graphql.ID(itemID),
 		FieldID:   graphql.ID(fieldID),
 		Value: ProjectV2FieldValue{
-			Text: graphql.String(value),
+			Text: graphql.NewString(graphql.String(value)),
 		},
 	}
 
@@ -283,7 +283,7 @@ func (c *Client) setNumberField(projectID, itemID, fieldID, value string) error 
 		ItemID:    graphql.ID(itemID),
 		FieldID:   graphql.ID(fieldID),
 		Value: ProjectV2FieldValue{
-			Number: graphql.Float(numValue),
+			Number: graphql.NewFloat(graphql.Float(numValue)),
 		},
 	}
 
@@ -344,7 +344,7 @@ func (c *Client) setDateField(projectID, itemID, fieldID, value string) error {
 		ItemID:    graphql.ID(itemID),
 		FieldID:   graphql.ID(fieldID),
 		Value: ProjectV2FieldValue{
-			Date: graphql.String(value),
+			Date: graphql.NewString(graphql.String(value)),
 		},
 	}
 
@@ -368,13 +368,19 @@ type UpdateProjectV2ItemFieldValueInput struct {
 	Value     ProjectV2FieldValue `json:"value"`
 }
 
-// ProjectV2FieldValue represents a field value for a project item
+// ProjectV2FieldValue represents a field value for a project item.
+//
+// Members are pointers so that intentionally-set zero values (a NUMBER of 0, a
+// TEXT of "") serialize instead of being dropped by `omitempty` (#857): a
+// non-nil pointer to a zero value is emitted, while an unset member stays nil
+// and is omitted. Value types with `omitempty` marshaled these as `"value":{}`,
+// silently dropping the update.
 type ProjectV2FieldValue struct {
-	Text                 graphql.String `json:"text,omitempty"`
-	Number               graphql.Float  `json:"number,omitempty"`
-	Date                 graphql.String `json:"date,omitempty"`
-	SingleSelectOptionId graphql.String `json:"singleSelectOptionId,omitempty"`
-	IterationId          graphql.String `json:"iterationId,omitempty"`
+	Text                 *graphql.String `json:"text,omitempty"`
+	Number               *graphql.Float  `json:"number,omitempty"`
+	Date                 *graphql.String `json:"date,omitempty"`
+	SingleSelectOptionId *graphql.String `json:"singleSelectOptionId,omitempty"`
+	IterationId          *graphql.String `json:"iterationId,omitempty"`
 }
 
 // Helper methods

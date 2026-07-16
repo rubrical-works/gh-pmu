@@ -3162,3 +3162,119 @@ func TestDeleteProject_InputVariables(t *testing.T) {
 	client := NewClientWithGraphQL(mock)
 	_ = client.DeleteProject("PVT_xyz")
 }
+
+// ============================================================================
+// Zero-value field update serialization (#857)
+// ============================================================================
+//
+// ProjectV2FieldValue previously used value types with `omitempty`, so a NUMBER
+// set to 0 or a TEXT set to "" marshaled as `"value":{}` — the intended value
+// was silently dropped. Pointer members fix this: an intentionally-set zero is a
+// non-nil pointer and serializes; an unset member stays nil and is omitted.
+
+func TestSetNumberField_ZeroValueSerializes(t *testing.T) {
+	var captured map[string]interface{}
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			captured = variables
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	if err := client.setNumberField("proj", "item", "field", "0"); err != nil {
+		t.Fatalf("setNumberField(0) error = %v", err)
+	}
+
+	data, err := json.Marshal(captured["input"])
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, `"number":0`) {
+		t.Errorf("expected the zero NUMBER value to serialize, got %s", got)
+	}
+	if strings.Contains(got, `"value":{}`) {
+		t.Errorf("value object was dropped to empty (omitempty bug): %s", got)
+	}
+}
+
+func TestSetTextField_EmptyValueSerializes(t *testing.T) {
+	var captured map[string]interface{}
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			captured = variables
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	if err := client.setTextField("proj", "item", "field", ""); err != nil {
+		t.Fatalf("setTextField(\"\") error = %v", err)
+	}
+
+	data, err := json.Marshal(captured["input"])
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, `"text":""`) {
+		t.Errorf("expected the empty TEXT value to serialize, got %s", got)
+	}
+	if strings.Contains(got, `"value":{}`) {
+		t.Errorf("value object was dropped to empty (omitempty bug): %s", got)
+	}
+}
+
+// TestSetNumberField_UnsetMembersOmitted guards that the pointer change does not
+// start emitting the other members: setting a NUMBER must not carry text/date/etc.
+func TestSetNumberField_UnsetMembersOmitted(t *testing.T) {
+	var captured map[string]interface{}
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			captured = variables
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	if err := client.setNumberField("proj", "item", "field", "5"); err != nil {
+		t.Fatalf("setNumberField(5) error = %v", err)
+	}
+	data, _ := json.Marshal(captured["input"])
+	got := string(data)
+	for _, unwanted := range []string{`"text"`, `"date"`, `"singleSelectOptionId"`, `"iterationId"`} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("unset member %s leaked into the mutation: %s", unwanted, got)
+		}
+	}
+}
+
+// TestSingleAndBatchZeroValueEquivalent covers AC3: the single-item path and the
+// batch path must serialize a zero NUMBER identically (`"value":{"number":0}`).
+func TestSingleAndBatchZeroValueEquivalent(t *testing.T) {
+	// Single path: capture the marshaled value object.
+	var captured map[string]interface{}
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			captured = variables
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	if err := client.setNumberField("proj", "item", "field", "0"); err != nil {
+		t.Fatalf("setNumberField(0) error = %v", err)
+	}
+	singleData, _ := json.Marshal(captured["input"])
+	if !strings.Contains(string(singleData), `"value":{"number":0}`) {
+		t.Errorf("single path did not serialize value:{number:0}, got %s", singleData)
+	}
+
+	// Batch path: build the request for the same zero NUMBER update.
+	_, batchBody, err := buildBatchMutationRequest("proj", []FieldUpdate{
+		{ItemID: "item", fieldID: "field", dataType: "NUMBER", Value: "0"},
+	})
+	if err != nil {
+		t.Fatalf("buildBatchMutationRequest error = %v", err)
+	}
+	if !strings.Contains(batchBody, `"value":{"number":0}`) {
+		t.Errorf("batch path did not serialize value:{number:0}, got %s", batchBody)
+	}
+}
