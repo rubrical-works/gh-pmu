@@ -476,23 +476,34 @@ func runBranchStartWithDeps(cmd *cobra.Command, opts *branchStartOptions, cfg *c
 	title := fmt.Sprintf("Branch: %s", opts.branchName)
 	body := generateBranchTrackerTemplate(opts.branchName)
 
-	// Create tracker issue with branch label
+	// Create tracker issue with branch label. From here on the git branch already
+	// exists, so failures leave partial state — surface recovery guidance naming
+	// the branch rather than a bare error.
 	labels := []string{"branch"}
 	issue, err := client.CreateIssue(owner, repo, title, body, labels)
 	if err != nil {
-		return fmt.Errorf("failed to create tracker issue: %w", err)
+		return fmt.Errorf("failed to create tracker issue: %w\n"+
+			"Partial state: git branch %q was created but has no tracker. "+
+			"Delete it with 'git branch -D %s' and retry, or create the tracker manually.",
+			err, opts.branchName, opts.branchName)
 	}
 
 	// Get project
 	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
 	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
+		return fmt.Errorf("failed to get project: %w\n"+
+			"Partial state: git branch %q and tracker issue #%d exist but project setup did not complete. "+
+			"Fix the problem and re-run, or use 'gh pmu branch reopen %s'.",
+			err, opts.branchName, issue.Number, opts.branchName)
 	}
 
 	// Add issue to project
 	itemID, err := client.AddIssueToProject(project.ID, issue.ID)
 	if err != nil {
-		return fmt.Errorf("failed to add issue to project: %w", err)
+		return fmt.Errorf("failed to add issue to project: %w\n"+
+			"Partial state: git branch %q and tracker issue #%d exist but the tracker is not on the project board. "+
+			"Add it manually or delete #%d and retry.",
+			err, opts.branchName, issue.Number, issue.Number)
 	}
 
 	// Set status to In Progress
@@ -504,7 +515,10 @@ func runBranchStartWithDeps(cmd *cobra.Command, opts *branchStartOptions, cfg *c
 		}
 		err = client.SetProjectItemField(project.ID, itemID, statusField.Field, statusValue)
 		if err != nil {
-			return fmt.Errorf("failed to set status: %w", err)
+			return fmt.Errorf("failed to set status: %w\n"+
+				"Partial state: git branch %q and tracker issue #%d exist and are on the board but the status was not set. "+
+				"Set it manually with 'gh pmu move %d --status in_progress'.",
+				err, opts.branchName, issue.Number, issue.Number)
 		}
 	}
 
@@ -1025,7 +1039,10 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 			continue
 		}
 
-		status, _, _ := client.GetProjectItemFieldValue(proj.ID, itemID, statusFieldName)
+		status, _, sErr := client.GetProjectItemFieldValue(proj.ID, itemID, statusFieldName)
+		if sErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  Warning: could not read status for #%d (treating as movable): %v\n", issue.Number, sErr)
+		}
 		if status == parkingLotValue {
 			parkingLotIssues = append(parkingLotIssues, issue)
 		} else {
@@ -1087,7 +1104,9 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 
 				// Clear Branch field
 				if branchField, ok := cfg.Fields["branch"]; ok {
-					_ = client.SetProjectItemField(proj.ID, itemID, branchField.Field, "")
+					if err := client.SetProjectItemField(proj.ID, itemID, branchField.Field, ""); err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "  Warning: failed to clear branch field for #%d: %v\n", issue.Number, err)
+					}
 				}
 
 				// Set status to backlog
@@ -1096,7 +1115,9 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 					if backlogValue == "" {
 						backlogValue = "Backlog"
 					}
-					_ = client.SetProjectItemField(proj.ID, itemID, statusField.Field, backlogValue)
+					if err := client.SetProjectItemField(proj.ID, itemID, statusField.Field, backlogValue); err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "  Warning: failed to move #%d to backlog: %v\n", issue.Number, err)
+					}
 				}
 
 				fmt.Fprintf(cmd.OutOrStdout(), "  #%d - %s\n", issue.Number, issue.Title)

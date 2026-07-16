@@ -547,6 +547,29 @@ func TestRunBranchStartWithDeps_CreatesTrackerIssue(t *testing.T) {
 	}
 }
 
+func TestRunBranchStartWithDeps_TrackerFailureIncludesRecoveryGuidance(t *testing.T) {
+	// #871 finding 4: the git branch is created before the tracker/project setup.
+	// A failure afterwards leaves partial state; the error must name the created
+	// branch and give recovery guidance rather than a bare error.
+	mock := setupMockForBranch()
+	mock.createIssueErr = errors.New("tracker create failed")
+	cfg := testBranchConfig()
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, _ := newTestBranchCmd()
+	opts := &branchStartOptions{branchName: "release/v1.2.0"}
+
+	err := runBranchStartWithDeps(cmd, opts, cfg, mock)
+	if err == nil {
+		t.Fatal("expected error when tracker creation fails")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "release/v1.2.0") {
+		t.Errorf("expected error to name the already-created branch for recovery, got: %v", err)
+	}
+}
+
 // AC-017-3: Given tracker issue created, Then has `branch` label
 func TestRunBranchStartWithDeps_HasBranchLabel(t *testing.T) {
 	// ARRANGE
@@ -2403,6 +2426,40 @@ func TestRunBranchCloseWithDeps_SkipsParkingLotIssues(t *testing.T) {
 	// Verify output message reports correct count (2, not 3)
 	if !strings.Contains(outputStr, "2 issue(s) moved to backlog") {
 		t.Errorf("Expected output to say '2 issue(s) moved to backlog', got: %s", outputStr)
+	}
+}
+
+func TestRunBranchCloseWithDeps_FieldSetFailureWarns(t *testing.T) {
+	// #871 finding 3: SetProjectItemField errors were ignored (`_ =`) while moving
+	// incomplete issues to backlog, yet the issue was reported as moved. A failure
+	// must now emit a stderr warning naming the issue.
+	mock := setupMockForBranch()
+	mock.openIssues = []api.Issue{
+		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
+	}
+	mock.subIssues = []api.SubIssue{
+		{ID: "ISSUE_2", Number: 42, Title: "Incomplete work", State: "OPEN", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
+	}
+	mock.projectItemIDs = map[string]string{"ISSUE_2": "ITEM_2"}
+	mock.projectItemFieldValues = map[string]string{"ITEM_2": "In Progress"}
+	mock.setFieldErr = errors.New("field update failed")
+
+	cfg := testBranchConfig()
+	cfg.Fields["status"] = config.Field{
+		Field:  "Status",
+		Values: map[string]string{"backlog": "Backlog", "parking_lot": "Parking Lot"},
+	}
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, output := newTestBranchCmd()
+	opts := &branchCloseOptions{branchName: "v1.2.0", yes: true}
+
+	_ = runBranchCloseWithDeps(cmd, opts, cfg, mock)
+
+	out := output.String()
+	if !strings.Contains(out, "Warning") || !strings.Contains(out, "#42") {
+		t.Errorf("expected a stderr warning naming #42's failed field update, got: %s", out)
 	}
 }
 
