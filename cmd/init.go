@@ -127,16 +127,19 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 		framework = "IDPF"
 	}
 
-	// Check if config already exists
+	// Check if a config already exists in the current directory OR any parent
+	// (config.FindConfigFile walks up). Running init from a subdirectory of an
+	// initialized project must not silently create a shadowing nested config or
+	// bypass the sourceProjectGuard.
 	var existingFramework string
 	var existingProjectNumber int
-	if _, err := os.Stat(".gh-pmu.json"); err == nil {
+	if existingPath, findErr := config.FindConfigFile("."); findErr == nil {
 		if existingRaw, err := loadExistingRaw("."); err == nil {
 			existingFramework = existingRaw.Framework
 			existingProjectNumber = existingRaw.Project.Number
 		}
 		if !opts.yes {
-			fmt.Fprintf(os.Stderr, "error: .gh-pmu.json already exists (use --yes to overwrite)\n")
+			fmt.Fprintf(os.Stderr, "error: config already exists at %s (use --yes to overwrite)\n", existingPath)
 			return fmt.Errorf("config already exists")
 		}
 	}
@@ -263,14 +266,16 @@ func runInitExistingProject(cmd *cobra.Command, opts *initOptions) error {
 		framework = "IDPF"
 	}
 
-	// Check if config already exists
+	// Check if a config already exists in the current directory OR any parent
+	// (config.FindConfigFile walks up). Running init from a subdirectory of an
+	// initialized project must not silently create a shadowing nested config.
 	var existingFramework string
-	if _, err := os.Stat(".gh-pmu.json"); err == nil {
+	if existingPath, findErr := config.FindConfigFile("."); findErr == nil {
 		if existingCfg, err := loadExistingFramework("."); err == nil {
 			existingFramework = existingCfg
 		}
 		if !opts.yes {
-			fmt.Fprintf(os.Stderr, "error: .gh-pmu.json already exists (use --yes to overwrite)\n")
+			fmt.Fprintf(os.Stderr, "error: config already exists at %s (use --yes to overwrite)\n", existingPath)
 			return fmt.Errorf("config already exists")
 		}
 	}
