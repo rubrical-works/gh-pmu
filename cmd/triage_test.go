@@ -3,12 +3,64 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
 )
+
+func TestSearchIssuesForTriage_AllReposFail_ReturnsError(t *testing.T) {
+	// #871 finding 1: when every targeted repo fails, the function must return an
+	// error rather than an empty result with nil error.
+	mock := &mockTriageClient{issuesError: fmt.Errorf("api unavailable")}
+	cfg := &config.Config{Repositories: []string{"o/r1", "o/r2"}}
+
+	_, err := searchIssuesForTriage(mock, cfg, "is:open", "")
+	if err == nil {
+		t.Fatal("expected error when all targeted repos fail, got nil")
+	}
+}
+
+func TestSearchIssuesForTriage_Succeeds_NoError(t *testing.T) {
+	mock := &mockTriageClient{issues: []api.Issue{{Number: 1, State: "OPEN"}}}
+	cfg := &config.Config{Repositories: []string{"o/r"}}
+
+	if _, err := searchIssuesForTriage(mock, cfg, "is:open", ""); err != nil {
+		t.Fatalf("unexpected error when a repo succeeds: %v", err)
+	}
+}
+
+func TestApplyTriageRules_LabelFailureWarnsButDoesNotFail(t *testing.T) {
+	// #871 finding 2: an AddLabelToIssue failure (after retries) must emit a stderr
+	// warning ("Log but don't fail" previously logged nothing) yet not abort triage.
+	mock := &mockTriageClient{
+		addToProjectItemID: "item-1",
+		addLabelError:      fmt.Errorf("label API failure"),
+	}
+	cfg := &config.Config{}
+	project := &api.Project{ID: "proj-1"}
+	issue := &api.Issue{ID: "i1", Number: 5, Repository: api.Repository{Owner: "o", Name: "r"}}
+	tc := &config.Triage{Apply: config.TriageApply{Labels: []string{"bug"}}}
+
+	oldErr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+	err := applyTriageRules(mock, cfg, project, issue, tc)
+	_ = w.Close()
+	os.Stderr = oldErr
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if err != nil {
+		t.Fatalf("applyTriageRules must not fail on a label error, got: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(buf.String()), "label") {
+		t.Errorf("expected a stderr warning naming the failed label operation, got: %q", buf.String())
+	}
+}
 
 // mockTriageClient implements triageClient interface for testing
 type mockTriageClient struct {
@@ -616,14 +668,9 @@ func TestSearchIssuesForTriage(t *testing.T) {
 			Repositories: []string{"owner/repo"},
 		}
 
-		issues, err := searchIssuesForTriage(mock, cfg, "is:open", "")
-		if err != nil {
-			t.Fatalf("searchIssuesForTriage() should not return error, got %v", err)
-		}
-
-		// Should return empty (error is logged but not returned)
-		if len(issues) != 0 {
-			t.Errorf("expected 0 issues on error, got %d", len(issues))
+		// #871 finding 1: a total API failure must be surfaced, not swallowed.
+		if _, err := searchIssuesForTriage(mock, cfg, "is:open", ""); err == nil {
+			t.Fatal("expected error when the only targeted repo fails, got nil")
 		}
 	})
 
