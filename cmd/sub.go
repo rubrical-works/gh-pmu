@@ -332,8 +332,12 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 		}
 	}
 
+	// Merge inherited assignees/milestone from the parent when requested.
+	assignees := resolveInheritedAssignees(opts.assignees, parentIssue.Assignees, opts.inheritAssign, isCrossRepo)
+	milestone := resolveInheritedMilestone(opts.milestone, parentIssue.Milestone, opts.inheritMilestone, isCrossRepo)
+
 	// Create the new issue in target repository with extended options
-	newIssue, err := client.CreateIssueWithOptions(targetOwner, targetRepo, opts.title, opts.body, labels, opts.assignees, opts.milestone)
+	newIssue, err := client.CreateIssueWithOptions(targetOwner, targetRepo, opts.title, opts.body, labels, assignees, milestone)
 	if err != nil {
 		return fmt.Errorf("failed to create issue in %s/%s: %w", targetOwner, targetRepo, err)
 	}
@@ -377,11 +381,11 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	if len(labels) > 0 {
 		fmt.Fprintf(w, "  Labels: %s\n", strings.Join(labels, ", "))
 	}
-	if len(opts.assignees) > 0 {
-		fmt.Fprintf(w, "  Assignees: @%s\n", strings.Join(opts.assignees, ", @"))
+	if len(assignees) > 0 {
+		fmt.Fprintf(w, "  Assignees: @%s\n", strings.Join(assignees, ", @"))
 	}
-	if opts.milestone != "" {
-		fmt.Fprintf(w, "  Milestone: %s\n", opts.milestone)
+	if milestone != "" {
+		fmt.Fprintf(w, "  Milestone: %s\n", milestone)
 	}
 	if opts.project > 0 {
 		fmt.Fprintf(w, "  Project: #%d\n", opts.project)
@@ -389,6 +393,46 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	fmt.Fprintf(w, "🔗 %s\n", newIssue.URL)
 
 	return nil
+}
+
+// resolveInheritedAssignees returns the assignee logins to apply to a new
+// sub-issue: the explicitly-requested ones plus, when --inherit-assignees is set
+// and the sub-issue is created in the parent's repository, the parent's
+// assignees. The result is deduplicated and order-stable (explicit first).
+// Cross-repo inheritance is skipped because user membership does not carry across
+// repositories.
+func resolveInheritedAssignees(explicit []string, parentAssignees []api.Actor, inherit, isCrossRepo bool) []string {
+	seen := make(map[string]bool)
+	var result []string
+	add := func(login string) {
+		if login != "" && !seen[login] {
+			seen[login] = true
+			result = append(result, login)
+		}
+	}
+	for _, a := range explicit {
+		add(a)
+	}
+	if inherit && !isCrossRepo {
+		for _, a := range parentAssignees {
+			add(a.Login)
+		}
+	}
+	return result
+}
+
+// resolveInheritedMilestone returns the milestone title to apply to a new
+// sub-issue: the explicitly-requested one, or the parent's when --inherit-milestone
+// is set and the sub-issue is created in the parent's repository. Cross-repo
+// milestone references are not portable, so inheritance is skipped in that case.
+func resolveInheritedMilestone(explicit string, parentMilestone *api.Milestone, inherit, isCrossRepo bool) string {
+	if explicit != "" {
+		return explicit
+	}
+	if inherit && !isCrossRepo && parentMilestone != nil {
+		return parentMilestone.Title
+	}
+	return ""
 }
 
 type subListOptions struct {
