@@ -367,6 +367,35 @@ func TestGetFieldName_NoMapping_ReturnsOriginal(t *testing.T) {
 	}
 }
 
+func TestGetFieldNameOr_WithMapping_ReturnsActualName(t *testing.T) {
+	cfg := &Config{
+		Fields: map[string]Field{
+			"status": {Field: "Workflow"},
+		},
+	}
+	if got := cfg.GetFieldNameOr("status", "Status"); got != "Workflow" {
+		t.Errorf("Expected 'Workflow', got '%s'", got)
+	}
+}
+
+func TestGetFieldNameOr_NoMapping_ReturnsFallback(t *testing.T) {
+	cfg := &Config{Fields: map[string]Field{}}
+	if got := cfg.GetFieldNameOr("status", "Status"); got != "Status" {
+		t.Errorf("Expected fallback 'Status', got '%s'", got)
+	}
+}
+
+func TestGetFieldNameOr_EmptyFieldValue_ReturnsFallback(t *testing.T) {
+	cfg := &Config{
+		Fields: map[string]Field{
+			"priority": {Field: ""},
+		},
+	}
+	if got := cfg.GetFieldNameOr("priority", "Priority"); got != "Priority" {
+		t.Errorf("Expected fallback 'Priority', got '%s'", got)
+	}
+}
+
 func TestLoadFromDirectory_FindsConfigFile(t *testing.T) {
 	// ARRANGE: Create a temporary .gh-pmu.json config file
 	testDir := t.TempDir()

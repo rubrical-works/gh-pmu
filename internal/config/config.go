@@ -258,6 +258,17 @@ func (c *Config) GetFieldName(fieldKey string) string {
 	return fieldKey
 }
 
+// GetFieldNameOr returns the actual GitHub field name for a key, or the provided
+// fallback when the key has no explicit, non-empty Field mapping. Unlike
+// GetFieldName, callers control the default (e.g. "Status"/"Priority") rather than
+// falling back to the lowercase key.
+func (c *Config) GetFieldNameOr(fieldKey, fallback string) string {
+	if field, ok := c.Fields[fieldKey]; ok && field.Field != "" {
+		return field.Field
+	}
+	return fallback
+}
+
 // ApplyEnvOverrides applies environment variable overrides to the config.
 // Supported environment variables:
 //   - GH_PM_PROJECT_OWNER: overrides project.owner
