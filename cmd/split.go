@@ -170,6 +170,7 @@ func runSplitWithDeps(cmd *cobra.Command, args []string, opts *splitOptions, cli
 	// Create sub-issues
 	var created []api.Issue
 	var failed []string
+	var linkFailed []int // numbers of issues created but not linked to the parent
 
 	for _, task := range tasks {
 		// Create the issue
@@ -180,25 +181,31 @@ func runSplitWithDeps(cmd *cobra.Command, args []string, opts *splitOptions, cli
 			continue
 		}
 
-		// Link as sub-issue
-		err = client.AddSubIssue(parentIssue.ID, newIssue.ID)
-		if err != nil {
+		// Link as sub-issue. A failure here leaves an orphaned unlinked issue —
+		// record it so --json and the summary surface it (still counted as created
+		// since the issue exists).
+		if err := client.AddSubIssue(parentIssue.ID, newIssue.ID); err != nil {
 			cmd.PrintErrf("Created #%d but failed to link as sub-issue: %v\n", newIssue.Number, err)
-			// Still count as created since issue exists
+			linkFailed = append(linkFailed, newIssue.Number)
 		}
 
 		created = append(created, *newIssue)
-		cmd.Printf("Created sub-issue #%d: %s\n", newIssue.Number, newIssue.Title)
+		if !opts.json {
+			cmd.Printf("Created sub-issue #%d: %s\n", newIssue.Number, newIssue.Title)
+		}
 	}
 
 	// Summary
 	if opts.json {
-		return outputSplitJSONCreated(cmd, parentIssue, created, failed)
+		return outputSplitJSONCreated(cmd, parentIssue, created, failed, linkFailed)
 	}
 
 	cmd.Printf("\nSplit complete: %d sub-issue(s) created under #%d", len(created), parentIssue.Number)
 	if len(failed) > 0 {
-		cmd.Printf(" (%d failed)", len(failed))
+		cmd.Printf(" (%d failed to create)", len(failed))
+	}
+	if len(linkFailed) > 0 {
+		cmd.Printf(" (%d created but not linked: %v)", len(linkFailed), linkFailed)
 	}
 	cmd.Println()
 
@@ -243,27 +250,45 @@ func outputSplitJSON(cmd *cobra.Command, parent *api.Issue, tasks []string, stat
 	return encoder.Encode(output)
 }
 
-func outputSplitJSONCreated(cmd *cobra.Command, parent *api.Issue, created []api.Issue, failed []string) error {
+func outputSplitJSONCreated(cmd *cobra.Command, parent *api.Issue, created []api.Issue, failed []string, linkFailed []int) error {
+	linkFailedSet := make(map[int]bool, len(linkFailed))
+	for _, n := range linkFailed {
+		linkFailedSet[n] = true
+	}
+
 	createdJSON := make([]map[string]interface{}, 0, len(created))
 	for _, issue := range created {
 		createdJSON = append(createdJSON, map[string]interface{}{
 			"number": issue.Number,
 			"title":  issue.Title,
 			"url":    issue.URL,
+			"linked": !linkFailedSet[issue.Number],
 		})
 	}
 
+	// Only a fully-clean run is "completed"; any create or link failure is partial.
+	status := "completed"
+	if len(failed) > 0 || len(linkFailed) > 0 {
+		status = "partial"
+	}
+
+	if linkFailed == nil {
+		linkFailed = []int{}
+	}
+
 	output := map[string]interface{}{
-		"status": "completed",
+		"status": status,
 		"parent": map[string]interface{}{
 			"number": parent.Number,
 			"title":  parent.Title,
 			"url":    parent.URL,
 		},
-		"createdCount": len(created),
-		"failedCount":  len(failed),
-		"created":      createdJSON,
-		"failed":       failed,
+		"createdCount":    len(created),
+		"failedCount":     len(failed),
+		"linkFailedCount": len(linkFailed),
+		"created":         createdJSON,
+		"failed":          failed,
+		"linkFailed":      linkFailed,
 	}
 
 	encoder := json.NewEncoder(cmd.OutOrStdout())

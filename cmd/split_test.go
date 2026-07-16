@@ -107,6 +107,36 @@ func TestRunSplitWithDeps_GetIssueError(t *testing.T) {
 	}
 }
 
+func TestRunSplitWithDeps_LinkFailureExposedInJSON(t *testing.T) {
+	// #871 finding 6: when CreateIssue succeeds but AddSubIssue fails, --json must
+	// expose the link failure and report a non-"completed" status so scripts can
+	// detect the orphaned unlinked issue.
+	mock := newMockSplitClient()
+	mock.issue = &api.Issue{ID: "p1", Number: 42, Title: "Parent", Body: "- [ ] Task 1"}
+	mock.addSubIssueErr = errors.New("link API failure")
+
+	cmd := newSplitCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &splitOptions{from: "body", json: true}
+	if err := runSplitWithDeps(cmd, []string{"42"}, opts, mock, "owner", "repo", 42); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var out map[string]interface{}
+	if e := json.Unmarshal(buf.Bytes(), &out); e != nil {
+		t.Fatalf("invalid JSON: %v\n%s", e, buf.String())
+	}
+	if out["status"] == "completed" {
+		t.Errorf("expected non-'completed' status on link failure, got %v", out["status"])
+	}
+	lfc, ok := out["linkFailedCount"].(float64)
+	if !ok || lfc != 1 {
+		t.Errorf("expected linkFailedCount 1, got %v (%T)", out["linkFailedCount"], out["linkFailedCount"])
+	}
+}
+
 func TestRunSplitWithDeps_NoTasks(t *testing.T) {
 	mock := newMockSplitClient()
 	mock.issue = &api.Issue{
@@ -468,7 +498,7 @@ func TestOutputSplitJSONCreated(t *testing.T) {
 		}
 		failed := []string{"Failed task 1"}
 
-		err := outputSplitJSONCreated(cmd, parent, created, failed)
+		err := outputSplitJSONCreated(cmd, parent, created, failed, nil)
 		if err != nil {
 			t.Fatalf("outputSplitJSONCreated failed: %v", err)
 		}
@@ -478,8 +508,9 @@ func TestOutputSplitJSONCreated(t *testing.T) {
 			t.Fatalf("output was not valid JSON: %v\noutput: %s", err, buf.String())
 		}
 
-		if decoded.Status != "completed" {
-			t.Errorf("expected status 'completed', got %q", decoded.Status)
+		// #871 finding 6: a failed create makes the run "partial", not "completed".
+		if decoded.Status != "partial" {
+			t.Errorf("expected status 'partial' with a failed task, got %q", decoded.Status)
 		}
 		if decoded.Parent.Number != 100 {
 			t.Errorf("expected parent number 100, got %d", decoded.Parent.Number)
@@ -514,7 +545,7 @@ func TestOutputSplitJSONCreated(t *testing.T) {
 
 		parent := &api.Issue{Number: 1, Title: "Parent"}
 
-		err := outputSplitJSONCreated(cmd, parent, []api.Issue{}, []string{"all", "failed"})
+		err := outputSplitJSONCreated(cmd, parent, []api.Issue{}, []string{"all", "failed"}, nil)
 		if err != nil {
 			t.Fatalf("outputSplitJSONCreated failed with empty created: %v", err)
 		}
@@ -524,8 +555,9 @@ func TestOutputSplitJSONCreated(t *testing.T) {
 			t.Fatalf("output was not valid JSON: %v\noutput: %s", err, buf.String())
 		}
 
-		if decoded.Status != "completed" {
-			t.Errorf("expected status 'completed', got %q", decoded.Status)
+		// #871 finding 6: with create failures present, status is "partial", not "completed".
+		if decoded.Status != "partial" {
+			t.Errorf("expected status 'partial' with failures, got %q", decoded.Status)
 		}
 		if decoded.CreatedCount != 0 {
 			t.Errorf("expected createdCount 0, got %d", decoded.CreatedCount)
@@ -555,7 +587,7 @@ func TestOutputSplitJSONCreated(t *testing.T) {
 			{Number: 2, Title: "Sub", URL: "url"},
 		}
 
-		err := outputSplitJSONCreated(cmd, parent, created, []string{})
+		err := outputSplitJSONCreated(cmd, parent, created, []string{}, nil)
 		if err != nil {
 			t.Fatalf("outputSplitJSONCreated failed with empty failed: %v", err)
 		}
@@ -675,7 +707,7 @@ func TestSplitJSONOutput_Structure(t *testing.T) {
 		var buf bytes.Buffer
 		cmd.SetOut(&buf)
 
-		if err := outputSplitJSONCreated(cmd, parent, created, failed); err != nil {
+		if err := outputSplitJSONCreated(cmd, parent, created, failed, nil); err != nil {
 			t.Fatalf("outputSplitJSONCreated() error = %v", err)
 		}
 
@@ -684,8 +716,9 @@ func TestSplitJSONOutput_Structure(t *testing.T) {
 			t.Fatalf("Failed to decode emitted JSON: %v\nOutput: %s", err, buf.String())
 		}
 
-		if result["status"] != "completed" {
-			t.Errorf("Expected status 'completed', got %v", result["status"])
+		// #871 finding 6: a failed create makes the run "partial", not "completed".
+		if result["status"] != "partial" {
+			t.Errorf("Expected status 'partial' with a failed task, got %v", result["status"])
 		}
 		if int(result["createdCount"].(float64)) != 3 {
 			t.Errorf("Expected createdCount 3, got %v", result["createdCount"])
@@ -725,7 +758,7 @@ func TestSplitJSONOutput_Structure(t *testing.T) {
 		var buf bytes.Buffer
 		cmd.SetOut(&buf)
 
-		if err := outputSplitJSONCreated(cmd, parent, nil, nil); err != nil {
+		if err := outputSplitJSONCreated(cmd, parent, nil, nil, nil); err != nil {
 			t.Fatalf("outputSplitJSONCreated() error = %v", err)
 		}
 
