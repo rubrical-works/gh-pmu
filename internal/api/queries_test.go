@@ -3522,7 +3522,7 @@ func TestParseIssuesBatchResponse_MultipleIssues(t *testing.T) {
 		}
 	}`)
 
-	issues, fieldValues, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 43}, "owner", "repo")
+	issues, fieldValues, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 43}, "", "owner", "repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3578,7 +3578,7 @@ func TestParseIssuesBatchResponse_NullIssue(t *testing.T) {
 		"errors": [{"message": "Could not resolve to an issue", "path": ["repository", "i1"]}]
 	}`)
 
-	issues, _, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 99}, "owner", "repo")
+	issues, _, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 99}, "", "owner", "repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3615,12 +3615,100 @@ func TestParseIssuesBatchResponse_WithFieldValues(t *testing.T) {
 		}
 	}`)
 
-	_, fieldValues, _, err := parseIssuesBatchResponse(data, []int{42}, "owner", "repo")
+	_, fieldValues, _, err := parseIssuesBatchResponse(data, []int{42}, "", "owner", "repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(fieldValues[42]) != 2 {
 		t.Fatalf("expected 2 field values, got %d", len(fieldValues[42]))
+	}
+}
+
+// TestParseIssuesBatchResponse_FiltersByProject covers #856: an issue on more
+// than one project board must surface only the configured project's field
+// values, not a foreign board's Status/Priority.
+func TestParseIssuesBatchResponse_FiltersByProject(t *testing.T) {
+	data := []byte(`{
+		"data": {
+			"repository": {
+				"i0": {
+					"id": "ID1", "number": 42, "title": "Multi-board", "body": "",
+					"state": "OPEN", "url": "https://example.com/42",
+					"author": {"login": "user1"},
+					"assignees": {"nodes": []},
+					"labels": {"nodes": []},
+					"milestone": {"title": ""},
+					"projectItems": {"nodes": [
+						{
+							"project": {"id": "PVT_configured"},
+							"fieldValues": {"nodes": [
+								{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "In progress", "text": "", "field": {"name": "Status"}}
+							]}
+						},
+						{
+							"project": {"id": "PVT_other"},
+							"fieldValues": {"nodes": [
+								{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "Done", "text": "", "field": {"name": "Status"}},
+								{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "P1", "text": "", "field": {"name": "Priority"}}
+							]}
+						}
+					]}
+				}
+			}
+		}
+	}`)
+
+	_, fieldValues, _, err := parseIssuesBatchResponse(data, []int{42}, "PVT_configured", "owner", "repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := fieldValues[42]
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 field value from the configured project, got %d: %+v", len(got), got)
+	}
+	if got[0].Field != "Status" || got[0].Value != "In progress" {
+		t.Errorf("expected Status=In progress from the configured project, got %+v", got[0])
+	}
+	for _, fv := range got {
+		if fv.Value == "Done" || fv.Value == "P1" {
+			t.Errorf("foreign project field leaked into results: %+v", fv)
+		}
+	}
+}
+
+// TestParseIssuesBatchResponse_EmptyProjectIDKeepsAll verifies the backward-compat
+// guard: an empty projectID disables filtering (returns all project items) so
+// callers that cannot resolve a project ID keep the prior behavior.
+func TestParseIssuesBatchResponse_EmptyProjectIDKeepsAll(t *testing.T) {
+	data := []byte(`{
+		"data": {
+			"repository": {
+				"i0": {
+					"id": "ID1", "number": 42, "title": "Multi-board", "body": "",
+					"state": "OPEN", "url": "https://example.com/42",
+					"author": {"login": "user1"},
+					"assignees": {"nodes": []},
+					"labels": {"nodes": []},
+					"milestone": {"title": ""},
+					"projectItems": {"nodes": [
+						{"project": {"id": "PVT_a"}, "fieldValues": {"nodes": [
+							{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "In progress", "text": "", "field": {"name": "Status"}}
+						]}},
+						{"project": {"id": "PVT_b"}, "fieldValues": {"nodes": [
+							{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "Done", "text": "", "field": {"name": "Status"}}
+						]}}
+					]}
+				}
+			}
+		}
+	}`)
+
+	_, fieldValues, _, err := parseIssuesBatchResponse(data, []int{42}, "", "owner", "repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fieldValues[42]) != 2 {
+		t.Fatalf("expected all 2 field values when projectID is empty, got %d", len(fieldValues[42]))
 	}
 }
 

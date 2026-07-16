@@ -103,7 +103,7 @@ func namedOperationInvocations() []func(c *Client) {
 		func(c *Client) { _, _ = c.fetchProjectFieldByName("PVT_kw1", "Status") },
 		func(c *Client) { _, _, _ = c.getProjectFieldsPage("PVT_kw1", &cursor) },
 		func(c *Client) { _, _ = c.GetIssue("owner", "repo", 1) },
-		func(c *Client) { _, _, _ = c.GetIssueWithProjectFields("owner", "repo", 1) },
+		func(c *Client) { _, _, _ = c.GetIssueWithProjectFields("PVT_kw1", "owner", "repo", 1) },
 		func(c *Client) { _, _ = c.GetProjectItemIDForIssue("PVT_kw1", "owner", "repo", 1) },
 		func(c *Client) { _, _, _ = c.getProjectItemsPage("PVT_kw1", &cursor) },
 		func(c *Client) { _, _, _ = c.getMinimalProjectItemsPage("PVT_kw1", &cursor) },
@@ -337,7 +337,7 @@ func rawDocumentInvocations() []struct {
 			_, _ = c.getProjectFieldsForIssuesBatch("PVT_kw1", []string{"I_kw1", "I_kw2"})
 		}},
 		{"GetIssuesWithProjectFieldsBatch", func(c *Client) {
-			_, _, _, _ = c.GetIssuesWithProjectFieldsBatch("owner", "repo", numbers)
+			_, _, _, _ = c.GetIssuesWithProjectFieldsBatch("PVT_kw1", "owner", "repo", numbers)
 		}},
 		{"GetParentIssueBatch", func(c *Client) { _, _ = c.GetParentIssueBatch("owner", "repo", numbers) }},
 		{"getLabelIDs", func(c *Client) { _, _ = c.getLabelIDs("owner", "repo", []string{"bug", "help wanted"}) }},

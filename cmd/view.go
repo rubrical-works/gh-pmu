@@ -23,12 +23,12 @@ import (
 // This allows for easier testing with mock implementations.
 type viewClient interface {
 	GetIssue(owner, repo string, number int) (*api.Issue, error)
-	GetIssueWithProjectFields(owner, repo string, number int) (*api.Issue, []api.FieldValue, error)
+	GetIssueWithProjectFields(projectID, owner, repo string, number int) (*api.Issue, []api.FieldValue, error)
 	GetSubIssues(owner, repo string, number int) ([]api.SubIssue, error)
 	GetParentIssue(owner, repo string, number int) (*api.Issue, error)
 	GetIssueComments(owner, repo string, number int) ([]api.Comment, error)
 	// Batch methods for multi-issue mode
-	GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []int) (map[int]*api.Issue, map[int][]api.FieldValue, map[int]error, error)
+	GetIssuesWithProjectFieldsBatch(projectID, owner, repo string, numbers []int) (map[int]*api.Issue, map[int][]api.FieldValue, map[int]error, error)
 	GetSubIssuesBatch(owner, repo string, numbers []int) (map[int][]api.SubIssue, error)
 	GetParentIssueBatch(owner, repo string, numbers []int) (map[int]*api.Issue, error)
 }
@@ -58,6 +58,11 @@ type viewOptions struct {
 	repo       string
 	bodyFile   bool
 	bodyStdout bool
+	// projectID is the configured project's node ID, resolved once in runView and
+	// threaded to the batch/single field-fetch calls so an issue on multiple
+	// boards surfaces only the configured project's field values (#856). Empty
+	// when the project could not be resolved, which disables the filter.
+	projectID string
 }
 
 // viewAvailableFields lists all available JSON fields for the view command
@@ -187,6 +192,17 @@ func runView(cmd *cobra.Command, args []string, opts *viewOptions) error {
 		return err
 	}
 
+	// Resolve the configured project's node ID once so field-value fetches can
+	// scope to this board only — an issue on multiple ProjectV2 boards would
+	// otherwise merge foreign Status/Priority values (#856). Non-fatal: if the
+	// project cannot be resolved, opts.projectID stays empty and the fetch falls
+	// back to returning values from every board (prior behavior).
+	if project, perr := client.GetProject(cfg.Project.Owner, cfg.Project.Number); perr == nil {
+		opts.projectID = project.ID
+	} else {
+		fmt.Fprintf(os.Stderr, "Warning: could not resolve configured project; cross-project field filtering disabled: %v\n", perr)
+	}
+
 	// Single-issue path (backward compatible, unchanged behavior)
 	if len(refs) == 1 && len(parseErrors) == 0 {
 		return runViewWithDeps(cmd, opts, client, refs[0].owner, refs[0].repo, refs[0].number)
@@ -243,7 +259,7 @@ func runViewMulti(cmd *cobra.Command, opts *viewOptions, client viewClient, refs
 
 	for key, numbers := range grouped {
 		// Call 1: Issues + project fields
-		issues, fieldValues, issueErrors, err := client.GetIssuesWithProjectFieldsBatch(key.owner, key.repo, numbers)
+		issues, fieldValues, issueErrors, err := client.GetIssuesWithProjectFieldsBatch(opts.projectID, key.owner, key.repo, numbers)
 		if err != nil {
 			return fmt.Errorf("failed to fetch issues: %w", err)
 		}
@@ -400,7 +416,7 @@ func runViewWithDeps(cmd *cobra.Command, opts *viewOptions, client viewClient, o
 	}
 
 	// Fetch issue with project field values in a single query (optimized)
-	issue, fieldValues, err := client.GetIssueWithProjectFields(owner, repo, number)
+	issue, fieldValues, err := client.GetIssueWithProjectFields(opts.projectID, owner, repo, number)
 	if err != nil {
 		return fmt.Errorf("failed to get issue: %w", err)
 	}

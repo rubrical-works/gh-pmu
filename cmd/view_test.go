@@ -58,7 +58,7 @@ func (m *mockViewClient) GetIssue(owner, repo string, number int) (*api.Issue, e
 	return m.issue, nil
 }
 
-func (m *mockViewClient) GetIssueWithProjectFields(owner, repo string, number int) (*api.Issue, []api.FieldValue, error) {
+func (m *mockViewClient) GetIssueWithProjectFields(projectID, owner, repo string, number int) (*api.Issue, []api.FieldValue, error) {
 	if m.getIssueWithProjectFieldsErr != nil {
 		return nil, nil, m.getIssueWithProjectFieldsErr
 	}
@@ -86,7 +86,7 @@ func (m *mockViewClient) GetIssueComments(owner, repo string, number int) ([]api
 	return m.comments, nil
 }
 
-func (m *mockViewClient) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []int) (map[int]*api.Issue, map[int][]api.FieldValue, map[int]error, error) {
+func (m *mockViewClient) GetIssuesWithProjectFieldsBatch(projectID, owner, repo string, numbers []int) (map[int]*api.Issue, map[int][]api.FieldValue, map[int]error, error) {
 	issues := make(map[int]*api.Issue)
 	fvs := make(map[int][]api.FieldValue)
 	errs := make(map[int]error)

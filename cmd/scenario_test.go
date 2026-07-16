@@ -587,6 +587,50 @@ func issueWithProjectFieldsFixture(number int, title, body, state, status string
 	})
 }
 
+// issueMultiProjectFixture is a GetIssueWithProjectFields response where the
+// issue belongs to two project boards, each with its own Status. Only the
+// configured board's value must survive filtering (#856).
+func issueMultiProjectFixture(number int, title, configuredProjectID, configuredStatus, foreignProjectID, foreignStatus string) map[string]interface{} {
+	return gqlData(map[string]interface{}{
+		"repository": map[string]interface{}{
+			"issue": map[string]interface{}{
+				"id":        "issue-node-id",
+				"number":    number,
+				"title":     title,
+				"body":      "multi-board body",
+				"state":     "OPEN",
+				"url":       "https://github.com/test-org/test-repo/issues/" + strconv.Itoa(number),
+				"author":    map[string]interface{}{"login": "author-login"},
+				"assignees": map[string]interface{}{"nodes": []interface{}{}},
+				"labels":    map[string]interface{}{"nodes": []interface{}{}},
+				"milestone": nil,
+				"projectItems": map[string]interface{}{"nodes": []interface{}{
+					map[string]interface{}{
+						"project": map[string]interface{}{"id": configuredProjectID},
+						"fieldValues": map[string]interface{}{"nodes": []interface{}{
+							map[string]interface{}{
+								"__typename": "ProjectV2ItemFieldSingleSelectValue",
+								"name":       configuredStatus,
+								"field":      map[string]interface{}{"name": "Status"},
+							},
+						}},
+					},
+					map[string]interface{}{
+						"project": map[string]interface{}{"id": foreignProjectID},
+						"fieldValues": map[string]interface{}{"nodes": []interface{}{
+							map[string]interface{}{
+								"__typename": "ProjectV2ItemFieldSingleSelectValue",
+								"name":       foreignStatus,
+								"field":      map[string]interface{}{"name": "Status"},
+							},
+						}},
+					},
+				}},
+			},
+		},
+	})
+}
+
 // noParentFixture / noSubIssuesFixture are the "issue stands alone" responses
 // that view issues after the main lookup.
 func noParentFixture() map[string]interface{} {
@@ -659,6 +703,41 @@ func TestScenario_View_RendersIssueDetail(t *testing.T) {
 	// Project field values must be resolved from projectItems, not dropped.
 	if !strings.Contains(out, "In Progress") {
 		t.Errorf("expected view output to show the Status field value, got:\n%s", out)
+	}
+}
+
+// TestScenario_View_FiltersForeignProjectFields covers #856 end-to-end: when an
+// issue is on two boards, `gh pmu view` must show only the configured project's
+// Status. runView resolves the configured project id (via GetUserProject) and
+// threads it into GetIssueWithProjectFields, which drops the foreign board's
+// item.
+func TestScenario_View_FiltersForeignProjectFields(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	// GetProject resolves to the configured board via the user-project path.
+	handler.respondTo("GetUserProject", userProjectFixture("proj-1", "Test Project"))
+	handler.respondTo("GetIssueWithProjectFields",
+		issueMultiProjectFixture(42, "Multi-board issue", "proj-1", "In Progress", "proj-foreign", "Done"))
+	handler.respondTo("GetParentIssue", noParentFixture())
+	handler.respondTo("GetSubIssues", subIssuesFixture())
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newViewCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	if err := runView(cmd, []string{"42"}, &viewOptions{}); err != nil {
+		t.Fatalf("runView() error = %v (output %q)", err, buf.String())
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "In Progress") {
+		t.Errorf("expected the configured project's Status to render, got:\n%s", out)
+	}
+	if strings.Contains(out, "Done") {
+		t.Errorf("foreign project's Status leaked into view output:\n%s", out)
 	}
 }
 

@@ -430,7 +430,13 @@ func (c *Client) GetIssue(owner, repo string, number int) (*Issue, error) {
 
 // GetIssueWithProjectFields fetches an issue and its project field values in a single query.
 // This is more efficient than calling GetIssue + GetProjectItems when you only need one issue.
-func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Issue, []FieldValue, error) {
+//
+// projectID scopes the returned field values to a single project board: an issue
+// can belong to several ProjectV2 boards (each typically defining its own Status
+// field), so only project items whose project ID matches projectID contribute
+// field values. An empty projectID disables filtering and returns values from all
+// boards (backward-compatible behavior for callers that cannot resolve a project).
+func (c *Client) GetIssueWithProjectFields(projectID, owner, repo string, number int) (*Issue, []FieldValue, error) {
 	if err := validateOwnerRepo(owner, repo); err != nil {
 		return nil, nil, err
 	}
@@ -463,6 +469,9 @@ func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Iss
 				}
 				ProjectItems struct {
 					Nodes []struct {
+						Project struct {
+							ID string
+						} `graphql:"project"`
 						FieldValues struct {
 							Nodes []struct {
 								TypeName string `graphql:"__typename"`
@@ -534,9 +543,14 @@ func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Iss
 		issue.Milestone = &Milestone{Title: query.Repository.Issue.Milestone.Title}
 	}
 
-	// Extract field values from project items
+	// Extract field values from project items, scoped to the configured project.
+	// An issue on multiple boards would otherwise merge foreign Status/Priority
+	// values (#856). An empty projectID disables the filter.
 	var fieldValues []FieldValue
 	for _, projectItem := range query.Repository.Issue.ProjectItems.Nodes {
+		if projectID != "" && projectItem.Project.ID != projectID {
+			continue
+		}
 		for _, fv := range projectItem.FieldValues.Nodes {
 			switch fv.TypeName {
 			case "ProjectV2ItemFieldSingleSelectValue":
@@ -2522,7 +2536,11 @@ func (c *Client) listOrgProjects(owner string) ([]Project, error) {
 // GetIssuesWithProjectFieldsBatch fetches multiple issues with full detail
 // (including author, milestone, labels, assignees) and project field values
 // in a single GraphQL query. Optimized for the view command's batch mode.
-func (c *Client) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []int) (map[int]*Issue, map[int][]FieldValue, map[int]error, error) {
+//
+// projectID scopes the returned field values to a single project board; see
+// GetIssueWithProjectFields for the rationale. An empty projectID disables the
+// filter.
+func (c *Client) GetIssuesWithProjectFieldsBatch(projectID, owner, repo string, numbers []int) (map[int]*Issue, map[int][]FieldValue, map[int]error, error) {
 	issues := make(map[int]*Issue)
 	fieldValues := make(map[int][]FieldValue)
 	issueErrors := make(map[int]error)
@@ -2550,6 +2568,7 @@ func (c *Client) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []i
 			milestone { title }
 			projectItems(first: 10) {
 				nodes {
+					project { id }
 					fieldValues(first: 20) {
 						nodes {
 							__typename
@@ -2577,11 +2596,13 @@ func (c *Client) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []i
 		return nil, nil, nil, fmt.Errorf("failed to execute batch issues query: %w", err)
 	}
 
-	return parseIssuesBatchResponse(output, numbers, owner, repo)
+	return parseIssuesBatchResponse(output, numbers, projectID, owner, repo)
 }
 
 // parseIssuesBatchResponse parses the JSON response from a batch issues query.
-func parseIssuesBatchResponse(data []byte, numbers []int, owner, repo string) (map[int]*Issue, map[int][]FieldValue, map[int]error, error) {
+// projectID scopes field values to a single project board (#856); an empty
+// projectID disables that filter.
+func parseIssuesBatchResponse(data []byte, numbers []int, projectID, owner, repo string) (map[int]*Issue, map[int][]FieldValue, map[int]error, error) {
 	var response struct {
 		Data struct {
 			Repository map[string]json.RawMessage `json:"repository"`
@@ -2648,6 +2669,9 @@ func parseIssuesBatchResponse(data []byte, numbers []int, owner, repo string) (m
 			} `json:"milestone"`
 			ProjectItems struct {
 				Nodes []struct {
+					Project struct {
+						ID string `json:"id"`
+					} `json:"project"`
 					FieldValues struct {
 						Nodes []struct {
 							TypeName string `json:"__typename"`
@@ -2695,6 +2719,9 @@ func parseIssuesBatchResponse(data []byte, numbers []int, owner, repo string) (m
 
 		var fvs []FieldValue
 		for _, projectItem := range raw.ProjectItems.Nodes {
+			if projectID != "" && projectItem.Project.ID != projectID {
+				continue
+			}
 			for _, fv := range projectItem.FieldValues.Nodes {
 				switch fv.TypeName {
 				case "ProjectV2ItemFieldSingleSelectValue":
