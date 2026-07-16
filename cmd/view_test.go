@@ -35,6 +35,9 @@ type mockViewClient struct {
 	subIssuesMap    map[int][]api.SubIssue
 	parentIssuesMap map[int]*api.Issue
 	issueErrors     map[int]error
+
+	// Repo-scoped issues for multi-repo collision tests: "owner/repo" -> number -> issue
+	issuesByRepo map[string]map[int]*api.Issue
 }
 
 func newMockViewClient() *mockViewClient {
@@ -90,6 +93,10 @@ func (m *mockViewClient) GetIssuesWithProjectFieldsBatch(projectID, owner, repo 
 	issues := make(map[int]*api.Issue)
 	fvs := make(map[int][]api.FieldValue)
 	errs := make(map[int]error)
+	repoIssues := m.issues
+	if m.issuesByRepo != nil {
+		repoIssues = m.issuesByRepo[owner+"/"+repo]
+	}
 	for _, n := range numbers {
 		if m.issueErrors != nil {
 			if e, ok := m.issueErrors[n]; ok {
@@ -97,8 +104,8 @@ func (m *mockViewClient) GetIssuesWithProjectFieldsBatch(projectID, owner, repo 
 				continue
 			}
 		}
-		if m.issues != nil {
-			if iss, ok := m.issues[n]; ok {
+		if repoIssues != nil {
+			if iss, ok := repoIssues[n]; ok {
 				issues[n] = iss
 			}
 		}
@@ -2139,6 +2146,52 @@ func TestRunViewMulti_TableWithSeparator(t *testing.T) {
 	// Should contain separator
 	if !strings.Contains(output, "\u2550") {
 		t.Error("expected output to contain separator line")
+	}
+}
+
+func TestRunViewMulti_SameNumberDifferentRepos(t *testing.T) {
+	// #868 finding 3: viewing two same-numbered issues from different repos must
+	// not collide — keying result maps by number alone lets the second repo's data
+	// overwrite the first's, and refOrder then emits the same issue twice.
+	mock := &mockViewClient{
+		issuesByRepo: map[string]map[int]*api.Issue{
+			"o1/r1": {5: {Number: 5, Title: "Repo1 Issue Five", State: "OPEN", URL: "https://github.com/o1/r1/issues/5", Author: api.Actor{Login: "u1"}}},
+			"o2/r2": {5: {Number: 5, Title: "Repo2 Issue Five", State: "OPEN", URL: "https://github.com/o2/r2/issues/5", Author: api.Actor{Login: "u2"}}},
+		},
+		fieldValuesMap:  map[int][]api.FieldValue{},
+		subIssuesMap:    map[int][]api.SubIssue{},
+		parentIssuesMap: map[int]*api.Issue{},
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(w)
+	opts := &viewOptions{}
+	refs := []viewIssueRef{
+		{owner: "o1", repo: "r1", number: 5},
+		{owner: "o2", repo: "r2", number: 5},
+	}
+
+	err := runViewMulti(cmd, opts, mock, refs, nil)
+
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Repo1 Issue Five") {
+		t.Errorf("expected repo1's issue #5 in output, got: %s", output)
+	}
+	if !strings.Contains(output, "Repo2 Issue Five") {
+		t.Errorf("expected repo2's issue #5 in output (collision would drop it), got: %s", output)
 	}
 }
 

@@ -40,6 +40,14 @@ type viewIssueRef struct {
 	number int
 }
 
+// issueKey uniquely identifies an issue by repository and number, so multi-issue
+// result maps do not collide across repositories that reuse issue numbers.
+type issueKey struct {
+	owner  string
+	repo   string
+	number int
+}
+
 // viewResult holds all data for a single issue in multi-issue mode
 type viewResult struct {
 	number      int
@@ -240,22 +248,24 @@ func runViewMulti(cmd *cobra.Command, opts *viewOptions, client viewClient, refs
 		return fmt.Errorf("no valid issue numbers provided")
 	}
 
-	// Group by repo (all issues typically in same repo)
+	// Group by repo (all issues typically in same repo). Result maps are keyed by
+	// (owner, repo, number) — not number alone — so two same-numbered issues from
+	// different repos do not collide (one overwriting the other's data).
 	type repoKey struct{ owner, repo string }
 	grouped := make(map[repoKey][]int)
-	refOrder := make([]int, 0, len(refs))
+	refOrder := make([]issueKey, 0, len(refs))
 	for _, ref := range refs {
 		key := repoKey{ref.owner, ref.repo}
 		grouped[key] = append(grouped[key], ref.number)
-		refOrder = append(refOrder, ref.number)
+		refOrder = append(refOrder, issueKey{ref.owner, ref.repo, ref.number})
 	}
 
 	// Fetch all data with batch calls
-	allIssues := make(map[int]*api.Issue)
-	allFieldValues := make(map[int][]api.FieldValue)
-	allSubIssues := make(map[int][]api.SubIssue)
-	allParentIssues := make(map[int]*api.Issue)
-	allErrors := make(map[int]error)
+	allIssues := make(map[issueKey]*api.Issue)
+	allFieldValues := make(map[issueKey][]api.FieldValue)
+	allSubIssues := make(map[issueKey][]api.SubIssue)
+	allParentIssues := make(map[issueKey]*api.Issue)
+	allErrors := make(map[issueKey]error)
 
 	for key, numbers := range grouped {
 		// Call 1: Issues + project fields
@@ -264,19 +274,19 @@ func runViewMulti(cmd *cobra.Command, opts *viewOptions, client viewClient, refs
 			return fmt.Errorf("failed to fetch issues: %w", err)
 		}
 		for num, issue := range issues {
-			allIssues[num] = issue
+			allIssues[issueKey{key.owner, key.repo, num}] = issue
 		}
 		for num, fvs := range fieldValues {
-			allFieldValues[num] = fvs
+			allFieldValues[issueKey{key.owner, key.repo, num}] = fvs
 		}
 		for num, e := range issueErrors {
-			allErrors[num] = e
+			allErrors[issueKey{key.owner, key.repo, num}] = e
 		}
 
 		// Collect successfully fetched issue numbers for sub-issue/parent batch
 		var validNumbers []int
 		for _, num := range numbers {
-			if _, ok := allIssues[num]; ok {
+			if _, ok := allIssues[issueKey{key.owner, key.repo, num}]; ok {
 				validNumbers = append(validNumbers, num)
 			}
 		}
@@ -298,43 +308,44 @@ func runViewMulti(cmd *cobra.Command, opts *viewOptions, client viewClient, refs
 		wg.Wait()
 
 		for num, subs := range subIssuesMap {
-			allSubIssues[num] = subs
+			allSubIssues[issueKey{key.owner, key.repo, num}] = subs
 		}
 		for num, parent := range parentIssuesMap {
-			allParentIssues[num] = parent
+			allParentIssues[issueKey{key.owner, key.repo, num}] = parent
 		}
 	}
 
 	// Fetch comments per-issue if requested (sequential, opt-in)
-	allComments := make(map[int][]api.Comment)
+	allComments := make(map[issueKey][]api.Comment)
 	if opts.comments {
 		for _, ref := range refs {
-			if _, ok := allIssues[ref.number]; ok {
+			k := issueKey{ref.owner, ref.repo, ref.number}
+			if _, ok := allIssues[k]; ok {
 				comments, _ := client.GetIssueComments(ref.owner, ref.repo, ref.number)
-				allComments[ref.number] = comments
+				allComments[k] = comments
 			}
 		}
 	}
 
 	// Build results in argument order
 	var results []viewResult
-	for _, num := range refOrder {
-		if e, ok := allErrors[num]; ok && e != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get issue #%d: %v\n", num, e)
+	for _, k := range refOrder {
+		if e, ok := allErrors[k]; ok && e != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to get issue #%d: %v\n", k.number, e)
 			continue
 		}
-		issue, ok := allIssues[num]
+		issue, ok := allIssues[k]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "Warning: issue #%d not found\n", num)
+			fmt.Fprintf(os.Stderr, "Warning: issue #%d not found\n", k.number)
 			continue
 		}
 		results = append(results, viewResult{
-			number:      num,
+			number:      k.number,
 			issue:       issue,
-			fieldValues: allFieldValues[num],
-			subIssues:   allSubIssues[num],
-			parentIssue: allParentIssues[num],
-			comments:    allComments[num],
+			fieldValues: allFieldValues[k],
+			subIssues:   allSubIssues[k],
+			parentIssue: allParentIssues[k],
+			comments:    allComments[k],
 		})
 	}
 
