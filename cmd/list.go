@@ -274,30 +274,15 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 	// Apply branch filter
 	if opts.branch != "" {
 		targetBranch := opts.branch
-		if opts.branch == "current" && repoFilter != "" {
-			// Resolve "current" to active branch
-			parts := strings.Split(repoFilter, "/")
-			if len(parts) == 2 {
-				releaseIssues, err := client.GetOpenIssuesByLabel(parts[0], parts[1], "branch")
-				if err == nil {
-					for _, issue := range releaseIssues {
-						// Support both "Branch: " and "Release: " prefixes
-						if strings.HasPrefix(issue.Title, "Branch: ") {
-							targetBranch = strings.TrimPrefix(issue.Title, "Branch: ")
-							if idx := strings.Index(targetBranch, " ("); idx > 0 {
-								targetBranch = targetBranch[:idx]
-							}
-							break
-						} else if strings.HasPrefix(issue.Title, "Release: ") {
-							targetBranch = strings.TrimPrefix(issue.Title, "Release: ")
-							if idx := strings.Index(targetBranch, " ("); idx > 0 {
-								targetBranch = targetBranch[:idx]
-							}
-							break
-						}
-					}
-				}
+		if opts.branch == "current" {
+			// Resolve "current" to the active branch. A failure here must surface
+			// rather than silently filtering by the literal string "current"
+			// (which matches nothing) — mirrors move.go's "no active branch found".
+			resolved, err := resolveCurrentBranchForList(client, repoFilter)
+			if err != nil {
+				return err
 			}
+			targetBranch = resolved
 		}
 		// Filter by both "Branch" and "Release" field names for backward compatibility
 		items = filterByBranchFieldValue(items, targetBranch)
@@ -377,6 +362,43 @@ func filterByEmptyField(items []api.ProjectItem, fieldName string) []api.Project
 		}
 	}
 	return filtered
+}
+
+// resolveCurrentBranchForList resolves --branch current to the active branch
+// tracker's name. It returns an error on every failure path (no repository, a
+// malformed repo, a lookup failure, or no matching tracker) so the caller never
+// silently filters by the literal string "current".
+func resolveCurrentBranchForList(client listClient, repoFilter string) (string, error) {
+	if repoFilter == "" {
+		return "", fmt.Errorf("cannot resolve --branch current: no repository configured (use --repo owner/repo)")
+	}
+	parts := strings.Split(repoFilter, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", fmt.Errorf("cannot resolve --branch current: invalid repository %q", repoFilter)
+	}
+
+	releaseIssues, err := client.GetOpenIssuesByLabel(parts[0], parts[1], "branch")
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve --branch current: %w", err)
+	}
+
+	for _, issue := range releaseIssues {
+		var branch string
+		switch {
+		case strings.HasPrefix(issue.Title, "Branch: "):
+			branch = strings.TrimPrefix(issue.Title, "Branch: ")
+		case strings.HasPrefix(issue.Title, "Release: "):
+			branch = strings.TrimPrefix(issue.Title, "Release: ")
+		default:
+			continue
+		}
+		if idx := strings.Index(branch, " ("); idx > 0 {
+			branch = branch[:idx]
+		}
+		return strings.TrimSpace(branch), nil
+	}
+
+	return "", fmt.Errorf("no active branch found")
 }
 
 // filterByBranchFieldValue filters items by the branch field value

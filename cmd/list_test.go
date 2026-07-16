@@ -811,6 +811,66 @@ func TestRunListWithDeps_UsesLimitWhenNoClientSideFilter(t *testing.T) {
 	}
 }
 
+func TestRunListWithDeps_BranchCurrentNoRepo_Errors(t *testing.T) {
+	// #871 finding 7: --branch current with no repository to resolve against must
+	// error, not silently filter by the literal string "current".
+	mock := newMockListClient()
+	cfg := &config.Config{Project: config.Project{Owner: "test-org", Number: 1}}
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{branch: "current"}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err == nil {
+		t.Fatal("expected error resolving --branch current with no repository configured")
+	}
+}
+
+func TestRunListWithDeps_BranchCurrentLookupError_Errors(t *testing.T) {
+	// #871 finding 7: a branch-tracker lookup failure must surface, not degrade.
+	mock := newMockListClient()
+	mock.getOpenIssuesByLabelErr = errors.New("api unavailable")
+	cfg := &config.Config{Project: config.Project{Owner: "test-org", Number: 1}, Repositories: []string{"o/r"}}
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{branch: "current"}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err == nil {
+		t.Fatal("expected error when --branch current lookup fails")
+	}
+}
+
+func TestRunListWithDeps_BranchCurrentNoTracker_Errors(t *testing.T) {
+	// #871 finding 7: no matching active branch tracker must error.
+	mock := newMockListClient()
+	mock.openIssuesByLabel = []api.Issue{}
+	cfg := &config.Config{Project: config.Project{Owner: "test-org", Number: 1}, Repositories: []string{"o/r"}}
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{branch: "current"}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err == nil {
+		t.Fatal("expected error when no active branch tracker found for --branch current")
+	}
+}
+
+func TestRunListWithDeps_BranchCurrentResolves(t *testing.T) {
+	// Positive: --branch current resolves to the active tracker's branch name.
+	mock := newMockListClient()
+	mock.openIssuesByLabel = []api.Issue{{Number: 100, Title: "Branch: release/v2.0.0", State: "OPEN"}}
+	cfg := &config.Config{Project: config.Project{Owner: "test-org", Number: 1}, Repositories: []string{"o/r"}}
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{branch: "current"}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error resolving --branch current to an active tracker: %v", err)
+	}
+}
+
 func TestRunListWithDeps_WithRepoFlag(t *testing.T) {
 	mock := newMockListClient()
 	mock.projectItems = []api.ProjectItem{
