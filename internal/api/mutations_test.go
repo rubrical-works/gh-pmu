@@ -4,10 +4,75 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestResolveLabelIDs_LookupErrorPropagates(t *testing.T) {
+	// #872 finding 3: a label-lookup failure must propagate, not be swallowed into
+	// an empty map that then misrejects an existing custom label as "not standard".
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	client.rawGQL = &mockRawGraphQL{err: errors.New("batch label lookup network error")}
+
+	_, err := client.resolveLabelIDs("owner", "repo", []string{"custom-existing-label"})
+	if err == nil {
+		t.Fatal("expected the lookup error to propagate, got nil")
+	}
+	if strings.Contains(err.Error(), "is not a standard label") {
+		t.Errorf("expected a propagated lookup error, got misleading standard-label rejection: %v", err)
+	}
+	if !strings.Contains(err.Error(), "look up") {
+		t.Errorf("expected the propagated lookup error, got: %v", err)
+	}
+}
+
+func TestCreateIssueWithOptions_AssigneeLookupFailureWarns(t *testing.T) {
+	// #872 finding 4: an assignee whose lookup fails must be warned about (with the
+	// reason), not silently dropped; issue creation still proceeds.
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name == "GetRepositoryID" {
+				v := reflect.ValueOf(query).Elem()
+				v.FieldByName("Repository").FieldByName("ID").SetString("repo-123")
+				return nil
+			}
+			if name == "GetUserID" {
+				return errors.New("user lookup failed")
+			}
+			return nil
+		},
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	oldErr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	_, err := client.CreateIssueWithOptions("owner", "repo", "title", "body", nil, []string{"ghost"}, "")
+
+	_ = w.Close()
+	os.Stderr = oldErr
+	var buf strings.Builder
+	_, _ = io.Copy(&buf, r)
+
+	if err != nil {
+		t.Fatalf("issue creation should still succeed when an assignee is skipped, got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "ghost") {
+		t.Errorf("expected a stderr warning naming the skipped assignee, got: %q", buf.String())
+	}
+}
 
 // ============================================================================
 // Mock GraphQL Client for Testing
@@ -734,6 +799,9 @@ func TestCreateIssue_WithLabels_ErrorsForNonStandardLabels(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	// Batch label lookup returns an empty repository (no labels found) so resolution
+	// falls through to the standard-label check.
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	// "custom-label" and "unknown" are not in defaults.yml, so they should cause an error
 	_, err := client.CreateIssue("owner", "repo", "title", "body", []string{"custom-label", "unknown"})
 
@@ -796,6 +864,9 @@ func TestCreateIssue_WithLabels_AutoCreatesStandardLabel(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	// Batch label lookup returns an empty repository so "bug" falls through to the
+	// standard-label auto-create path.
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	// "bug" is a standard label, should be auto-created if missing
 	issue, err := client.CreateIssue("owner", "repo", "Test Issue", "body", []string{"bug"})
 
@@ -912,6 +983,8 @@ func TestCreateIssueInput_LabelsIncludedInMutation(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	// Batch label lookup resolves "bug" (l0 alias) directly to its ID.
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{"l0":{"id":"label-bug-id"}}}}`)}
 	issue, err := client.CreateIssue("owner", "repo", "Test Issue", "body", []string{"bug"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -2874,6 +2947,7 @@ func TestResolveLabelIDs_FoundLabels(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	ids, err := client.resolveLabelIDs("owner", "repo", []string{"bug"})
 
 	if err != nil {
@@ -2913,6 +2987,7 @@ func TestResolveLabelIDs_AutoCreatesStandardLabel(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	ids, err := client.resolveLabelIDs("owner", "repo", []string{"bug"})
 
 	if err != nil {
@@ -2931,6 +3006,7 @@ func TestResolveLabelIDs_ErrorsForNonStandardLabel(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	_, err := client.resolveLabelIDs("owner", "repo", []string{"custom-nonexistent"})
 
 	if err == nil {

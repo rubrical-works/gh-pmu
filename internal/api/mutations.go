@@ -909,9 +909,13 @@ func (c *Client) resolveLabelIDs(owner, repo string, labels []string) ([]graphql
 		return nil, fmt.Errorf("failed to load defaults: %w", loadErr)
 	}
 
+	// Propagate a lookup failure instead of proceeding with an empty map. Treating
+	// a transient failure as "no labels exist in the repo" causes existing
+	// non-standard labels to be misrejected as "not a standard label" or triggers
+	// spurious CreateLabel calls.
 	labelIDMap, err := c.getLabelIDs(owner, repo, labels)
 	if err != nil {
-		labelIDMap = make(map[string]string)
+		return nil, fmt.Errorf("failed to look up existing labels in %s/%s: %w", owner, repo, err)
 	}
 
 	var labelIDs []graphql.ID
@@ -1058,7 +1062,10 @@ func (c *Client) CreateIssueWithOptions(owner, repo, title, body string, labels,
 		for _, login := range assignees {
 			userID, err := c.getUserID(login)
 			if err != nil {
-				// Skip users that don't exist
+				// Warn per skipped assignee (the milestone branch below also warns)
+				// so a transient lookup failure isn't silently indistinguishable
+				// from "user not found".
+				fmt.Fprintf(os.Stderr, "Warning: skipping assignee %q: %v\n", login, err)
 				continue
 			}
 			assigneeIDs = append(assigneeIDs, graphql.ID(userID))
