@@ -438,3 +438,27 @@ func (m *simpleGraphQLMock) Query(name string, query interface{}, variables map[
 func (m *simpleGraphQLMock) Mutate(name string, mutation interface{}, variables map[string]interface{}) error {
 	return nil
 }
+
+// TestGraphQLEndpoint covers #859: the raw GraphQL client must build the same
+// GHES-aware endpoint the typed go-gh client does, rather than always
+// https://api.<host>/graphql. Mirrors go-gh's unexported graphQLEndpoint.
+func TestGraphQLEndpoint(t *testing.T) {
+	cases := []struct {
+		name string
+		host string
+		want string
+	}{
+		{"dotcom", "github.com", "https://api.github.com/graphql"},
+		{"dotcom subdomain normalizes", "api.github.com", "https://api.github.com/graphql"},
+		{"dotcom uppercase normalizes", "GITHUB.COM", "https://api.github.com/graphql"},
+		{"ghes uses HOST/api/graphql", "github.example.com", "https://github.example.com/api/graphql"},
+		{"ghes another host", "ghe.internal.corp", "https://ghe.internal.corp/api/graphql"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := graphQLEndpoint(tc.host); got != tc.want {
+				t.Errorf("graphQLEndpoint(%q) = %q, want %q", tc.host, got, tc.want)
+			}
+		})
+	}
+}
