@@ -1209,6 +1209,8 @@ func (c *Client) GetProjectItemsByIssues(projectID string, refs []IssueRef) ([]P
 			}
 
 			if err := json.Unmarshal(issueData, &issue); err != nil {
+				// Warn instead of silently dropping the issue from the batch.
+				fmt.Fprintf(os.Stderr, "Warning: failed to parse batch project item %s/%s; skipping: %v\n", repoAlias, issueAlias, err)
 				continue
 			}
 
@@ -1637,7 +1639,9 @@ func (c *Client) GetSubIssuesBatch(owner, repo string, numbers []int) (map[int][
 		fmt.Fprintf(os.Stderr, "Note: Issue #%d has >100 sub-issues, fetching all pages...\n", num)
 		allSubIssues, err := c.GetSubIssues(owner, repo, num)
 		if err != nil {
-			// If fallback fails, keep partial results from batch
+			// If fallback fails, keep the truncated batch results but warn so the
+			// caller knows #num's sub-issue list is incomplete, not authoritative.
+			fmt.Fprintf(os.Stderr, "Warning: failed to fetch remaining sub-issues for #%d; results are truncated to the first 100: %v\n", num, err)
 			continue
 		}
 		result[num] = allSubIssues
@@ -1700,6 +1704,9 @@ func parseSubIssuesBatchResponse(data []byte, numbers []int) (map[int][]SubIssue
 		}
 
 		if err := json.Unmarshal(issueData, &issueResponse); err != nil {
+			// Warn rather than silently returning an empty list, which reads as
+			// "no sub-issues" when in fact the per-item response was malformed.
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse sub-issues for #%d; treating as none: %v\n", num, err)
 			result[num] = []SubIssue{}
 			continue
 		}
@@ -2987,6 +2994,8 @@ func parseParentIssueBatchResponse(data []byte, numbers []int) (map[int]*Issue, 
 		}
 
 		if err := json.Unmarshal(issueData, &raw); err != nil {
+			// Warn rather than silently returning "no parent" for a malformed item.
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse parent issue for #%d; treating as no parent: %v\n", num, err)
 			result[num] = nil
 			continue
 		}

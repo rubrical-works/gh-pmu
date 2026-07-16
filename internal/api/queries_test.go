@@ -578,6 +578,34 @@ func TestParseSubIssueCountsResponse_GraphQLErrors(t *testing.T) {
 // parseSubIssuesBatchResponse Tests
 // ============================================================================
 
+func TestParseSubIssuesBatchResponse_MalformedItemWarns(t *testing.T) {
+	// #872 finding 2: a malformed per-item response must warn (not silently map to
+	// an empty list that reads as "no sub-issues"). The item is still treated as
+	// empty so the batch continues.
+	data := []byte(`{"data":{"repository":{"i0":{"subIssues":"not-an-object"}}}}`)
+
+	oldErr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	result, _, err := parseSubIssuesBatchResponse(data, []int{5})
+
+	_ = w.Close()
+	os.Stderr = oldErr
+	var buf strings.Builder
+	_, _ = io.Copy(&buf, r)
+
+	if err != nil {
+		t.Fatalf("expected no top-level error for a malformed item, got: %v", err)
+	}
+	if len(result[5]) != 0 {
+		t.Errorf("expected empty sub-issue list for malformed item, got %d", len(result[5]))
+	}
+	if !strings.Contains(buf.String(), "Warning") {
+		t.Errorf("expected a stderr warning for the malformed item, got: %q", buf.String())
+	}
+}
+
 func TestParseSubIssuesBatchResponse_MultipleIssues(t *testing.T) {
 	jsonData := []byte(`{
 		"data": {
