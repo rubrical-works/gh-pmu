@@ -2151,6 +2151,28 @@ func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]I
 		gqlLabels = append(gqlLabels, graphql.String(l))
 	}
 
+	var allIssues []Issue
+	var cursor *string
+	for {
+		issues, pi, err := c.getOpenIssuesByLabelsPage(owner, repo, labels, gqlLabels, cursor)
+		if err != nil {
+			return nil, err
+		}
+		allIssues = append(allIssues, issues...)
+		if !pi.HasNextPage {
+			break
+		}
+		cursor = &pi.EndCursor
+	}
+
+	return allIssues, nil
+}
+
+// getOpenIssuesByLabelsPage fetches a single page of open issues carrying all of
+// the given labels, using cursor-based pagination so callers see every match
+// rather than only the first 100 (#860). labels is passed through solely for
+// error messages.
+func (c *Client) getOpenIssuesByLabelsPage(owner, repo string, labels []string, gqlLabels []graphql.String, cursor *string) ([]Issue, pageInfo, error) {
 	var query struct {
 		Repository struct {
 			Issues struct {
@@ -2173,7 +2195,7 @@ func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]I
 					HasNextPage bool
 					EndCursor   string
 				}
-			} `graphql:"issues(first: 100, states: $states, labels: $labels)"`
+			} `graphql:"issues(first: 100, after: $cursor, states: $states, labels: $labels)"`
 		} `graphql:"repository(owner: $owner, name: $repo)"`
 	}
 
@@ -2182,11 +2204,15 @@ func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]I
 		"repo":   graphql.String(repo),
 		"labels": gqlLabels,
 		"states": []IssueState{IssueStateOpen},
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
 	err := c.gql.Query("GetIssuesByLabels", &query, variables)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get issues with labels %v from %s/%s: %w", labels, owner, repo, err)
+		return nil, pageInfo{}, fmt.Errorf("failed to get issues with labels %v from %s/%s: %w", labels, owner, repo, err)
 	}
 
 	var issues []Issue
@@ -2210,7 +2236,10 @@ func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]I
 		})
 	}
 
-	return issues, nil
+	return issues, pageInfo{
+		HasNextPage: query.Repository.Issues.PageInfo.HasNextPage,
+		EndCursor:   query.Repository.Issues.PageInfo.EndCursor,
+	}, nil
 }
 
 // getIssuesByLabelPaginated fetches all issues with a specific label using cursor-based pagination
@@ -2385,6 +2414,26 @@ func (c *Client) ListProjects(owner string) ([]Project, error) {
 }
 
 func (c *Client) listUserProjects(owner string) ([]Project, error) {
+	var projects []Project
+	var cursor *string
+	for {
+		page, pi, err := c.listUserProjectsPage(owner, cursor)
+		if err != nil {
+			return nil, err
+		}
+		projects = append(projects, page...)
+		if !pi.HasNextPage {
+			break
+		}
+		cursor = &pi.EndCursor
+	}
+	return projects, nil
+}
+
+// listUserProjectsPage fetches a single page of a user's open projects, using
+// cursor-based pagination so older open projects past the first page are not
+// dropped (#860). Closed projects are filtered client-side.
+func (c *Client) listUserProjectsPage(owner string, cursor *string) ([]Project, pageInfo, error) {
 	var query struct {
 		User struct {
 			ProjectsV2 struct {
@@ -2395,17 +2444,24 @@ func (c *Client) listUserProjects(owner string) ([]Project, error) {
 					URL    string `graphql:"url"`
 					Closed bool
 				}
-			} `graphql:"projectsV2(first: 20, orderBy: {field: UPDATED_AT, direction: DESC})"`
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+			} `graphql:"projectsV2(first: 100, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC})"`
 		} `graphql:"user(login: $owner)"`
 	}
 
 	variables := map[string]interface{}{
-		"owner": graphql.String(owner),
+		"owner":  graphql.String(owner),
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
-	err := c.gql.Query("ListUserProjects", &query, variables)
-	if err != nil {
-		return nil, err
+	if err := c.gql.Query("ListUserProjects", &query, variables); err != nil {
+		return nil, pageInfo{}, err
 	}
 
 	var projects []Project
@@ -2426,7 +2482,10 @@ func (c *Client) listUserProjects(owner string) ([]Project, error) {
 		})
 	}
 
-	return projects, nil
+	return projects, pageInfo{
+		HasNextPage: query.User.ProjectsV2.PageInfo.HasNextPage,
+		EndCursor:   query.User.ProjectsV2.PageInfo.EndCursor,
+	}, nil
 }
 
 // Comment represents an issue comment
@@ -2444,6 +2503,32 @@ func (c *Client) GetIssueComments(owner, repo string, number int) ([]Comment, er
 		return nil, err
 	}
 
+	gqlNumber, err := safeGraphQLInt(number)
+	if err != nil {
+		return nil, err
+	}
+
+	var comments []Comment
+	var cursor *string
+	for {
+		page, pi, err := c.getIssueCommentsPage(owner, repo, gqlNumber, cursor)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get comments for %s/%s#%d: %w", owner, repo, number, err)
+		}
+		comments = append(comments, page...)
+		if !pi.HasNextPage {
+			break
+		}
+		cursor = &pi.EndCursor
+	}
+
+	return comments, nil
+}
+
+// getIssueCommentsPage fetches a single page of an issue's comments, using
+// cursor-based pagination so all comments are returned rather than only the
+// first 50 (#860).
+func (c *Client) getIssueCommentsPage(owner, repo string, gqlNumber graphql.Int, cursor *string) ([]Comment, pageInfo, error) {
 	var query struct {
 		Repository struct {
 			Issue struct {
@@ -2457,25 +2542,27 @@ func (c *Client) GetIssueComments(owner, repo string, number int) ([]Comment, er
 							Login string
 						}
 					}
-				} `graphql:"comments(first: 50)"`
+					PageInfo struct {
+						HasNextPage bool
+						EndCursor   string
+					}
+				} `graphql:"comments(first: 100, after: $cursor)"`
 			} `graphql:"issue(number: $number)"`
 		} `graphql:"repository(owner: $owner, name: $repo)"`
-	}
-
-	gqlNumber, err := safeGraphQLInt(number)
-	if err != nil {
-		return nil, err
 	}
 
 	variables := map[string]interface{}{
 		"owner":  graphql.String(owner),
 		"repo":   graphql.String(repo),
 		"number": gqlNumber,
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
-	err = c.gql.Query("GetIssueComments", &query, variables)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get comments for %s/%s#%d: %w", owner, repo, number, err)
+	if err := c.gql.Query("GetIssueComments", &query, variables); err != nil {
+		return nil, pageInfo{}, err
 	}
 
 	var comments []Comment
@@ -2489,10 +2576,33 @@ func (c *Client) GetIssueComments(owner, repo string, number int) ([]Comment, er
 		})
 	}
 
-	return comments, nil
+	return comments, pageInfo{
+		HasNextPage: query.Repository.Issue.Comments.PageInfo.HasNextPage,
+		EndCursor:   query.Repository.Issue.Comments.PageInfo.EndCursor,
+	}, nil
 }
 
 func (c *Client) listOrgProjects(owner string) ([]Project, error) {
+	var projects []Project
+	var cursor *string
+	for {
+		page, pi, err := c.listOrgProjectsPage(owner, cursor)
+		if err != nil {
+			return nil, err
+		}
+		projects = append(projects, page...)
+		if !pi.HasNextPage {
+			break
+		}
+		cursor = &pi.EndCursor
+	}
+	return projects, nil
+}
+
+// listOrgProjectsPage fetches a single page of an org's open projects, using
+// cursor-based pagination so older open projects past the first page are not
+// dropped (#860). Closed projects are filtered client-side.
+func (c *Client) listOrgProjectsPage(owner string, cursor *string) ([]Project, pageInfo, error) {
 	var query struct {
 		Organization struct {
 			ProjectsV2 struct {
@@ -2503,17 +2613,24 @@ func (c *Client) listOrgProjects(owner string) ([]Project, error) {
 					URL    string `graphql:"url"`
 					Closed bool
 				}
-			} `graphql:"projectsV2(first: 20, orderBy: {field: UPDATED_AT, direction: DESC})"`
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+			} `graphql:"projectsV2(first: 100, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC})"`
 		} `graphql:"organization(login: $owner)"`
 	}
 
 	variables := map[string]interface{}{
-		"owner": graphql.String(owner),
+		"owner":  graphql.String(owner),
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
-	err := c.gql.Query("ListOrgProjects", &query, variables)
-	if err != nil {
-		return nil, err
+	if err := c.gql.Query("ListOrgProjects", &query, variables); err != nil {
+		return nil, pageInfo{}, err
 	}
 
 	var projects []Project
@@ -2534,7 +2651,10 @@ func (c *Client) listOrgProjects(owner string) ([]Project, error) {
 		})
 	}
 
-	return projects, nil
+	return projects, pageInfo{
+		HasNextPage: query.Organization.ProjectsV2.PageInfo.HasNextPage,
+		EndCursor:   query.Organization.ProjectsV2.PageInfo.EndCursor,
+	}, nil
 }
 
 // GetIssuesWithProjectFieldsBatch fetches multiple issues with full detail

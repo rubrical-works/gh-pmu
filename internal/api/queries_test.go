@@ -3962,3 +3962,139 @@ func TestGetProject_PreservesBothErrors(t *testing.T) {
 		t.Errorf("expected the org-path error to be preserved, got: %v", msg)
 	}
 }
+
+// ============================================================================
+// #860: pagination (AC1/AC5)
+// ============================================================================
+
+// fillConnectionPage populates a GraphQL connection reflect.Value (a struct with
+// Nodes and PageInfo fields) with `count` zero-valued nodes and the given
+// PageInfo, so pagination-loop tests can drive multi-page responses without
+// spelling out every node field.
+func fillConnectionPage(conn reflect.Value, count int, hasNext bool, cursor string) {
+	nodes := conn.FieldByName("Nodes")
+	nodes.Set(reflect.MakeSlice(nodes.Type(), count, count))
+	pi := conn.FieldByName("PageInfo")
+	pi.FieldByName("HasNextPage").SetBool(hasNext)
+	pi.FieldByName("EndCursor").SetString(cursor)
+}
+
+func TestGetOpenIssuesByLabels_Pagination(t *testing.T) {
+	calls := 0
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetIssuesByLabels" {
+				return nil
+			}
+			calls++
+			conn := reflect.ValueOf(query).Elem().FieldByName("Repository").FieldByName("Issues")
+			if calls == 1 {
+				fillConnectionPage(conn, 100, true, "c1")
+			} else {
+				fillConnectionPage(conn, 20, false, "")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	issues, err := client.GetOpenIssuesByLabels("owner", "repo", []string{"branch"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if len(issues) != 120 {
+		t.Errorf("expected 120 issues across 2 pages, got %d", len(issues))
+	}
+}
+
+func TestGetIssueComments_Pagination(t *testing.T) {
+	calls := 0
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetIssueComments" {
+				return nil
+			}
+			calls++
+			conn := reflect.ValueOf(query).Elem().FieldByName("Repository").FieldByName("Issue").FieldByName("Comments")
+			if calls == 1 {
+				fillConnectionPage(conn, 100, true, "c1")
+			} else {
+				fillConnectionPage(conn, 5, false, "")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	comments, err := client.GetIssueComments("owner", "repo", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if len(comments) != 105 {
+		t.Errorf("expected 105 comments across 2 pages, got %d", len(comments))
+	}
+}
+
+func TestListUserProjects_Pagination(t *testing.T) {
+	calls := 0
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "ListUserProjects" {
+				return nil
+			}
+			calls++
+			conn := reflect.ValueOf(query).Elem().FieldByName("User").FieldByName("ProjectsV2")
+			if calls == 1 {
+				fillConnectionPage(conn, 100, true, "c1")
+			} else {
+				fillConnectionPage(conn, 7, false, "")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	projects, err := client.listUserProjects("someuser")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if len(projects) != 107 {
+		t.Errorf("expected 107 projects across 2 pages, got %d", len(projects))
+	}
+}
+
+func TestListOrgProjects_Pagination(t *testing.T) {
+	calls := 0
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "ListOrgProjects" {
+				return nil
+			}
+			calls++
+			conn := reflect.ValueOf(query).Elem().FieldByName("Organization").FieldByName("ProjectsV2")
+			if calls == 1 {
+				fillConnectionPage(conn, 100, true, "c1")
+			} else {
+				fillConnectionPage(conn, 3, false, "")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	projects, err := client.listOrgProjects("someorg")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if len(projects) != 103 {
+		t.Errorf("expected 103 projects across 2 pages, got %d", len(projects))
+	}
+}
