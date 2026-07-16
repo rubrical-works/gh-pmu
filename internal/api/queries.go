@@ -651,7 +651,10 @@ func (c *Client) GetProjectItemIDForIssue(projectID, owner, repo string, number 
 type ProjectItemsFilter struct {
 	Repository string  // Filter by repository (owner/repo format)
 	State      *string // Filter by issue state: "OPEN", "CLOSED", or nil for all
-	Limit      int     // Maximum number of items to return (0 = no limit)
+	// Limit is the maximum number of items to return. 0 is not unlimited: it
+	// applies GetProjectItems' default cap of 10000, above which items are still
+	// truncated (#860).
+	Limit int
 }
 
 // GetProjectItems fetches all items from a project with their field values.
