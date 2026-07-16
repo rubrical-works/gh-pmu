@@ -208,6 +208,15 @@ func (c *Config) ResolveFieldValue(fieldKey, alias string) string {
 		return actual
 	}
 
+	// Fall back to case-insensitive alias matching, consistent with
+	// ValidateFieldValue, so a case-variant alias (e.g. "In_Progress") resolves to
+	// the configured GitHub field value rather than passing through unchanged.
+	for a, actual := range field.Values {
+		if strings.EqualFold(a, alias) {
+			return actual
+		}
+	}
+
 	return alias
 }
 
@@ -317,13 +326,9 @@ func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) erro
 		return nil // No YAML file — nothing to do
 	}
 
-	// Delete the legacy YAML config
-	if err := os.Remove(yamlPath); err != nil {
-		return fmt.Errorf("failed to remove legacy config %s: %w", legacyYAMLFile, err)
-	}
-	fmt.Fprintf(w, "Removed legacy config %s\n", legacyYAMLFile)
-
-	// Update version in JSON config
+	// Verify and update the JSON config BEFORE removing the legacy YAML. If the
+	// JSON is corrupt or unparsable, the YAML is the only intact copy of the user's
+	// configuration and must not be destroyed by a migration that then fails.
 	cfg, err := Load(jsonConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config for version update: %w", err)
@@ -332,6 +337,12 @@ func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) erro
 	if err := cfg.Save(jsonConfigPath); err != nil {
 		return fmt.Errorf("failed to save updated config: %w", err)
 	}
+
+	// JSON config verified and saved — now safe to remove the legacy YAML.
+	if err := os.Remove(yamlPath); err != nil {
+		return fmt.Errorf("failed to remove legacy config %s: %w", legacyYAMLFile, err)
+	}
+	fmt.Fprintf(w, "Removed legacy config %s\n", legacyYAMLFile)
 
 	return nil
 }

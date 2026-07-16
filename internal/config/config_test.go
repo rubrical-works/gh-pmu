@@ -202,6 +202,30 @@ func TestResolveFieldValue_NoAlias_ReturnsOriginal(t *testing.T) {
 	}
 }
 
+func TestResolveFieldValue_CaseInsensitiveAlias(t *testing.T) {
+	// #869 finding 1: ResolveFieldValue must match aliases case-insensitively to
+	// stay consistent with ValidateFieldValue. Otherwise a case-variant alias
+	// passes validation but resolves to the literal input instead of the
+	// configured GitHub field value.
+	cfg := &Config{
+		Fields: map[string]Field{
+			"status": {
+				Field: "Status",
+				Values: map[string]string{
+					"in_progress": "In progress",
+				},
+			},
+		},
+	}
+
+	cases := []string{"In_Progress", "IN_PROGRESS", "in_progress"}
+	for _, input := range cases {
+		if got := cfg.ResolveFieldValue("status", input); got != "In progress" {
+			t.Errorf("ResolveFieldValue(status, %q) = %q, want %q", input, got, "In progress")
+		}
+	}
+}
+
 func TestResolveFieldValue_UnknownField_ReturnsOriginal(t *testing.T) {
 	// ARRANGE: Config with no fields configured
 	cfg := &Config{
@@ -2022,6 +2046,37 @@ func TestMigrateYAML_BothFilesExist_DeletesYAMLAndUpdatesVersion(t *testing.T) {
 	// ASSERT: JSON file still valid and has original data
 	if cfg.Project.Owner != "test-owner" {
 		t.Errorf("Expected owner 'test-owner', got '%s'", cfg.Project.Owner)
+	}
+}
+
+func TestMigrateYAML_CorruptJSON_PreservesYAML(t *testing.T) {
+	// #869 finding 2: MigrateYAML must verify the JSON config is loadable BEFORE
+	// removing the legacy YAML. A corrupt JSON must not destroy the user's only
+	// intact copy of their configuration.
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+	yamlPath := filepath.Join(testDir, ".gh-pmu.yml")
+
+	// Corrupt/unparsable JSON.
+	if err := os.WriteFile(jsonPath, []byte("{not valid json"), 0644); err != nil {
+		t.Fatalf("Failed to write JSON config: %v", err)
+	}
+	yamlContent := "version: 1.1.0\nproject:\n  owner: test-owner\n  number: 1\nrepositories:\n  - test-owner/test-repo\n"
+	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write YAML config: %v", err)
+	}
+
+	var buf strings.Builder
+
+	// ACT: migration should fail because the JSON is unparsable.
+	err := MigrateYAML(jsonPath, "1.4.0", &buf)
+	if err == nil {
+		t.Fatal("expected error migrating with corrupt JSON, got nil")
+	}
+
+	// ASSERT: the legacy YAML must still exist — it was the only intact copy.
+	if _, statErr := os.Stat(yamlPath); os.IsNotExist(statErr) {
+		t.Error("expected .gh-pmu.yml to be preserved when JSON is corrupt, but it was deleted")
 	}
 }
 
