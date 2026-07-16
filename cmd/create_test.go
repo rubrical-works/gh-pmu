@@ -25,6 +25,7 @@ type mockCreateClient struct {
 	lastLabels    []string
 	lastAssignees []string
 	lastMilestone string
+	setFieldCalls []createSetFieldCall
 
 	// Error injection
 	createIssueErr          error
@@ -90,7 +91,13 @@ func (m *mockCreateClient) AddIssueToProject(projectID, issueID string) (string,
 }
 
 func (m *mockCreateClient) SetProjectItemField(projectID, itemID, fieldName, value string) error {
+	m.setFieldCalls = append(m.setFieldCalls, createSetFieldCall{fieldName: fieldName, value: value})
 	return m.setProjectItemFieldErr
+}
+
+type createSetFieldCall struct {
+	fieldName string
+	value     string
 }
 
 func (m *mockCreateClient) GetOpenIssuesByLabel(owner, repo, label string) ([]api.Issue, error) {
@@ -1779,6 +1786,72 @@ func TestRunCreateWithDeps_WithPriority(t *testing.T) {
 	err := runCreateWithDeps(cmd, opts, cfg, mock, "owner", "repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// #863 AC1: create resolves the status/priority field NAMES from cfg.Fields
+// rather than hardcoding "Status"/"Priority".
+func TestRunCreateWithDeps_UsesConfiguredFieldNames(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+		Fields: map[string]config.Field{
+			"status":   {Field: "Workflow", Values: map[string]string{"todo": "Todo"}},
+			"priority": {Field: "Urgency", Values: map[string]string{"p1": "P1"}},
+		},
+	}
+
+	cmd := newCreateCommand()
+	opts := &createOptions{title: "Test Issue", status: "todo", priority: "p1"}
+	if err := runCreateWithDeps(cmd, opts, cfg, mock, "owner", "repo"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var sawWorkflow, sawUrgency bool
+	for _, c := range mock.setFieldCalls {
+		if c.fieldName == "Status" || c.fieldName == "Priority" {
+			t.Errorf("expected configured field names, got hardcoded %q", c.fieldName)
+		}
+		if c.fieldName == "Workflow" {
+			sawWorkflow = true
+		}
+		if c.fieldName == "Urgency" {
+			sawUrgency = true
+		}
+	}
+	if !sawWorkflow {
+		t.Errorf("expected status written to 'Workflow' field; calls=%+v", mock.setFieldCalls)
+	}
+	if !sawUrgency {
+		t.Errorf("expected priority written to 'Urgency' field; calls=%+v", mock.setFieldCalls)
+	}
+}
+
+// #863 AC1: absent field mapping falls back to the capitalized default names.
+func TestRunCreateWithDeps_FieldNameFallbacks(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+		Fields:  map[string]config.Field{}, // no status/priority mapping
+	}
+
+	cmd := newCreateCommand()
+	opts := &createOptions{title: "Test Issue", status: "todo", priority: "p1"}
+	if err := runCreateWithDeps(cmd, opts, cfg, mock, "owner", "repo"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var sawStatus, sawPriority bool
+	for _, c := range mock.setFieldCalls {
+		if c.fieldName == "Status" {
+			sawStatus = true
+		}
+		if c.fieldName == "Priority" {
+			sawPriority = true
+		}
+	}
+	if !sawStatus || !sawPriority {
+		t.Errorf("expected fallback 'Status'/'Priority' field names; calls=%+v", mock.setFieldCalls)
 	}
 }
 

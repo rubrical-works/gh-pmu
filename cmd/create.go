@@ -280,30 +280,33 @@ func runCreateWithDeps(cmd *cobra.Command, opts *createOptions, cfg *config.Conf
 		return fmt.Errorf("failed to add issue to project: %w", err)
 	}
 
-	// Set project field values
+	// Set project field values. Resolve the configured GitHub field names
+	// (cfg.Fields), falling back to the capitalized defaults.
+	statusFieldName := cfg.GetFieldNameOr("status", "Status")
+	priorityFieldName := cfg.GetFieldNameOr("priority", "Priority")
 	if opts.status != "" {
 		statusValue := cfg.ResolveFieldValue("status", opts.status)
-		if err := client.SetProjectItemField(project.ID, itemID, "Status", statusValue); err != nil {
+		if err := client.SetProjectItemField(project.ID, itemID, statusFieldName, statusValue); err != nil {
 			// Non-fatal - warn but continue
 			fmt.Fprintf(os.Stderr, "Warning: failed to set status: %v\n", err)
 		}
 	} else if cfg.Defaults.Status != "" {
 		// Apply default status from config
 		statusValue := cfg.ResolveFieldValue("status", cfg.Defaults.Status)
-		if err := client.SetProjectItemField(project.ID, itemID, "Status", statusValue); err != nil {
+		if err := client.SetProjectItemField(project.ID, itemID, statusFieldName, statusValue); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to set default status: %v\n", err)
 		}
 	}
 
 	if opts.priority != "" {
 		priorityValue := cfg.ResolveFieldValue("priority", opts.priority)
-		if err := client.SetProjectItemField(project.ID, itemID, "Priority", priorityValue); err != nil {
+		if err := client.SetProjectItemField(project.ID, itemID, priorityFieldName, priorityValue); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to set priority: %v\n", err)
 		}
 	} else if cfg.Defaults.Priority != "" {
 		// Apply default priority from config
 		priorityValue := cfg.ResolveFieldValue("priority", cfg.Defaults.Priority)
-		if err := client.SetProjectItemField(project.ID, itemID, "Priority", priorityValue); err != nil {
+		if err := client.SetProjectItemField(project.ID, itemID, priorityFieldName, priorityValue); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to set default priority: %v\n", err)
 		}
 	}
@@ -406,27 +409,30 @@ func runCreateFromFileWithDeps(cmd *cobra.Command, opts *createOptions, cfg *con
 		return fmt.Errorf("failed to add issue to project: %w", err)
 	}
 
-	// Set project field values
+	// Set project field values. Resolve the configured GitHub field names
+	// (cfg.Fields), falling back to the capitalized defaults.
+	statusFieldName := cfg.GetFieldNameOr("status", "Status")
+	priorityFieldName := cfg.GetFieldNameOr("priority", "Priority")
 	if status != "" {
 		statusValue := cfg.ResolveFieldValue("status", status)
-		if err := client.SetProjectItemField(project.ID, itemID, "Status", statusValue); err != nil {
+		if err := client.SetProjectItemField(project.ID, itemID, statusFieldName, statusValue); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to set status: %v\n", err)
 		}
 	} else if cfg.Defaults.Status != "" {
 		statusValue := cfg.ResolveFieldValue("status", cfg.Defaults.Status)
-		if err := client.SetProjectItemField(project.ID, itemID, "Status", statusValue); err != nil {
+		if err := client.SetProjectItemField(project.ID, itemID, statusFieldName, statusValue); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to set default status: %v\n", err)
 		}
 	}
 
 	if priority != "" {
 		priorityValue := cfg.ResolveFieldValue("priority", priority)
-		if err := client.SetProjectItemField(project.ID, itemID, "Priority", priorityValue); err != nil {
+		if err := client.SetProjectItemField(project.ID, itemID, priorityFieldName, priorityValue); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to set priority: %v\n", err)
 		}
 	} else if cfg.Defaults.Priority != "" {
 		priorityValue := cfg.ResolveFieldValue("priority", cfg.Defaults.Priority)
-		if err := client.SetProjectItemField(project.ID, itemID, "Priority", priorityValue); err != nil {
+		if err := client.SetProjectItemField(project.ID, itemID, priorityFieldName, priorityValue); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to set default priority: %v\n", err)
 		}
 	}
