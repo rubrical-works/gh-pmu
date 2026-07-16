@@ -158,12 +158,24 @@ func runEditWithDeps(cmd *cobra.Command, opts *editOptions, cfg *config.Config, 
 		updates = append(updates, "title")
 	}
 
-	// Update body if provided
+	// Update body if provided.
+	// A body source (--body-file / --body-stdin, both represented by opts.bodyFile
+	// here) is an explicit request to change the body. If it resolves to empty
+	// content, fail loudly rather than silently skipping and still reporting
+	// success — an accidentally-empty file in the view→edit round-trip must not
+	// look like it worked.
 	body := opts.body
 	if opts.bodyFile != "" {
 		content, err := readBodyFile(opts.bodyFile)
 		if err != nil {
 			return fmt.Errorf("failed to read body file: %w", err)
+		}
+		if content == "" {
+			source := "--body-file"
+			if opts.bodyStdin || opts.bodyFile == "-" {
+				source = "--body-stdin"
+			}
+			return fmt.Errorf("%s produced empty content; refusing to report success for a no-op body update", source)
 		}
 		body = content
 	}
