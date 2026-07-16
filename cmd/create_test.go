@@ -2062,6 +2062,179 @@ func TestRunCreateFromFileWithDeps_MissingTitle(t *testing.T) {
 }
 
 // ============================================================================
+// #864: --from-file honors flags, validates, and parses once
+// ============================================================================
+
+// writeTempIssueFile writes content to a temp file with the given extension and
+// returns its path (cleaned up by t.Cleanup).
+func writeTempIssueFile(t *testing.T, ext, content string) string {
+	t.Helper()
+	f, err := os.CreateTemp("", "issue-*"+ext)
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	f.Close()
+	t.Cleanup(func() { _ = os.Remove(f.Name()) })
+	return f.Name()
+}
+
+// AC3: unsupported body-source flags are rejected (not silently ignored).
+func TestValidateCreateFromFileFlags_RejectsUnsupportedFlags(t *testing.T) {
+	file := writeTempIssueFile(t, ".yaml", "title: From File\n")
+	cases := []struct {
+		name string
+		opts *createOptions
+		want string
+	}{
+		{"template", &createOptions{fromFile: file, template: "bug"}, "--template"},
+		{"body-file", &createOptions{fromFile: file, bodyFile: "b.md"}, "--body-file"},
+		{"body-stdin", &createOptions{fromFile: file, bodyStdin: true}, "--body-stdin"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateCreateFromFileFlags(tc.opts)
+			if err == nil {
+				t.Fatalf("expected rejection error for %s, got nil", tc.want)
+			}
+			if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "--from-file") {
+				t.Errorf("expected error naming %s and --from-file, got: %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// AC3: --title is honored — it can supply a title missing from the file.
+func TestValidateCreateFromFileFlags_TitleFlagSuppliesMissingTitle(t *testing.T) {
+	file := writeTempIssueFile(t, ".yaml", "body: no title here\n")
+	opts := &createOptions{fromFile: file, title: "CLI Title"}
+	if err := validateCreateFromFileFlags(opts); err != nil {
+		t.Fatalf("expected --title to satisfy title requirement, got: %v", err)
+	}
+	if opts.parsedFile == nil {
+		t.Fatal("expected parsedFile to be stashed for single-parse reuse")
+	}
+}
+
+// AC3/AC5: --title overrides the file title.
+func TestRunCreateFromFileWithDeps_TitleFlagOverridesFile(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{Project: config.Project{Owner: "o", Number: 1}}
+	file := writeTempIssueFile(t, ".yaml", "title: File Title\nbody: b\n")
+
+	opts := &createOptions{fromFile: file, title: "Overridden Title"}
+	if err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mock.createdIssue.Title != "Overridden Title" {
+		t.Errorf("expected CLI --title to win, got %q", mock.createdIssue.Title)
+	}
+}
+
+// AC2: --branch is honored in from-file mode (was silently ignored).
+func TestRunCreateFromFileWithDeps_HonorsBranchFlag(t *testing.T) {
+	mock := newMockCreateClient()
+	mock.issuesByLabel = []api.Issue{{Number: 100, Title: "Branch: v1.0.0"}}
+	cfg := &config.Config{Project: config.Project{Owner: "o", Number: 1}}
+	file := writeTempIssueFile(t, ".yaml", "title: T\nbody: b\n")
+
+	opts := &createOptions{fromFile: file, release: "current"}
+	if err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var branchSet bool
+	for _, c := range mock.setFieldCalls {
+		if c.fieldName == "Branch" && c.value == "v1.0.0" {
+			branchSet = true
+		}
+	}
+	if !branchSet {
+		t.Errorf("expected Branch field set to 'v1.0.0'; calls=%+v", mock.setFieldCalls)
+	}
+}
+
+// AC1: IDPF validation runs on merged values — creating as 'done' with unchecked
+// boxes is rejected in from-file mode, just like the normal path.
+func TestRunCreateFromFileWithDeps_RunsIDPFValidation(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{
+		Project:   config.Project{Owner: "o", Number: 1},
+		Framework: "IDPF",
+		Fields: map[string]config.Field{
+			"status": {Field: "Status", Values: map[string]string{"done": "Done"}},
+		},
+	}
+	file := writeTempIssueFile(t, ".yaml", "title: T\nstatus: done\nbody: \"- [ ] unchecked\"\n")
+
+	opts := &createOptions{fromFile: file}
+	err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r")
+	if err == nil {
+		t.Fatal("expected IDPF validation to reject done+unchecked, got nil")
+	}
+	if !strings.Contains(err.Error(), "unchecked") {
+		t.Errorf("expected unchecked-checkbox validation error, got: %v", err)
+	}
+}
+
+// AC4: file is parsed once — a stashed parsedFile is reused, so execution does not
+// re-read the (here nonexistent) path.
+func TestRunCreateFromFileWithDeps_ReusesPreParsedFile(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{Project: config.Project{Owner: "o", Number: 1}}
+
+	opts := &createOptions{
+		fromFile:   "/nonexistent/should-not-be-read.yaml",
+		parsedFile: &issueFromFile{Title: "Pre-parsed", Body: "b"},
+	}
+	if err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r"); err != nil {
+		t.Fatalf("expected reuse of parsedFile (no re-read), got: %v", err)
+	}
+	if mock.createdIssue.Title != "Pre-parsed" {
+		t.Errorf("expected pre-parsed title, got %q", mock.createdIssue.Title)
+	}
+}
+
+// AC5: CLI --status/--body/--priority take precedence over file values.
+func TestRunCreateFromFileWithDeps_FlagsOverrideFileValues(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{
+		Project: config.Project{Owner: "o", Number: 1},
+		Fields: map[string]config.Field{
+			"status":   {Field: "Status", Values: map[string]string{"in_progress": "In progress"}},
+			"priority": {Field: "Priority", Values: map[string]string{"p1": "P1"}},
+		},
+	}
+	file := writeTempIssueFile(t, ".yaml", "title: T\nbody: file body\nstatus: backlog\npriority: p3\n")
+
+	opts := &createOptions{fromFile: file, body: "cli body", status: "in_progress", priority: "p1"}
+	if err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.lastBody != "cli body" {
+		t.Errorf("expected CLI body to win, got %q", mock.lastBody)
+	}
+	var sawInProgress, sawP1 bool
+	for _, c := range mock.setFieldCalls {
+		if c.fieldName == "Status" && c.value == "In progress" {
+			sawInProgress = true
+		}
+		if c.fieldName == "Priority" && c.value == "P1" {
+			sawP1 = true
+		}
+	}
+	if !sawInProgress {
+		t.Errorf("expected CLI --status to win (In progress); calls=%+v", mock.setFieldCalls)
+	}
+	if !sawP1 {
+		t.Errorf("expected CLI --priority to win (P1); calls=%+v", mock.setFieldCalls)
+	}
+}
+
+// ============================================================================
 // Issue #491: --body-stdin Tests
 // ============================================================================
 

@@ -41,6 +41,11 @@ type createOptions struct {
 	milestone string
 	repo      string
 	fromFile  string
+
+	// parsedFile carries the file parsed during pre-flight validation so the
+	// execution path does not re-read it (single parse). Nil when the execution
+	// entry point is reached without pre-flight (e.g. tests), which then parses.
+	parsedFile *issueFromFile
 }
 
 func newCreateCommand() *cobra.Command {
@@ -112,27 +117,61 @@ func validateCreateFlags(opts *createOptions) error {
 	return nil
 }
 
-// validateCreateFromFileFlags validates --from-file inputs before API client creation.
-func validateCreateFromFileFlags(opts *createOptions) error {
-	data, err := os.ReadFile(opts.fromFile)
+// parseIssueFromFile reads and parses a YAML/JSON issue definition file. It is the
+// single parse implementation shared by pre-flight validation and execution.
+func parseIssueFromFile(path string) (*issueFromFile, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", opts.fromFile, err)
+		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 	}
 
 	var issueData issueFromFile
-	if strings.HasSuffix(opts.fromFile, ".json") {
+	if strings.HasSuffix(path, ".json") {
 		if err := json.Unmarshal(data, &issueData); err != nil {
-			return fmt.Errorf("failed to parse JSON file: %w", err)
+			return nil, fmt.Errorf("failed to parse JSON file: %w", err)
 		}
 	} else {
 		if err := yaml.Unmarshal(data, &issueData); err != nil {
-			return fmt.Errorf("failed to parse YAML file: %w", err)
+			return nil, fmt.Errorf("failed to parse YAML file: %w", err)
 		}
 	}
+	return &issueData, nil
+}
 
-	if issueData.Title == "" {
+// validateCreateFromFileFlags validates --from-file inputs before API client creation.
+// It rejects flags whose semantics are undefined in from-file mode (rather than
+// silently ignoring them) and parses the file once, stashing the result on opts so
+// the execution path can reuse it.
+func validateCreateFromFileFlags(opts *createOptions) error {
+	// Reject body-source flags that would be silently ignored in from-file mode.
+	// The body comes from the file's `body:` field or --body. --title and --branch
+	// ARE honored (merged in runCreateFromFileWithDeps).
+	var rejected []string
+	if opts.bodyFile != "" {
+		rejected = append(rejected, "--body-file")
+	}
+	if opts.bodyStdin {
+		rejected = append(rejected, "--body-stdin")
+	}
+	if opts.template != "" {
+		rejected = append(rejected, "--template")
+	}
+	if len(rejected) > 0 {
+		return fmt.Errorf("%s cannot be used with --from-file; set the body in the file or use --body",
+			strings.Join(rejected, ", "))
+	}
+
+	issueData, err := parseIssueFromFile(opts.fromFile)
+	if err != nil {
+		return err
+	}
+
+	// Title may come from the file or be supplied/overridden by --title.
+	if issueData.Title == "" && opts.title == "" {
 		return fmt.Errorf("title is required in file")
 	}
+
+	opts.parsedFile = issueData
 	return nil
 }
 
@@ -341,30 +380,26 @@ func runCreateWithDeps(cmd *cobra.Command, opts *createOptions, cfg *config.Conf
 
 // runCreateFromFileWithDeps is the testable implementation of runCreateFromFile
 func runCreateFromFileWithDeps(cmd *cobra.Command, opts *createOptions, cfg *config.Config, client createClient, owner, repo string) error {
-	// Read the file
-	data, err := os.ReadFile(opts.fromFile)
-	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", opts.fromFile, err)
-	}
-
-	// Parse the file (try YAML first, then JSON)
-	var issueData issueFromFile
-	if strings.HasSuffix(opts.fromFile, ".json") {
-		if err := json.Unmarshal(data, &issueData); err != nil {
-			return fmt.Errorf("failed to parse JSON file: %w", err)
+	// Single parse: reuse the file parsed during pre-flight validation when
+	// available, otherwise parse now (direct-call entry points, e.g. tests).
+	issueData := opts.parsedFile
+	if issueData == nil {
+		parsed, err := parseIssueFromFile(opts.fromFile)
+		if err != nil {
+			return err
 		}
-	} else {
-		if err := yaml.Unmarshal(data, &issueData); err != nil {
-			return fmt.Errorf("failed to parse YAML file: %w", err)
-		}
-	}
-
-	if issueData.Title == "" {
-		return fmt.Errorf("title is required in file")
+		issueData = parsed
 	}
 
 	// Merge with command line options (command line takes precedence)
 	title := issueData.Title
+	if opts.title != "" {
+		title = opts.title
+	}
+	if title == "" {
+		return fmt.Errorf("title is required in file")
+	}
+
 	body := issueData.Body
 	if opts.body != "" {
 		body = opts.body
@@ -392,6 +427,16 @@ func runCreateFromFileWithDeps(cmd *cobra.Command, opts *createOptions, cfg *con
 		priority = opts.priority
 	}
 
+	// IDPF validation on the merged values — same gate as the normal create path,
+	// so from-file cannot bypass the IDPF rules (done needs body + checked boxes,
+	// ready/in_progress/... need a branch).
+	if cfg.IsIDPF() && status != "" {
+		statusValue := cfg.ResolveFieldValue("status", status)
+		if err := validateCreateOptions(statusValue, body, opts.release); err != nil {
+			return err
+		}
+	}
+
 	// Create the issue
 	issue, err := client.CreateIssueWithOptions(owner, repo, title, body, labels, assignees, milestone)
 	if err != nil {
@@ -402,6 +447,13 @@ func runCreateFromFileWithDeps(cmd *cobra.Command, opts *createOptions, cfg *con
 	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
 	if err != nil {
 		return fmt.Errorf("failed to get project: %w", err)
+	}
+
+	// Resolve project fields up front so the Branch field name can be resolved
+	// (honoring --branch/--release in from-file mode).
+	projectFields, err := client.GetProjectFields(project.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get project fields: %w", err)
 	}
 
 	itemID, err := client.AddIssueToProject(project.ID, issue.ID)
@@ -435,6 +487,11 @@ func runCreateFromFileWithDeps(cmd *cobra.Command, opts *createOptions, cfg *con
 		if err := client.SetProjectItemField(project.ID, itemID, priorityFieldName, priorityValue); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to set default priority: %v\n", err)
 		}
+	}
+
+	// Honor --branch/--release in from-file mode (previously silently ignored).
+	if err := setCreateBranchField(client, project.ID, itemID, owner, repo, opts.release, projectFields); err != nil {
+		return err
 	}
 
 	// Output the result
@@ -493,6 +550,32 @@ func stripBranchPrefix(title string) string {
 		return strings.TrimPrefix(title, "Branch: ")
 	}
 	return strings.TrimPrefix(title, "Release: ")
+}
+
+// setCreateBranchField resolves the --branch/--release value ("current" -> the
+// active branch) and sets the Branch project field. A no-op when branchFlag is
+// empty. Field-set failures are non-fatal (warning); an unresolved "current" is a
+// hard error. Shared by the from-file create path so --branch is honored there.
+func setCreateBranchField(client createClient, projectID, itemID, owner, repo, branchFlag string, projectFields []api.ProjectField) error {
+	if branchFlag == "" {
+		return nil
+	}
+	branchValue := branchFlag
+	if branchFlag == "current" {
+		releaseIssues, err := client.GetOpenIssuesByLabel(owner, repo, "branch")
+		if err != nil {
+			return fmt.Errorf("failed to get branch issues: %w", err)
+		}
+		activeRelease := findActiveBranchForCreate(releaseIssues)
+		if activeRelease == nil {
+			return fmt.Errorf("no active branch found. Run 'gh pmu branch start' to create one")
+		}
+		branchValue = stripBranchPrefix(activeRelease.Title)
+	}
+	if err := client.SetProjectItemField(projectID, itemID, ResolveBranchFieldName(projectFields), branchValue); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to set branch: %v\n", err)
+	}
+	return nil
 }
 
 // maxBodyFileSize is the maximum size for body/template file reads (1MB).
