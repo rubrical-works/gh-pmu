@@ -1912,7 +1912,7 @@ func (c *Client) executeBatchMutation(projectID string, updates []FieldUpdate) (
 // results. Extracted for testability, mirroring parseIssuesBatchResponse.
 func parseBatchMutationResponse(output []byte, updates []FieldUpdate) ([]BatchUpdateResult, error) {
 	var response struct {
-		Data map[string]json.RawMessage `json:"data"`
+		Data   map[string]json.RawMessage `json:"data"`
 		Errors []struct {
 			Message string `json:"message"`
 			// Path segments may be strings (alias names) or integers (list
