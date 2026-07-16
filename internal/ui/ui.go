@@ -301,7 +301,8 @@ func NewSpinner(out io.Writer, message string) *Spinner {
 	}
 }
 
-// Start begins the spinner animation
+// Start begins the spinner animation. It is safe to call after Stop: fresh
+// channels are created for each run so the spinner is restartable.
 func (s *Spinner) Start() {
 	s.mu.Lock()
 	if s.active {
@@ -309,18 +310,29 @@ func (s *Spinner) Start() {
 		return
 	}
 	s.active = true
+	// Recreate the channels for this run. Stop closes stopCh and waits on doneCh;
+	// reusing the already-closed channels on a restart would panic with
+	// "close of closed channel". Capture local copies for the goroutine so it
+	// never races with a subsequent Start that reassigns the fields.
+	s.stopCh = make(chan struct{})
+	s.doneCh = make(chan struct{})
+	stopCh := s.stopCh
+	doneCh := s.doneCh
 	s.mu.Unlock()
 
 	go func() {
 		ticker := time.NewTicker(80 * time.Millisecond)
 		defer ticker.Stop()
-		defer close(s.doneCh)
+		defer close(doneCh)
 
+		// Track the widest line rendered so the clear at the end overwrites any
+		// residue left by a previously longer message. Goroutine-local, so the
+		// clear branch never reads s.message without the mutex.
+		maxWidth := 0
 		for {
 			select {
-			case <-s.stopCh:
-				// Clear the spinner line
-				fmt.Fprintf(s.out, "\r%s\r", strings.Repeat(" ", len(s.message)+4))
+			case <-stopCh:
+				fmt.Fprintf(s.out, "\r%s\r", strings.Repeat(" ", maxWidth))
 				return
 			case <-ticker.C:
 				s.mu.Lock()
@@ -329,13 +341,18 @@ func (s *Spinner) Start() {
 				msg := s.message
 				s.mu.Unlock()
 
+				// Visible width = frame rune + space + message runes (ANSI codes
+				// are zero-width). Grow maxWidth so shrinking messages still clear.
+				if w := 2 + len([]rune(msg)); w > maxWidth {
+					maxWidth = w
+				}
 				fmt.Fprintf(s.out, "\r%s %s", Cyan+frame+Reset, msg)
 			}
 		}
 	}()
 }
 
-// Stop stops the spinner
+// Stop stops the spinner. Safe to call multiple times or without a prior Start.
 func (s *Spinner) Stop() {
 	s.mu.Lock()
 	if !s.active {
@@ -343,10 +360,14 @@ func (s *Spinner) Stop() {
 		return
 	}
 	s.active = false
+	// Capture the current run's channels under the lock so a concurrent Start
+	// (which reassigns them) cannot cause us to close/wait on the wrong ones.
+	stopCh := s.stopCh
+	doneCh := s.doneCh
 	s.mu.Unlock()
 
-	close(s.stopCh)
-	<-s.doneCh
+	close(stopCh)
+	<-doneCh
 }
 
 // UpdateMessage updates the spinner message

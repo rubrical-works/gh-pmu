@@ -2,7 +2,9 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -350,6 +352,53 @@ func TestSpinner_StartStop(t *testing.T) {
 		// This should not panic even though we never called Start
 		s.Stop()
 	})
+}
+
+func TestSpinner_RestartAfterStop(t *testing.T) {
+	// #870 case 2: Start after Stop must not panic with "close of closed channel".
+	var buf bytes.Buffer
+	s := NewSpinner(&buf, "working")
+
+	s.Start()
+	time.Sleep(20 * time.Millisecond)
+	s.Stop()
+
+	// Restart — buggy code spawns a goroutine whose `defer close(s.doneCh)`
+	// panics because doneCh was already closed by the first Stop.
+	s.Start()
+	time.Sleep(20 * time.Millisecond)
+	s.Stop()
+}
+
+func TestSpinner_NoDataRaceOnMessage(t *testing.T) {
+	// #870 case 1: the stopCh clear branch reads s.message without the mutex while
+	// UpdateMessage writes it. Run under -race to detect the race.
+	var buf bytes.Buffer
+	s := NewSpinner(&buf, "initial")
+
+	s.Start()
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-done:
+				return
+			default:
+				s.UpdateMessage(fmt.Sprintf("message-%d", i))
+			}
+		}
+	}()
+
+	// Let the animation and concurrent updates interleave, then Stop while
+	// UpdateMessage is still running so the clear-branch read overlaps a write.
+	time.Sleep(30 * time.Millisecond)
+	s.Stop()
+	close(done)
+	wg.Wait()
 }
 
 func TestSpinner_UpdateMessage(t *testing.T) {
