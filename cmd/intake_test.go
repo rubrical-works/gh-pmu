@@ -171,6 +171,34 @@ func TestIntakeCommand(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects stray positional arguments", func(t *testing.T) {
+		// #867 finding 1: --apply has NoOptDefVal, so `--apply status:...` leaves
+		// `status:...` as a positional argument. Without an Args validator it was
+		// silently ignored; NoArgs makes it fail loudly.
+		cmd := newIntakeCommand()
+		if cmd.Args == nil {
+			t.Fatal("expected intake to set an Args validator (cobra.NoArgs)")
+		}
+		if err := cmd.Args(cmd, []string{"status:backlog,priority:p1"}); err == nil {
+			t.Error("expected error for stray positional argument, got nil")
+		}
+		if err := cmd.Args(cmd, []string{}); err != nil {
+			t.Errorf("expected no error with zero positional args, got: %v", err)
+		}
+	})
+
+	t.Run("example uses --apply= form for field values", func(t *testing.T) {
+		// #867 finding 1: space-separated `--apply status:...` is silently ignored,
+		// so the help text must show the `--apply=status:...` form instead.
+		cmd := newIntakeCommand()
+		if strings.Contains(cmd.Example, "--apply status:") {
+			t.Error("Example must not show space-separated `--apply status:...` (silently ignored)")
+		}
+		if !strings.Contains(cmd.Example, "--apply=status:") {
+			t.Error("Example should show the `--apply=status:...` form")
+		}
+	})
+
 	t.Run("command is registered in root", func(t *testing.T) {
 		root := NewRootCommand()
 		buf := new(bytes.Buffer)
