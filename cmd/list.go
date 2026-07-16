@@ -128,13 +128,13 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 		return fmt.Errorf("failed to get project: %w", err)
 	}
 
-	// Determine repository filter (--repo flag takes precedence over config)
+	// Determine repository filter (--repo flag takes precedence over config).
+	// repoFilter stays as an "owner/repo" string; --repo is validated via the
+	// shared helper (uniform empty-component rejection).
 	repoFilter := ""
 	if opts.repo != "" {
-		// Validate repo format
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		if _, _, err := splitOwnerRepo(opts.repo, "--repo"); err != nil {
+			return err
 		}
 		repoFilter = opts.repo
 	} else if len(cfg.Repositories) > 0 {

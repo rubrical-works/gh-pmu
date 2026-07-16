@@ -159,18 +159,19 @@ func runView(cmd *cobra.Command, args []string, opts *viewOptions) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// view tolerates empty defaults because issue args may be fully qualified;
+	// an explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 

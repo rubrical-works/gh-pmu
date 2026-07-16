@@ -165,18 +165,20 @@ func runMove(cmd *cobra.Command, args []string, opts *moveOptions) error {
 // runMoveWithDeps is the testable implementation of runMove
 // runMoveWithDeps is the testable implementation of runMove
 func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *config.Config, client moveClient) error {
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// move tolerates empty defaults because issue args may be fully qualified
+	// (owner/repo#N), so a malformed config repo is skipped rather than fatal — but
+	// an explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 

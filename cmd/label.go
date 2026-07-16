@@ -492,14 +492,13 @@ func runLabelDeleteWithDeps(cmd *cobra.Command, args []string, opts *labelDelete
 
 // --- helpers ---
 
-// resolveRepo parses owner/repo from flag or config
+// resolveRepo parses owner/repo from flag or config. Unlike resolveRepoDefaults
+// it loads the config itself (the label commands do not thread cfg through), but
+// it delegates the owner/repo parsing to the shared splitOwnerRepo helper so the
+// empty-component validation is uniform.
 func resolveRepo(repoOverride string) (string, string, error) {
 	if repoOverride != "" {
-		parts := strings.Split(repoOverride, "/")
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return "", "", fmt.Errorf("invalid --repo format: expected owner/repo, got %s", repoOverride)
-		}
-		return parts[0], parts[1], nil
+		return splitOwnerRepo(repoOverride, "--repo")
 	}
 
 	dir := mustGetwd()
@@ -516,10 +515,5 @@ func resolveRepo(repoOverride string) (string, string, error) {
 		return "", "", fmt.Errorf("no repository configured (use --repo or add to .gh-pmu.json)")
 	}
 
-	parts := strings.Split(cfg.Repositories[0], "/")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
-	}
-
-	return parts[0], parts[1], nil
+	return splitOwnerRepo(cfg.Repositories[0], "configured repository")
 }

@@ -90,22 +90,11 @@ func runSplit(cmd *cobra.Command, args []string, opts *splitOptions) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Determine repository (--repo flag takes precedence over config)
-	var owner, repo string
-	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
-		}
-		owner, repo = parts[0], parts[1]
-	} else if len(cfg.Repositories) > 0 {
-		parts := strings.SplitN(cfg.Repositories[0], "/", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid repository format: %s", cfg.Repositories[0])
-		}
-		owner, repo = parts[0], parts[1]
-	} else {
-		return fmt.Errorf("no repository specified and none configured (use --repo or configure in .gh-pmu.json)")
+	// Determine repository (--repo flag takes precedence over config), with
+	// uniform empty-component validation via the shared helper.
+	owner, repo, err := resolveRepoDefaults(cfg, opts.repo)
+	if err != nil {
+		return err
 	}
 
 	// Create API client

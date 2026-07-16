@@ -92,18 +92,19 @@ func runSubAdd(cmd *cobra.Command, args []string, opts *subAddOptions) error {
 		return fmt.Errorf("invalid child issue: %w", err)
 	}
 
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// Empty defaults are tolerated because issue args may be fully qualified; an
+	// explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 
@@ -269,17 +270,14 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 		return fmt.Errorf("invalid parent issue: %w", err)
 	}
 
-	// Default to configured repo if not specified
+	// Default to the configured repo when the parent ref omits owner/repo.
+	// sub create needs a resolved parent, so a missing/malformed config is fatal.
 	if parentOwner == "" || parentRepo == "" {
-		if len(cfg.Repositories) == 0 {
-			return fmt.Errorf("no repository specified and none configured")
+		defOwner, defRepo, dErr := resolveRepoDefaults(cfg, "")
+		if dErr != nil {
+			return dErr
 		}
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
-		}
-		parentOwner = parts[0]
-		parentRepo = parts[1]
+		parentOwner, parentRepo = applyRepoDefaults(parentOwner, parentRepo, defOwner, defRepo)
 	}
 
 	// Determine target repository for new issue
@@ -288,13 +286,11 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	isCrossRepo := false
 
 	if opts.repo != "" {
-		// Parse the --repo flag
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid repository format: %s (expected owner/repo)", opts.repo)
+		var rErr error
+		targetOwner, targetRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		targetOwner = parts[0]
-		targetRepo = parts[1]
 		isCrossRepo = (targetOwner != parentOwner || targetRepo != parentRepo)
 	}
 
@@ -519,18 +515,19 @@ func runSubList(cmd *cobra.Command, args []string, opts *subListOptions) error {
 		return fmt.Errorf("invalid issue: %w", err)
 	}
 
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// Empty defaults are tolerated because issue args may be fully qualified; an
+	// explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 
@@ -991,18 +988,19 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 		return fmt.Errorf("invalid parent issue: %w", err)
 	}
 
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// Empty defaults are tolerated because issue args may be fully qualified; an
+	// explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 
