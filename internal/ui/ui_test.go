@@ -593,3 +593,67 @@ func TestHeader_MultiByte_WithSubtitle(t *testing.T) {
 		}
 	}
 }
+
+func TestSummaryBox_MultiByte_AlignedBorders(t *testing.T) {
+	var buf bytes.Buffer
+	u := NewWithOptions(&buf, true) // No color to simplify output parsing
+
+	// Mix a wide multi-byte key with a short ASCII one. The multi-byte key has
+	// more bytes but the SAME rune count is irrelevant here — what matters is that
+	// byte-length padding (len(key)) inflates the pad for the ASCII key and
+	// misaligns the value column. visibleWidth-based padding keeps them aligned.
+	items := map[string]string{
+		"日本語": "valA", // 3 runes, 9 bytes
+		"ID":  "valB", // 2 runes, 2 bytes
+	}
+	order := []string{"日本語", "ID"}
+	u.SummaryBox("Summary", items, order)
+
+	// SummaryBox emits a leading blank line before the top border; trim it so
+	// lines[0] is the actual top border.
+	output := strings.Trim(buf.String(), "\n")
+	lines := strings.Split(output, "\n")
+
+	// (1) Borders/rows all render to the same visible width.
+	if len(lines) < 4 {
+		t.Fatalf("Expected at least 4 lines (top, title, blank, keys, bottom), got %d", len(lines))
+	}
+	base := visibleWidth(lines[0])
+	for i, line := range lines {
+		if visibleWidth(line) != base {
+			t.Errorf("Line %d visible width (%d) != top border width (%d)\nTop:    %q\nLine %d: %q",
+				i, visibleWidth(line), base, lines[0], i, line)
+		}
+	}
+
+	// (2) Value column alignment — the real regression guard. With len(key)-byte
+	// padding the wide multi-byte key inflates maxKeyLen and the ASCII row's value
+	// starts several columns further right. Assert every value begins at the same
+	// visible column. A borders-only check (1) passes even with the bug because the
+	// render loop pads all rows to the box width, so this assertion is essential.
+	valCols := make([]int, 0, len(order))
+	for _, key := range order {
+		val := items[key]
+		var keyLine string
+		for _, line := range lines {
+			if strings.Contains(line, key+":") {
+				keyLine = line
+				break
+			}
+		}
+		if keyLine == "" {
+			t.Fatalf("no rendered line found for key %q", key)
+		}
+		vi := strings.Index(keyLine, val)
+		if vi < 0 {
+			t.Fatalf("value %q not found in line %q", val, keyLine)
+		}
+		valCols = append(valCols, visibleWidth(keyLine[:vi]))
+	}
+	for i := 1; i < len(valCols); i++ {
+		if valCols[i] != valCols[0] {
+			t.Errorf("value column for %q (%d) != value column for %q (%d) — keys misaligned",
+				order[i], valCols[i], order[0], valCols[0])
+		}
+	}
+}

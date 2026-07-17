@@ -190,15 +190,13 @@ func (u *UI) Box(lines []string) {
 
 // SummaryBox prints a styled summary box with key-value pairs
 func (u *UI) SummaryBox(title string, items map[string]string, order []string) {
-	// Calculate widths
+	// Calculate the widest key by visible width (rune count without ANSI codes),
+	// not byte length — byte-length padding misaligns the value column when keys
+	// contain multi-byte runes.
 	maxKeyLen := 0
-	maxValLen := 0
 	for _, key := range order {
-		if len(key) > maxKeyLen {
-			maxKeyLen = len(key)
-		}
-		if val, ok := items[key]; ok && len(val) > maxValLen {
-			maxValLen = len(val)
+		if w := visibleWidth(key); w > maxKeyLen {
+			maxKeyLen = w
 		}
 	}
 
@@ -209,7 +207,7 @@ func (u *UI) SummaryBox(title string, items map[string]string, order []string) {
 
 	for _, key := range order {
 		if val, ok := items[key]; ok {
-			keyPadded := key + ":" + strings.Repeat(" ", maxKeyLen-len(key)+1)
+			keyPadded := key + ":" + strings.Repeat(" ", maxKeyLen-visibleWidth(key)+1)
 			lines = append(lines, u.color(Dim, keyPadded)+val)
 		}
 	}
