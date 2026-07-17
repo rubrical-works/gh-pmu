@@ -109,8 +109,10 @@ func TestFilterByPriority(t *testing.T) {
 		)
 		assertExitCode(t, result, 0)
 
-		// Verify P0 issue appears
+		// Verify P0 issue appears...
 		assertContains(t, result.Stdout, fmt.Sprintf("#%d", issueNums[1]))
+		// ...and the P2 contrast issue does NOT (a no-op --priority would leak it).
+		assertNotContains(t, result.Stdout, fmt.Sprintf("#%d", issueNums[0]))
 	})
 
 	// Step 3: Run filter command for P2 priority
@@ -122,8 +124,10 @@ func TestFilterByPriority(t *testing.T) {
 		)
 		assertExitCode(t, result, 0)
 
-		// Verify P2 issue appears
+		// Verify P2 issue appears...
 		assertContains(t, result.Stdout, fmt.Sprintf("#%d", issueNums[0]))
+		// ...and the P0 contrast issue does NOT.
+		assertNotContains(t, result.Stdout, fmt.Sprintf("#%d", issueNums[1]))
 	})
 }
 
@@ -145,15 +149,26 @@ func TestFilterCombined(t *testing.T) {
 		}
 	}()
 
-	// Create issue with specific status and priority
-	issue := createTestIssue(t, cfg, "Filter Combined Test")
+	// Matching issue: in_progress AND p1 — must appear.
+	issue := createTestIssue(t, cfg, "Filter Combined Test - Match")
 	issueNums = append(issueNums, issue)
-
-	// Assign to branch (required for IDPF validation)
 	assignIssueToBranch(t, cfg, issue)
-
-	// Move to specific status
 	result := runPMU(t, cfg.Dir, "move", fmt.Sprintf("%d", issue), "--status", "in_progress", "--priority", "p1")
+	assertExitCode(t, result, 0)
+
+	// Contrast A: matches status ONLY (in_progress, but stays p2). Its absence proves
+	// the priority half of the AND is applied. createTestIssue defaults to p2.
+	statusOnly := createTestIssue(t, cfg, "Filter Combined Test - Status Only")
+	issueNums = append(issueNums, statusOnly)
+	assignIssueToBranch(t, cfg, statusOnly)
+	result = runPMU(t, cfg.Dir, "move", fmt.Sprintf("%d", statusOnly), "--status", "in_progress")
+	assertExitCode(t, result, 0)
+
+	// Contrast B: matches priority ONLY (p1, but stays in backlog). Its absence proves
+	// the status half of the AND is applied. No branch needed for a priority-only move.
+	priorityOnly := createTestIssue(t, cfg, "Filter Combined Test - Priority Only")
+	issueNums = append(issueNums, priorityOnly)
+	result = runPMU(t, cfg.Dir, "move", fmt.Sprintf("%d", priorityOnly), "--priority", "p1")
 	assertExitCode(t, result, 0)
 
 	// Filter by both status and priority - use retry for eventual consistency
@@ -163,8 +178,10 @@ func TestFilterCombined(t *testing.T) {
 	)
 	assertExitCode(t, result, 0)
 
-	// Verify issue appears
+	// AND semantics: the matching issue is present, single-criterion contrasts absent.
 	assertContains(t, result.Stdout, fmt.Sprintf("#%d", issue))
+	assertNotContains(t, result.Stdout, fmt.Sprintf("#%d", statusOnly))
+	assertNotContains(t, result.Stdout, fmt.Sprintf("#%d", priorityOnly))
 }
 
 // TestFilterByBranch tests filtering issues by branch field using --branch flag.
@@ -235,8 +252,10 @@ func TestFilterByBranch(t *testing.T) {
 		)
 		assertExitCode(t, result, 0)
 
-		// Verify branch-assigned issue appears
+		// Verify branch-assigned issue appears...
 		assertContains(t, result.Stdout, fmt.Sprintf("#%d", issueNums[0]))
+		// ...and the unassigned issue does NOT (a no-op --branch current would leak it).
+		assertNotContains(t, result.Stdout, fmt.Sprintf("#%d", issueNums[1]))
 	})
 }
 
