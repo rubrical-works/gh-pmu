@@ -1444,9 +1444,15 @@ func (c *Client) GitTag(tag, message string) error {
 	return nil
 }
 
-// GitCommit creates a git commit with the given message
-func (c *Client) GitCommit(message string) error {
+// GitCommit creates a git commit with the given message in the given working
+// directory. When dir is empty the command runs in the process's current
+// directory (the historical behavior). Passing an explicit dir lets callers and
+// tests target a specific repository without mutating the process cwd.
+func (c *Client) GitCommit(dir, message string) error {
 	cmd := exec.Command("git", "commit", "-m", message)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git commit failed: %s", strings.TrimSpace(string(output)))

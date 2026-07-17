@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -1197,21 +1198,39 @@ func TestGitTag_ErrorMessageIncludesGitOutput(t *testing.T) {
 }
 
 func TestGitCommit_ErrorMessageIncludesGitOutput(t *testing.T) {
-	client, cErr := NewClient()
-	if cErr != nil {
-		t.Skipf("Skipping - requires auth: %v", cErr)
+	// Hermetic repo: git init into a TempDir and point GitCommit at it via its
+	// explicit working-directory argument, so the commit can never run in the
+	// developer's working repo — even if they have staged changes when running the
+	// suite. GitCommit shells out to git and uses no API, so construct the client
+	// directly rather than NewClient() (which may fail/skip without credentials).
+	dir := t.TempDir()
+	gitInDir(t, dir, "init")
+	// Configure identity so `git commit` reaches the deterministic "nothing to
+	// commit" failure rather than erroring earlier on a missing user.name/email.
+	gitInDir(t, dir, "config", "user.email", "test@example.com")
+	gitInDir(t, dir, "config", "user.name", "gh-pmu test")
+
+	client := &Client{}
+
+	// Nothing is staged in the hermetic repo, so the commit must fail. Assert
+	// unconditionally — the old `if err != nil` guard made success a silent pass,
+	// which is exactly the path that would have committed the developer's work.
+	err := client.GitCommit(dir, "test commit message")
+	if err == nil {
+		t.Fatal("expected git commit to fail with nothing staged, got nil")
 	}
+	if !strings.Contains(err.Error(), "git commit failed:") {
+		t.Errorf("expected error to contain 'git commit failed:', got: %v", err)
+	}
+}
 
-	// Try to commit with nothing staged - this will fail in most cases
-	// Note: This test assumes we're not in a state where a commit would succeed
-	err := client.GitCommit("test commit message")
-
-	// If there's nothing to commit, git will return an error
-	// We just verify that IF there's an error, it has the right format
-	if err != nil {
-		if !strings.Contains(err.Error(), "git commit failed:") {
-			t.Errorf("Expected error to contain 'git commit failed:', got: %v", err)
-		}
+// gitInDir runs a git command in dir and fails the test if it errors.
+func gitInDir(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s failed in %s: %v\nOutput: %s", strings.Join(args, " "), dir, err, out)
 	}
 }
 
