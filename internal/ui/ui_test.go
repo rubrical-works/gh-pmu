@@ -458,13 +458,27 @@ func TestSpinner_OutputFormat(t *testing.T) {
 		s := NewSpinner(&buf, "Test")
 
 		s.Start()
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond) // ≥1 frame at the 80ms tick so maxWidth grows
 		s.Stop()
 
 		output := buf.String()
-		// Should contain carriage return from clearing
-		if !strings.Contains(output, "\r") {
-			t.Errorf("Output should contain carriage return for line clearing, got: %s", output)
+
+		// The clear-on-stop branch (ui.go) writes "\r" + spaces + "\r" to erase the
+		// last frame. A vacuous strings.Contains(output, "\r") check passes even if
+		// that branch is deleted, because every animation frame also emits "\r".
+		// Assert the exact blank-then-CR shape at the tail instead: removing the
+		// clear branch leaves the output ending in the frame's message, not a CR.
+		if !strings.HasSuffix(output, "\r") {
+			t.Fatalf("clear-on-stop must terminate with a carriage return, got: %q", output)
+		}
+		trimmed := strings.TrimSuffix(output, "\r")
+		lastCR := strings.LastIndex(trimmed, "\r")
+		if lastCR < 0 {
+			t.Fatalf("expected a carriage return before the blank clear, got: %q", output)
+		}
+		blank := trimmed[lastCR+1:]
+		if len(blank) == 0 || strings.Trim(blank, " ") != "" {
+			t.Errorf("clear sequence should be CR + blanks + CR, blanks=%q full=%q", blank, output)
 		}
 	})
 
