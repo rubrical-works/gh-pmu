@@ -66,6 +66,21 @@ func TestBranchLifecycle(t *testing.T) {
 		assertExitCode(t, result, 0)
 	})
 
+	// Step 3b: Verify the issue is actually a member of the branch via read-back.
+	// A zero-exit move above proves the command ran, not that membership was set;
+	// list --branch current confirms the issue is genuinely on the branch.
+	t.Run("verify issue branch membership", func(t *testing.T) {
+		if testIssueNum == 0 {
+			t.Fatal("No test issue number available for membership check")
+		}
+		result := waitForProjectSync(t, cfg, 5,
+			[]string{"list", "--branch", "current"},
+			fmt.Sprintf("#%d", testIssueNum),
+		)
+		assertExitCode(t, result, 0)
+		assertContains(t, result.Stdout, fmt.Sprintf("#%d", testIssueNum))
+	})
+
 	// Step 4: Verify branch list shows the branch
 	t.Run("verify branch list", func(t *testing.T) {
 		result := runPMU(t, cfg.Dir, "branch", "list")
@@ -82,9 +97,13 @@ func TestBranchLifecycle(t *testing.T) {
 	// Step 6: Verify no current branch
 	t.Run("verify no current branch", func(t *testing.T) {
 		result := runPMU(t, cfg.Dir, "branch", "current")
-		// Should fail or show no active branch
-		if result.ExitCode == 0 {
-			assertNotContains(t, result.Stdout, branchName)
-		}
+		// After close, `branch current` reports no active branch and exits 0
+		// ("No active release"). Assert unconditionally — the old `if ExitCode == 0`
+		// guard let an errored command pass this subtest with zero assertions.
+		assertExitCode(t, result, 0)
+		// The just-closed branch must no longer be reported as current...
+		assertNotContains(t, result.Stdout, branchName)
+		// ...and current must positively report that no branch is active.
+		assertContains(t, result.Stdout, "No active release")
 	})
 }
