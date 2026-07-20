@@ -3,11 +3,41 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	"github.com/rubrical-works/gh-pmu/internal/testutil"
 )
+
+// viewIssueFields reads the requested project fields back off an issue via
+// `gh pmu view --json=<fields>` and returns the decoded object. Reading state
+// back is what makes a mutation (or the absence of one, under --dry-run)
+// observable to a test.
+func viewIssueFields(t *testing.T, issueNum int, fields string) map[string]interface{} {
+	t.Helper()
+
+	result := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), fmt.Sprintf("--json=%s", fields))
+	testutil.AssertExitCode(t, result, 0)
+
+	var out map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Stdout), &out); err != nil {
+		t.Fatalf("failed to parse view JSON for #%d: %v\nOutput: %s", issueNum, err, result.Stdout)
+	}
+
+	return out
+}
+
+// assertIssueField asserts that a single project field on an issue has the
+// expected value.
+func assertIssueField(t *testing.T, issueNum int, field, want string) {
+	t.Helper()
+
+	got := viewIssueFields(t, issueNum, fmt.Sprintf("number,%s", field))[field]
+	if got != want {
+		t.Errorf("issue #%d: expected %s %q, got %v", issueNum, field, want, got)
+	}
+}
 
 // TestRunTriage_Integration_ListConfigs tests --list shows available configs
 func TestRunTriage_Integration_ListConfigs(t *testing.T) {
@@ -175,7 +205,7 @@ func TestRunTriage_Integration_JSONOutput(t *testing.T) {
 
 	// Create an issue to triage
 	title := fmt.Sprintf("Test Issue - TriageJSON - %d", testUniqueID())
-	createResult := testutil.RunCommand(t, "create", "--title", title, "--status", "backlog")
+	createResult := testutil.RunCommand(t, "create", "--title", title, "--status", "backlog", "--priority", "p2")
 	testutil.AssertExitCode(t, createResult, 0)
 
 	issueNum := testutil.ExtractIssueNumber(t, createResult.Stdout)
@@ -190,10 +220,60 @@ func TestRunTriage_Integration_JSONOutput(t *testing.T) {
 
 	testutil.AssertExitCode(t, result, 0)
 
-	// Should be valid JSON (contains braces/brackets)
-	if result.Stdout == "" {
-		t.Error("expected JSON output")
+	// A plain-text error dump on stdout must not pass — decode it.
+	var out map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Stdout), &out); err != nil {
+		t.Fatalf("failed to parse triage JSON output: %v\nOutput: %s", err, result.Stdout)
 	}
+
+	if out["status"] != "completed" {
+		t.Errorf("expected status \"completed\", got %v", out["status"])
+	}
+	if out["configName"] != "ad-hoc" {
+		t.Errorf("expected configName \"ad-hoc\", got %v", out["configName"])
+	}
+
+	count, ok := out["count"].(float64)
+	if !ok {
+		t.Fatalf("expected numeric count, got %v", out["count"])
+	}
+
+	issues, ok := out["issues"].([]interface{})
+	if !ok {
+		t.Fatalf("expected issues to be an array, got %v", out["issues"])
+	}
+	if len(issues) != int(count) {
+		t.Errorf("count %d disagrees with %d issues in the array", int(count), len(issues))
+	}
+
+	// The triaged issue must be reported in the payload with its real fields.
+	found := false
+	for _, raw := range issues {
+		entry, ok := raw.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected issue entries to be objects, got %v", raw)
+		}
+		num, ok := entry["number"].(float64)
+		if !ok || int(num) != issueNum {
+			continue
+		}
+		found = true
+		if entry["title"] != title {
+			t.Errorf("expected title %q in JSON payload, got %v", title, entry["title"])
+		}
+		if entry["state"] != "OPEN" {
+			t.Errorf("expected state \"OPEN\" in JSON payload, got %v", entry["state"])
+		}
+		if _, ok := entry["url"].(string); !ok {
+			t.Errorf("expected a url string in JSON payload, got %v", entry["url"])
+		}
+	}
+	if !found {
+		t.Errorf("issue #%d missing from triage JSON payload: %s", issueNum, result.Stdout)
+	}
+
+	// --apply is a real mutation: verify it landed rather than trusting the report.
+	assertIssueField(t, issueNum, "priority", "P0")
 }
 
 // TestRunTriage_Integration_SeedIssuesDryRun tests triage dry-run on seed issues
