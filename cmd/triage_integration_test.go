@@ -28,6 +28,20 @@ func viewIssueFields(t *testing.T, issueNum int, fields string) map[string]inter
 	return out
 }
 
+// assertDryRunLeftIssueUnchanged asserts that a --dry-run triage sweep did not
+// touch the issue's Status or Priority.
+func assertDryRunLeftIssueUnchanged(t *testing.T, issueNum int, wantStatus, wantPriority string) {
+	t.Helper()
+
+	fields := viewIssueFields(t, issueNum, "number,status,priority")
+	if fields["status"] != wantStatus {
+		t.Errorf("dry-run mutated status on #%d: expected %q, got %v", issueNum, wantStatus, fields["status"])
+	}
+	if fields["priority"] != wantPriority {
+		t.Errorf("dry-run mutated priority on #%d: expected %q, got %v", issueNum, wantPriority, fields["priority"])
+	}
+}
+
 // assertIssueField asserts that a single project field on an issue has the
 // expected value.
 func assertIssueField(t *testing.T, issueNum int, field, want string) {
@@ -91,9 +105,10 @@ func TestRunTriage_Integration_NamedConfigDryRun(t *testing.T) {
 func TestRunTriage_Integration_AdHocQueryDryRun(t *testing.T) {
 	testutil.RequireTestEnv(t)
 
-	// Create an issue to match
+	// Create an issue to match. Priority is pinned to P2 and the dry-run below
+	// applies P0, so a dry-run that actually mutates is observable.
 	title := fmt.Sprintf("Test Issue - TriageAdHoc - %d", testUniqueID())
-	createResult := testutil.RunCommand(t, "create", "--title", title, "--status", "backlog")
+	createResult := testutil.RunCommand(t, "create", "--title", title, "--status", "backlog", "--priority", "p2")
 	testutil.AssertExitCode(t, createResult, 0)
 
 	issueNum := testutil.ExtractIssueNumber(t, createResult.Stdout)
@@ -101,14 +116,19 @@ func TestRunTriage_Integration_AdHocQueryDryRun(t *testing.T) {
 
 	// Run ad-hoc triage with dry-run
 	result := testutil.RunCommand(t, "triage",
-		"--query", "status:backlog",
-		"--apply", "priority:p2",
+		"--query", "is:issue is:open",
+		"--apply", "priority:p0",
 		"--dry-run",
 	)
 
 	testutil.AssertExitCode(t, result, 0)
-	testutil.AssertContains(t, result.Stdout, "Dry run")
-	testutil.AssertContains(t, result.Stdout, "Would update")
+	testutil.AssertContains(t, result.Stdout, "Would process")
+	testutil.AssertContains(t, result.Stdout, fmt.Sprintf("#%d", issueNum))
+	testutil.AssertContains(t, result.Stdout, "Actions to apply:")
+	testutil.AssertContains(t, result.Stdout, "Set priority: P0")
+
+	// The whole point of --dry-run: nothing changed.
+	assertDryRunLeftIssueUnchanged(t, issueNum, "Backlog", "P2")
 }
 
 // TestRunTriage_Integration_AdHocQueryApply tests ad-hoc triage with --apply (actual changes)
@@ -280,6 +300,16 @@ func TestRunTriage_Integration_JSONOutput(t *testing.T) {
 func TestRunTriage_Integration_SeedIssuesDryRun(t *testing.T) {
 	testutil.RequireTestEnv(t)
 
+	// A canary issue that the broad sweep below matches alongside the seed
+	// issues. If the dry-run mutates anything, it mutates this too — and unlike
+	// the shared seed fixtures, this one has a known starting state.
+	title := fmt.Sprintf("Test Issue - TriageSeedDryRun - %d", testUniqueID())
+	createResult := testutil.RunCommand(t, "create", "--title", title, "--status", "backlog", "--priority", "p2")
+	testutil.AssertExitCode(t, createResult, 0)
+
+	issueNum := testutil.ExtractIssueNumber(t, createResult.Stdout)
+	defer testutil.DeleteTestIssue(t, issueNum)
+
 	// Use dry-run to avoid modifying seed issues
 	result := testutil.RunCommand(t, "triage",
 		"--query", "is:issue is:open",
@@ -288,5 +318,10 @@ func TestRunTriage_Integration_SeedIssuesDryRun(t *testing.T) {
 	)
 
 	testutil.AssertExitCode(t, result, 0)
-	testutil.AssertContains(t, result.Stdout, "Dry run")
+	testutil.AssertContains(t, result.Stdout, "Would process")
+	testutil.AssertContains(t, result.Stdout, fmt.Sprintf("#%d", issueNum))
+	testutil.AssertContains(t, result.Stdout, "Set status: Done")
+
+	// No issue in the sweep may have been moved to Done.
+	assertDryRunLeftIssueUnchanged(t, issueNum, "Backlog", "P2")
 }
