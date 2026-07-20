@@ -3416,7 +3416,9 @@ func TestParseBatchMutationResponse_IntegerPathSegment(t *testing.T) {
 func setFieldValueNode(node reflect.Value, fieldName, text string) {
 	tv := node.FieldByName("ProjectV2ItemFieldTextValue")
 	tv.FieldByName("Text").SetString(text)
-	tv.FieldByName("Field").FieldByName("Name").SetString(fieldName)
+	// The field name lives behind the ProjectV2FieldCommon inline fragment —
+	// `field` resolves to a union, so it cannot carry `name` directly (#888).
+	tv.FieldByName("Field").FieldByName("Common").FieldByName("Name").SetString(fieldName)
 }
 
 func fieldValuesConn(query interface{}) reflect.Value {

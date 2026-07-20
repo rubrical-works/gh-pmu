@@ -1333,6 +1333,20 @@ func (c *Client) GetProjectItemFieldValue(projectID, itemID, fieldName string) (
 	}
 }
 
+// projectFieldCommon selects a project field's name through the
+// ProjectV2FieldCommon interface. `field` on a value node returns the
+// ProjectV2FieldConfiguration *union*, so `name` cannot be selected directly —
+// GitHub rejects the document (#888). All three union members implement
+// ProjectV2FieldCommon, so one inline fragment covers every case.
+type projectFieldCommon struct {
+	Common struct {
+		Name string
+	} `graphql:"... on ProjectV2FieldCommon"`
+}
+
+// Name returns the field's name as resolved through the interface fragment.
+func (f projectFieldCommon) Name() string { return f.Common.Name }
+
 // getProjectItemFieldValuePage scans a single page of an item's field values for
 // fieldName. It reports found=true with the value when the field is present on
 // the page (empty string is a valid value), and returns the page info so the
@@ -1346,15 +1360,11 @@ func (c *Client) getProjectItemFieldValuePage(itemID, fieldName string, cursor *
 					Nodes []struct {
 						ProjectV2ItemFieldTextValue struct {
 							Text  string
-							Field struct {
-								Name string
-							} `graphql:"field"`
+							Field projectFieldCommon `graphql:"field"`
 						} `graphql:"... on ProjectV2ItemFieldTextValue"`
 						ProjectV2ItemFieldSingleSelectValue struct {
 							Name  string
-							Field struct {
-								Name string
-							} `graphql:"field"`
+							Field projectFieldCommon `graphql:"field"`
 						} `graphql:"... on ProjectV2ItemFieldSingleSelectValue"`
 					}
 					PageInfo struct {
@@ -1379,10 +1389,10 @@ func (c *Client) getProjectItemFieldValuePage(itemID, fieldName string, cursor *
 	}
 
 	for _, fv := range query.Node.ProjectV2Item.FieldValues.Nodes {
-		if fv.ProjectV2ItemFieldTextValue.Field.Name == fieldName {
+		if fv.ProjectV2ItemFieldTextValue.Field.Name() == fieldName {
 			return fv.ProjectV2ItemFieldTextValue.Text, true, pageInfo{}, nil
 		}
-		if fv.ProjectV2ItemFieldSingleSelectValue.Field.Name == fieldName {
+		if fv.ProjectV2ItemFieldSingleSelectValue.Field.Name() == fieldName {
 			return fv.ProjectV2ItemFieldSingleSelectValue.Name, true, pageInfo{}, nil
 		}
 	}

@@ -194,9 +194,7 @@ func namedOperationResponses() map[string]string {
 // asserts each entry STILL fails, so fixing the underlying bug turns that test
 // red until the entry is removed. A quarantine that silently rots is worse than
 // no quarantine — it reads as coverage while providing none.
-var knownInvalidOperations = map[string]string{
-	"GetProjectItemFieldValue": "#888 — selects name directly on the ProjectV2FieldConfiguration union; needs an inline fragment on ProjectV2FieldCommon",
-}
+var knownInvalidOperations = map[string]string{}
 
 // loadVendoredSchema parses the vendored schema once per test.
 func loadVendoredSchema(t *testing.T) *ast.Schema {
