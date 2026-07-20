@@ -2429,6 +2429,68 @@ func TestRunBranchCloseWithDeps_SkipsParkingLotIssues(t *testing.T) {
 	}
 }
 
+// TestRunBranchCloseWithDeps_StatusReadFailureWarnsAndTreatsAsMovable covers the
+// path #888 travelled through undetected. GetProjectItemFieldValue sent invalid
+// GraphQL, so every status read failed; the error was discarded, status was "",
+// nothing ever equalled parkingLotValue, and every issue was silently
+// reclassified as movable. Nothing in the output said so.
+//
+// The classification stays fail-safe (an unreadable status means "movable", not
+// "parked"), but it must be announced. A silent read failure here is the exact
+// shape of the original defect: no error, no warning, wrong answer.
+func TestRunBranchCloseWithDeps_StatusReadFailureWarnsAndTreatsAsMovable(t *testing.T) {
+	mock := setupMockForBranch()
+	mock.openIssues = []api.Issue{
+		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
+	}
+	mock.subIssues = []api.SubIssue{
+		{ID: "ISSUE_1", Number: 41, Title: "Parked feature idea", State: "OPEN", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
+	}
+	mock.projectItemIDs = map[string]string{"ISSUE_1": "ITEM_1"}
+	// The issue really is parked, but the status read fails — as it did against
+	// the live API while the query was malformed.
+	mock.projectItemFieldValues = map[string]string{"ITEM_1": "Parking Lot"}
+	mock.getProjectItemFieldErr = errors.New("failed to get field value: Cannot query field \"name\" on type \"ProjectV2FieldConfiguration\"")
+
+	cfg := testBranchConfig()
+	cfg.Fields["status"] = config.Field{
+		Field:  "Status",
+		Values: map[string]string{"backlog": "Backlog", "parking_lot": "Parking Lot"},
+	}
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, output := newTestBranchCmd()
+	opts := &branchCloseOptions{branchName: "v1.2.0", yes: true}
+
+	if err := runBranchCloseWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("expected the close to proceed despite the status read failure, got: %v", err)
+	}
+
+	out := output.String()
+	if !strings.Contains(out, "Warning") || !strings.Contains(out, "#41") {
+		t.Errorf("expected a warning naming #41 whose status could not be read, got: %s", out)
+	}
+	if !strings.Contains(out, "could not read status") {
+		t.Errorf("expected the warning to say the status was unreadable, got: %s", out)
+	}
+
+	// Fail-safe classification: unreadable status means the issue is moved, not
+	// silently left behind as if it were parked.
+	moved := 0
+	for _, call := range mock.setFieldCalls {
+		if call.fieldID == "Status" && call.value == "Backlog" {
+			moved++
+		}
+	}
+	if moved != 1 {
+		t.Errorf("expected #41 to be moved to backlog when its status is unreadable, got %d moves: %+v", moved, mock.setFieldCalls)
+	}
+	if strings.Contains(out, "Skipping 1 Parking Lot issue") {
+		t.Errorf("an unreadable status must not be reported as a confirmed Parking Lot skip, got: %s", out)
+	}
+}
+
 func TestRunBranchCloseWithDeps_FieldSetFailureWarns(t *testing.T) {
 	// #871 finding 3: SetProjectItemField errors were ignored (`_ =`) while moving
 	// incomplete issues to backlog, yet the issue was reported as moved. A failure
