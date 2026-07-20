@@ -209,13 +209,17 @@ func TestRunTriage_Integration_NoQueryOrConfig(t *testing.T) {
 	// Run triage without query or config name
 	result := testutil.RunCommand(t, "triage")
 
-	// Should fail or show help
-	// If it exits 0, it should show help/usage
-	if result.ExitCode == 0 {
-		// Check for usage or help message
-		if result.Stdout == "" && result.Stderr == "" {
-			t.Error("expected usage message or error")
-		}
+	// Pinned behavior: cobra returns the RunE error, main exits 1, and the
+	// message plus usage go to stderr. Anything else is a regression.
+	testutil.AssertExitCode(t, result, 1)
+	testutil.AssertContains(t, result.Stderr, "triage config name is required")
+	testutil.AssertContains(t, result.Stderr, "Use --list to see available configs, or use --query for ad-hoc triage")
+	testutil.AssertContains(t, result.Stderr, "Usage:")
+
+	// Nothing is written to stdout, so `--json`-style consumers piping stdout
+	// never see a half-formed payload.
+	if result.Stdout != "" {
+		t.Errorf("expected empty stdout, got: %s", result.Stdout)
 	}
 }
 
