@@ -38,6 +38,14 @@
       "interactive": {
         "estimate": true
       }
+    },
+    "integration-dryrun": {
+      "query": "is:issue is:open",
+      "apply": {
+        "fields": {
+          "priority": "p2"
+        }
+      }
     }
   },
   "metadata": {

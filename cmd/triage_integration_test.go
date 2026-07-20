@@ -21,11 +21,17 @@ func TestRunTriage_Integration_ListConfigs(t *testing.T) {
 	testutil.AssertContains(t, result.Stdout, "Available triage configs")
 }
 
+// integrationTriageConfig is a triage config seeded in testdata/integration/.gh-pmu.json
+// specifically for these tests. It matches every open issue and applies priority:p2,
+// so the named-config path is deterministic instead of depending on whatever configs
+// happen to exist in the project.
+const integrationTriageConfig = "integration-dryrun"
+
 // TestRunTriage_Integration_NamedConfigDryRun tests running a named config with --dry-run
 func TestRunTriage_Integration_NamedConfigDryRun(t *testing.T) {
 	testutil.RequireTestEnv(t)
 
-	// Create an issue that matches triage criteria
+	// Create an issue that the seeded config's query ("is:issue is:open") matches
 	title := fmt.Sprintf("Test Issue - TriageConfig - %d", testUniqueID())
 	createResult := testutil.RunCommand(t, "create", "--title", title, "--status", "backlog")
 	testutil.AssertExitCode(t, createResult, 0)
@@ -33,15 +39,22 @@ func TestRunTriage_Integration_NamedConfigDryRun(t *testing.T) {
 	issueNum := testutil.ExtractIssueNumber(t, createResult.Stdout)
 	defer testutil.DeleteTestIssue(t, issueNum)
 
-	// Run triage with dry-run - uses "unlabeled" config if it exists
-	// If no config exists, this tests that we handle that gracefully
-	result := testutil.RunCommand(t, "triage", "unlabeled", "--dry-run")
+	// The config is seeded in testdata, so a broken named-config path is a failure —
+	// not an "acceptable outcome".
+	result := testutil.RunCommand(t, "triage", integrationTriageConfig, "--dry-run")
 
-	// Either succeeds with dry-run output or fails with "config not found"
-	// Both are valid outcomes depending on project config
-	if result.ExitCode == 0 {
-		testutil.AssertContains(t, result.Stdout, "Dry run")
-	}
+	testutil.AssertExitCode(t, result, 0)
+	testutil.AssertContains(t, result.Stdout, "Would process")
+	testutil.AssertContains(t, result.Stdout, integrationTriageConfig)
+
+	// The created issue must appear in the dry-run preview — otherwise the setup
+	// above is dead weight and the query was never really applied.
+	testutil.AssertContains(t, result.Stdout, fmt.Sprintf("#%d", issueNum))
+	testutil.AssertContains(t, result.Stdout, title)
+
+	// The config's apply rules must be described, resolved through cfg.Fields.
+	testutil.AssertContains(t, result.Stdout, "Actions to apply:")
+	testutil.AssertContains(t, result.Stdout, "Set priority: P2")
 }
 
 // TestRunTriage_Integration_AdHocQueryDryRun tests ad-hoc triage with --query and --dry-run
