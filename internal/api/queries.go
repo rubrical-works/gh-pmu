@@ -626,8 +626,6 @@ type ProjectItemsFilter struct {
 func (c *Client) GetProjectItems(projectID string, filter *ProjectItemsFilter) ([]ProjectItem, error) {
 
 	const defaultMaxItems = 10000
-	var allItems []ProjectItem
-	var cursor *string
 	limit := 0
 	if filter != nil {
 		limit = filter.Limit
@@ -636,20 +634,17 @@ func (c *Client) GetProjectItems(projectID string, filter *ProjectItemsFilter) (
 		limit = defaultMaxItems
 	}
 
-	for {
-		items, pageInfo, err := c.getProjectItemsPage(projectID, cursor)
-		if err != nil {
-			return nil, err
-		}
-
-		// Filter and process items from this page
-		for _, item := range items {
+	return collectPages(
+		func(cursor *string) ([]ProjectItem, pageInfo, error) {
+			return c.getProjectItemsPage(projectID, cursor)
+		},
+		func(item ProjectItem) bool {
 			// Apply repository filter if specified
 			if filter != nil && filter.Repository != "" {
 				if item.Issue != nil && item.Issue.Repository.Owner != "" {
 					repoName := item.Issue.Repository.Owner + "/" + item.Issue.Repository.Name
 					if repoName != filter.Repository {
-						continue
+						return false
 					}
 				}
 			}
@@ -657,26 +652,14 @@ func (c *Client) GetProjectItems(projectID string, filter *ProjectItemsFilter) (
 			// Apply state filter if specified
 			if filter != nil && filter.State != nil {
 				if item.Issue == nil || item.Issue.State != *filter.State {
-					continue
+					return false
 				}
 			}
 
-			allItems = append(allItems, item)
-
-			// Early termination if limit is reached
-			if limit > 0 && len(allItems) >= limit {
-				return allItems[:limit], nil
-			}
-		}
-
-		// Check if there are more pages
-		if !pageInfo.HasNextPage {
-			break
-		}
-		cursor = &pageInfo.EndCursor
-	}
-
-	return allItems, nil
+			return true
+		},
+		limit,
+	)
 }
 
 // pageInfo holds pagination information from GraphQL responses
@@ -812,41 +795,29 @@ func splitRepoName(nameWithOwner string) []string {
 // for matching items only.
 func (c *Client) GetProjectItemsMinimal(projectID string, filter *ProjectItemsFilter) ([]MinimalProjectItem, error) {
 
-	var allItems []MinimalProjectItem
-	var cursor *string
-
-	for {
-		items, pInfo, err := c.getMinimalProjectItemsPage(projectID, cursor)
-		if err != nil {
-			return nil, err
-		}
-
-		// Filter and process items from this page
-		for _, item := range items {
+	return collectPages(
+		func(cursor *string) ([]MinimalProjectItem, pageInfo, error) {
+			return c.getMinimalProjectItemsPage(projectID, cursor)
+		},
+		func(item MinimalProjectItem) bool {
 			// Apply repository filter if specified
 			if filter != nil && filter.Repository != "" {
 				if item.Repository != filter.Repository {
-					continue
+					return false
 				}
 			}
 
 			// Apply state filter if specified
 			if filter != nil && filter.State != nil {
 				if item.IssueState != *filter.State {
-					continue
+					return false
 				}
 			}
 
-			allItems = append(allItems, item)
-		}
-
-		if !pInfo.HasNextPage {
-			break
-		}
-		cursor = &pInfo.EndCursor
-	}
-
-	return allItems, nil
+			return true
+		},
+		0,
+	)
 }
 
 // getMinimalProjectItemsPage fetches a single page of project items with minimal data
@@ -1163,40 +1134,28 @@ type BoardItemsFilter struct {
 // Uses cursor-based pagination to retrieve all items regardless of project size.
 func (c *Client) GetProjectItemsForBoard(projectID string, filter *BoardItemsFilter) ([]BoardItem, error) {
 
-	var allItems []BoardItem
-	var cursor *string
-
-	for {
-		items, pInfo, err := c.getBoardItemsPage(projectID, cursor)
-		if err != nil {
-			return nil, err
-		}
-
-		// Filter and process items from this page
-		for _, item := range items {
+	return collectPages(
+		func(cursor *string) ([]BoardItem, pageInfo, error) {
+			return c.getBoardItemsPage(projectID, cursor)
+		},
+		func(item BoardItem) bool {
 			if filter != nil && filter.Repository != "" {
 				if item.Repository != filter.Repository {
-					continue
+					return false
 				}
 			}
 
 			// Apply state filter if specified
 			if filter != nil && filter.State != nil {
 				if item.State != *filter.State {
-					continue
+					return false
 				}
 			}
 
-			allItems = append(allItems, item)
-		}
-
-		if !pInfo.HasNextPage {
-			break
-		}
-		cursor = &pInfo.EndCursor
-	}
-
-	return allItems, nil
+			return true
+		},
+		0,
+	)
 }
 
 // getBoardItemsPage fetches a single page of board items with minimal data
