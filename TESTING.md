@@ -278,6 +278,17 @@ via the lint job's compile-check so signature drift can't rot them unnoticed
 go vet -tags "integration e2e" ./...        # type-check only; makes no API calls
 ```
 
+**The compile-check is the intended CI ceiling, by design — not a gap awaiting
+closure.** CI deliberately verifies that the tag-gated suites still *compile*
+and stops there, because executing them is what caused the 2025-12-08 account
+lockout (#876). Anything that would raise the ceiling — a gated job, a
+scheduled run, a "just the read-only tests" carve-out — reopens the failure
+mode the ceiling exists to prevent, however narrowly scoped. Automated
+verification of these paths comes from the mock-based scenario tests (#884)
+instead, and live execution stays manual and pre-release. If the ceiling is
+ever to be revisited, that belongs in a proposal amending
+`Proposal/PROPOSAL-Integration-Test-Alternatives.md`, not in a workflow edit.
+
 > The old `cmd/uat_epic*_test.go` UAT files and `internal/api/integration_test.go`
 > were deleted in #876 (stale/non-compiling). The disabled
 > `integration-tests.yml` CI workflow was also removed — do **not** re-enable
