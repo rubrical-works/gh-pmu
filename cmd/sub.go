@@ -12,6 +12,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// requireResolvedIssue rejects an issue that decoded from a null GraphQL node.
+//
+// GetIssue does not fail on a bare {"repository":{"issue":null}} response with
+// no errors envelope — shurcooL decodes it into a zero-value api.Issue — so a
+// write path would otherwise send a mutation with an empty node id and report
+// success. GitHub currently returns a NOT_FOUND envelope for a lookup by a
+// nonexistent number, which is what makes GetIssue fail today; this guard means
+// the write paths no longer depend on the server rejecting a malformed mutation
+// (#889).
+func requireResolvedIssue(issue *api.Issue, number int) error {
+	if issue == nil || issue.ID == "" {
+		return fmt.Errorf("issue #%d could not be resolved (empty node id); refusing to send a mutation", number)
+	}
+	return nil
+}
+
 func newSubCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sub",
@@ -136,11 +152,17 @@ func runSubAdd(cmd *cobra.Command, args []string, opts *subAddOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to get parent issue #%d: %w", parentNumber, err)
 	}
+	if err := requireResolvedIssue(parentIssue, parentNumber); err != nil {
+		return err
+	}
 
 	// Validate child issue exists
 	childIssue, err := client.GetIssue(childOwner, childRepo, childNumber)
 	if err != nil {
 		return fmt.Errorf("failed to get child issue #%d: %w", childNumber, err)
+	}
+	if err := requireResolvedIssue(childIssue, childNumber); err != nil {
+		return err
 	}
 
 	// Add sub-issue link
@@ -304,6 +326,11 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	parentIssue, err := client.GetIssue(parentOwner, parentRepo, parentNumber)
 	if err != nil {
 		return fmt.Errorf("failed to get parent issue #%d: %w", parentNumber, err)
+	}
+	// Checked before CreateIssue: an unresolved parent must not leave a newly
+	// created orphan issue behind.
+	if err := requireResolvedIssue(parentIssue, parentNumber); err != nil {
+		return err
 	}
 
 	// Build labels list: config defaults + explicit flags + optional inherited
@@ -1023,6 +1050,9 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 	if err != nil {
 		return fmt.Errorf("failed to get parent issue #%d: %w", parentNumber, err)
 	}
+	if err := requireResolvedIssue(parentIssue, parentNumber); err != nil {
+		return err
+	}
 
 	// Parse all child issue references (args[1:])
 	type childRef struct {
@@ -1065,6 +1095,11 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 		if err != nil {
 			failCount++
 			results = append(results, fmt.Sprintf("✗ #%d: failed to get issue: %v", child.number, err))
+			continue
+		}
+		if err := requireResolvedIssue(childIssue, child.number); err != nil {
+			failCount++
+			results = append(results, fmt.Sprintf("✗ #%d: %v", child.number, err))
 			continue
 		}
 

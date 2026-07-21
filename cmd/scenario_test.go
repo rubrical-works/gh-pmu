@@ -1598,6 +1598,114 @@ func TestScenario_SubAdd_ChildLookupFailureSendsNoMutation(t *testing.T) {
 	}
 }
 
+// issueBareNullFixture answers GetIssue with a null issue node and *no* errors
+// envelope for any number absent from titlesByNumber.
+//
+// This is the shape issueNotFoundFixture deliberately does not model. GitHub
+// sends the NOT_FOUND envelope today, and that envelope is the only reason
+// GetIssue fails — shurcooL decodes a bare null into a zero-value Issue, so the
+// caller proceeds with an empty node id. These scenarios pin the client-side
+// guard rather than the server's rejection (#889).
+func issueBareNullFixture(titlesByNumber map[int]string) func(graphQLRequest) interface{} {
+	nullIssue := func() interface{} {
+		return gqlData(map[string]interface{}{
+			"repository": map[string]interface{}{"issue": nil},
+		})
+	}
+	return func(req graphQLRequest) interface{} {
+		raw, ok := req.Variables["number"].(float64)
+		if !ok {
+			return nullIssue()
+		}
+		if title, known := titlesByNumber[int(raw)]; known {
+			return issueFixture(int(raw), title, "OPEN")
+		}
+		return nullIssue()
+	}
+}
+
+// TestScenario_SubAdd_BareNullChildSendsNoMutation is the regression this issue
+// exists for: a null child with no errors envelope must not produce an
+// AddSubIssue carrying an empty subIssueId.
+func TestScenario_SubAdd_BareNullChildSendsNoMutation(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondToFunc("GetIssue", issueBareNullFixture(map[int]string{
+		10: "Parent epic",
+		// 999 resolves to a bare null — no errors envelope.
+	}))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newSubAddCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := runSubAdd(cmd, []string{"10", "999"}, &subAddOptions{})
+	if err == nil {
+		t.Fatalf("expected an error for a bare-null child, got nil (output %q)", buf.String())
+	}
+	if !strings.Contains(err.Error(), "999") {
+		t.Errorf("expected the error to name the unresolved issue number, got %v", err)
+	}
+	if got := handler.requestsFor("AddSubIssue"); len(got) != 0 {
+		t.Errorf("expected no link mutation for a bare-null child, got %d", len(got))
+	}
+}
+
+// A bare-null parent must be caught before the child issue is created —
+// otherwise the command leaves a newly created orphan issue behind.
+func TestScenario_SubCreate_BareNullParentCreatesNothing(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondToFunc("GetIssue", issueBareNullFixture(nil))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newSubCreateCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := runSubCreate(cmd, &subCreateOptions{parent: "10", title: "Orphan task"})
+	if err == nil {
+		t.Fatalf("expected an error for a bare-null parent, got nil (output %q)", buf.String())
+	}
+	if !strings.Contains(err.Error(), "10") {
+		t.Errorf("expected the error to name the unresolved issue number, got %v", err)
+	}
+	if got := handler.requestsFor("CreateIssue"); len(got) != 0 {
+		t.Errorf("expected no issue to be created for a bare-null parent, got %d", len(got))
+	}
+	if got := handler.requestsFor("AddSubIssue"); len(got) != 0 {
+		t.Errorf("expected no link mutation for a bare-null parent, got %d", len(got))
+	}
+}
+
+func TestScenario_SubRemove_BareNullChildSendsNoMutation(t *testing.T) {
+	handler := newMockGraphQLHandler()
+	handler.respondToFunc("GetIssue", issueBareNullFixture(map[int]string{
+		10: "Parent epic",
+	}))
+
+	_, cleanup := setupTestEnvironment(t, handler)
+	defer cleanup()
+
+	cmd := newSubRemoveCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := runSubRemove(cmd, []string{"10", "999"}, &subRemoveOptions{})
+	if err == nil {
+		t.Fatalf("expected an error for a bare-null child, got nil (output %q)", buf.String())
+	}
+	if got := handler.requestsFor("RemoveSubIssue"); len(got) != 0 {
+		t.Errorf("expected no unlink mutation for a bare-null child, got %d", len(got))
+	}
+}
+
 // TestScenario_SubCreate_CreatesIssueAndLinksToParent drives the full create
 // chain: look up parent -> resolve repo id -> CreateIssue -> AddSubIssue with
 // the new issue's node id.
