@@ -482,27 +482,7 @@ func (c *Client) GetIssueWithProjectFields(projectID, owner, repo string, number
 							ID string
 						} `graphql:"project"`
 						FieldValues struct {
-							Nodes []struct {
-								TypeName string `graphql:"__typename"`
-								// Single select field value
-								ProjectV2ItemFieldSingleSelectValue struct {
-									Name  string
-									Field struct {
-										ProjectV2SingleSelectField struct {
-											Name string
-										} `graphql:"... on ProjectV2SingleSelectField"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldSingleSelectValue"`
-								// Text field value
-								ProjectV2ItemFieldTextValue struct {
-									Text  string
-									Field struct {
-										ProjectV2Field struct {
-											Name string
-										} `graphql:"... on ProjectV2Field"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldTextValue"`
-							}
+							Nodes []typedFieldValueNode
 						} `graphql:"fieldValues(first: 20)"`
 					}
 					PageInfo struct {
@@ -567,24 +547,7 @@ func (c *Client) GetIssueWithProjectFields(projectID, owner, repo string, number
 		if projectID != "" && projectItem.Project.ID != projectID {
 			continue
 		}
-		for _, fv := range projectItem.FieldValues.Nodes {
-			switch fv.TypeName {
-			case "ProjectV2ItemFieldSingleSelectValue":
-				if fv.ProjectV2ItemFieldSingleSelectValue.Name != "" {
-					fieldValues = append(fieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldSingleSelectValue.Field.ProjectV2SingleSelectField.Name,
-						Value: fv.ProjectV2ItemFieldSingleSelectValue.Name,
-					})
-				}
-			case "ProjectV2ItemFieldTextValue":
-				if fv.ProjectV2ItemFieldTextValue.Text != "" {
-					fieldValues = append(fieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldTextValue.Field.ProjectV2Field.Name,
-						Value: fv.ProjectV2ItemFieldTextValue.Text,
-					})
-				}
-			}
-		}
+		fieldValues = appendTypedFieldValues(fieldValues, projectItem.FieldValues.Nodes)
 	}
 
 	return issue, fieldValues, nil
@@ -755,27 +718,7 @@ func (c *Client) getProjectItemsPage(projectID string, cursor *string) ([]Projec
 							} `graphql:"... on Issue"`
 						}
 						FieldValues struct {
-							Nodes []struct {
-								TypeName string `graphql:"__typename"`
-								// Single select field value
-								ProjectV2ItemFieldSingleSelectValue struct {
-									Name  string
-									Field struct {
-										ProjectV2SingleSelectField struct {
-											Name string
-										} `graphql:"... on ProjectV2SingleSelectField"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldSingleSelectValue"`
-								// Text field value
-								ProjectV2ItemFieldTextValue struct {
-									Text  string
-									Field struct {
-										ProjectV2Field struct {
-											Name string
-										} `graphql:"... on ProjectV2Field"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldTextValue"`
-							}
+							Nodes []typedFieldValueNode
 						} `graphql:"fieldValues(first: 20)"`
 					}
 					PageInfo struct {
@@ -841,24 +784,7 @@ func (c *Client) getProjectItemsPage(projectID string, cursor *string) ([]Projec
 		}
 
 		// Parse field values
-		for _, fv := range node.FieldValues.Nodes {
-			switch fv.TypeName {
-			case "ProjectV2ItemFieldSingleSelectValue":
-				if fv.ProjectV2ItemFieldSingleSelectValue.Name != "" {
-					item.FieldValues = append(item.FieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldSingleSelectValue.Field.ProjectV2SingleSelectField.Name,
-						Value: fv.ProjectV2ItemFieldSingleSelectValue.Name,
-					})
-				}
-			case "ProjectV2ItemFieldTextValue":
-				if fv.ProjectV2ItemFieldTextValue.Text != "" {
-					item.FieldValues = append(item.FieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldTextValue.Field.ProjectV2Field.Name,
-						Value: fv.ProjectV2ItemFieldTextValue.Text,
-					})
-				}
-			}
-		}
+		item.FieldValues = appendTypedFieldValues(item.FieldValues, node.FieldValues.Nodes)
 
 		items = append(items, item)
 	}
@@ -942,27 +868,7 @@ func (c *Client) getMinimalProjectItemsPage(projectID string, cursor *string) ([
 							} `graphql:"... on Issue"`
 						}
 						FieldValues struct {
-							Nodes []struct {
-								TypeName string `graphql:"__typename"`
-								// Single select field value
-								ProjectV2ItemFieldSingleSelectValue struct {
-									Name  string
-									Field struct {
-										ProjectV2SingleSelectField struct {
-											Name string
-										} `graphql:"... on ProjectV2SingleSelectField"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldSingleSelectValue"`
-								// Text field value
-								ProjectV2ItemFieldTextValue struct {
-									Text  string
-									Field struct {
-										ProjectV2Field struct {
-											Name string
-										} `graphql:"... on ProjectV2Field"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldTextValue"`
-							}
+							Nodes []typedFieldValueNode
 						} `graphql:"fieldValues(first: 20)"`
 					}
 					PageInfo struct {
@@ -1002,24 +908,7 @@ func (c *Client) getMinimalProjectItemsPage(projectID string, cursor *string) ([
 		}
 
 		// Parse field values
-		for _, fv := range node.FieldValues.Nodes {
-			switch fv.TypeName {
-			case "ProjectV2ItemFieldSingleSelectValue":
-				if fv.ProjectV2ItemFieldSingleSelectValue.Name != "" {
-					item.FieldValues = append(item.FieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldSingleSelectValue.Field.ProjectV2SingleSelectField.Name,
-						Value: fv.ProjectV2ItemFieldSingleSelectValue.Name,
-					})
-				}
-			case "ProjectV2ItemFieldTextValue":
-				if fv.ProjectV2ItemFieldTextValue.Text != "" {
-					item.FieldValues = append(item.FieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldTextValue.Field.ProjectV2Field.Name,
-						Value: fv.ProjectV2ItemFieldTextValue.Text,
-					})
-				}
-			}
-		}
+		item.FieldValues = appendTypedFieldValues(item.FieldValues, node.FieldValues.Nodes)
 
 		items = append(items, item)
 	}
@@ -1195,14 +1084,7 @@ func (c *Client) GetProjectItemsByIssues(projectID string, refs []IssueRef) ([]P
 							ID string `json:"id"`
 						} `json:"project"`
 						FieldValues struct {
-							Nodes []struct {
-								TypeName string `json:"__typename"`
-								Name     string `json:"name"`
-								Text     string `json:"text"`
-								Field    struct {
-									Name string `json:"name"`
-								} `json:"field"`
-							} `json:"nodes"`
+							Nodes []rawFieldValueNode `json:"nodes"`
 						} `json:"fieldValues"`
 					} `json:"nodes"`
 				} `json:"projectItems"`
@@ -1242,25 +1124,7 @@ func (c *Client) GetProjectItemsByIssues(projectID string, refs []IssueRef) ([]P
 
 				// Build field values
 				var fieldValues []FieldValue
-				for _, fv := range pItem.FieldValues.Nodes {
-					var fieldName, value string
-					switch fv.TypeName {
-					case "ProjectV2ItemFieldSingleSelectValue":
-						fieldName = fv.Field.Name
-						value = fv.Name
-					case "ProjectV2ItemFieldTextValue":
-						fieldName = fv.Field.Name
-						value = fv.Text
-					default:
-						continue
-					}
-					if fieldName != "" {
-						fieldValues = append(fieldValues, FieldValue{
-							Field: fieldName,
-							Value: value,
-						})
-					}
-				}
+				fieldValues = appendRawFieldValues(fieldValues, pItem.FieldValues.Nodes)
 
 				items = append(items, ProjectItem{
 					ID: pItem.ID,
@@ -1998,14 +1862,7 @@ func (c *Client) getProjectFieldsForIssuesBatch(projectID string, issueIDs []str
 						ID string `json:"id"`
 					} `json:"project"`
 					FieldValues struct {
-						Nodes []struct {
-							TypeName string `json:"__typename"`
-							Name     string `json:"name"`
-							Text     string `json:"text"`
-							Field    struct {
-								Name string `json:"name"`
-							} `json:"field"`
-						} `json:"nodes"`
+						Nodes []rawFieldValueNode `json:"nodes"`
 					} `json:"fieldValues"`
 				} `json:"nodes"`
 			} `json:"projectItems"`
@@ -2030,24 +1887,7 @@ func (c *Client) getProjectFieldsForIssuesBatch(projectID string, issueIDs []str
 				continue
 			}
 
-			for _, fv := range projectItem.FieldValues.Nodes {
-				switch fv.TypeName {
-				case "ProjectV2ItemFieldSingleSelectValue":
-					if fv.Name != "" && fv.Field.Name != "" {
-						fieldValues = append(fieldValues, FieldValue{
-							Field: fv.Field.Name,
-							Value: fv.Name,
-						})
-					}
-				case "ProjectV2ItemFieldTextValue":
-					if fv.Text != "" && fv.Field.Name != "" {
-						fieldValues = append(fieldValues, FieldValue{
-							Field: fv.Field.Name,
-							Value: fv.Text,
-						})
-					}
-				}
-			}
+			fieldValues = appendRawFieldValues(fieldValues, projectItem.FieldValues.Nodes)
 		}
 
 		result[nodeData.ID] = fieldValues
@@ -2847,14 +2687,7 @@ func parseIssuesBatchResponse(data []byte, numbers []int, projectID, owner, repo
 						ID string `json:"id"`
 					} `json:"project"`
 					FieldValues struct {
-						Nodes []struct {
-							TypeName string `json:"__typename"`
-							Name     string `json:"name"`
-							Text     string `json:"text"`
-							Field    struct {
-								Name string `json:"name"`
-							} `json:"field"`
-						} `json:"nodes"`
+						Nodes []rawFieldValueNode `json:"nodes"`
 					} `json:"fieldValues"`
 				} `json:"nodes"`
 			} `json:"projectItems"`
@@ -2896,24 +2729,7 @@ func parseIssuesBatchResponse(data []byte, numbers []int, projectID, owner, repo
 			if projectID != "" && projectItem.Project.ID != projectID {
 				continue
 			}
-			for _, fv := range projectItem.FieldValues.Nodes {
-				switch fv.TypeName {
-				case "ProjectV2ItemFieldSingleSelectValue":
-					if fv.Name != "" {
-						fvs = append(fvs, FieldValue{
-							Field: fv.Field.Name,
-							Value: fv.Name,
-						})
-					}
-				case "ProjectV2ItemFieldTextValue":
-					if fv.Text != "" {
-						fvs = append(fvs, FieldValue{
-							Field: fv.Field.Name,
-							Value: fv.Text,
-						})
-					}
-				}
-			}
+			fvs = appendRawFieldValues(fvs, projectItem.FieldValues.Nodes)
 		}
 		fieldValues[num] = fvs
 	}
