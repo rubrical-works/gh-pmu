@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -85,7 +86,7 @@ func runAccept(cmd *cobra.Command, opts *acceptOptions) error {
 		Version:  getVersion(),
 	}
 
-	if err := cfg.Save(configPath); err != nil {
+	if err := cfg.Save(filepath.Dir(configPath)); err != nil {
 		return fmt.Errorf("failed to save acceptance: %w", err)
 	}
 

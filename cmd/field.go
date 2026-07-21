@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
@@ -192,7 +193,7 @@ func runFieldCreateWithDeps(cmd *cobra.Command, fieldName string, opts *fieldCre
 	}
 
 	cfg.AddFieldMetadata(fieldMeta)
-	if err := cfg.Save(configPath); err != nil {
+	if err := cfg.Save(filepath.Dir(configPath)); err != nil {
 		fmt.Fprintf(cmd.OutOrStdout(), "⚠ Created field but failed to update config: %v\n", err)
 		return nil
 	}

@@ -28,7 +28,7 @@ func setupFieldTestDir(t *testing.T, cfg *config.Config) func() {
 
 	// Save config to temp directory
 	configPath := filepath.Join(tempDir, ".gh-pmu.json")
-	if err := cfg.Save(configPath); err != nil {
+	if err := cfg.Save(filepath.Dir(configPath)); err != nil {
 		t.Fatalf("Failed to save test config: %v", err)
 	}
 

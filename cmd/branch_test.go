@@ -30,7 +30,7 @@ func setupBranchTestDir(t *testing.T, cfg *config.Config) func() {
 
 	// Save config to temp directory
 	configPath := filepath.Join(tempDir, ".gh-pmu.json")
-	if err := cfg.Save(configPath); err != nil {
+	if err := cfg.Save(filepath.Dir(configPath)); err != nil {
 		t.Fatalf("Failed to save test config: %v", err)
 	}
 
@@ -3477,7 +3477,7 @@ func BenchmarkBranchClose_Optimized(b *testing.B) {
 	// Create temp dir for config (required by branch close)
 	tempDir := b.TempDir()
 	configPath := tempDir + "/.gh-pmu.json"
-	_ = cfg.Save(configPath)
+	_ = cfg.Save(filepath.Dir(configPath))
 	originalDir, _ := os.Getwd()
 	_ = os.Chdir(tempDir)
 	defer func() { _ = os.Chdir(originalDir) }()

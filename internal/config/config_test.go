@@ -669,7 +669,7 @@ func TestConfig_Save_Success(t *testing.T) {
 	}
 
 	// ACT: Save config
-	err := cfg.Save(configPath)
+	err := cfg.Save(filepath.Dir(configPath))
 
 	// ASSERT: File saved correctly
 	if err != nil {
@@ -710,7 +710,7 @@ func TestConfig_Save_WithMetadata(t *testing.T) {
 	}
 
 	// ACT: Save config
-	err := cfg.Save(configPath)
+	err := cfg.Save(filepath.Dir(configPath))
 
 	// ASSERT: Metadata preserved
 	if err != nil {
@@ -747,7 +747,7 @@ func TestConfig_Save_WithVersion_RoundTrip(t *testing.T) {
 	}
 
 	// ACT: Save and reload
-	err := cfg.Save(configPath)
+	err := cfg.Save(filepath.Dir(configPath))
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -806,13 +806,13 @@ func TestConfig_Load_WithVersion_ReadsCorrectly(t *testing.T) {
 }
 
 func TestConfig_Save_InvalidPath(t *testing.T) {
-	// ARRANGE: Config with invalid path
+	// ARRANGE: Config with invalid target directory
 	cfg := &Config{
 		Project: Project{Owner: "test", Number: 1},
 	}
 
-	// ACT: Try to save to invalid path
-	err := cfg.Save("/nonexistent/directory/config.yml")
+	// ACT: Try to save into a directory that does not exist
+	err := cfg.Save("/nonexistent/directory")
 
 	// ASSERT: Error returned
 	if err == nil {
@@ -1845,7 +1845,7 @@ func TestSave_WritesJSONOnly(t *testing.T) {
 	}
 
 	// ACT: Save config
-	err := cfg.Save(jsonPath)
+	err := cfg.Save(filepath.Dir(jsonPath))
 	if err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
@@ -1876,7 +1876,7 @@ func TestSave_JSONContainsExpectedData(t *testing.T) {
 	}
 
 	// ACT: Save config
-	if err := cfg.Save(jsonPath); err != nil {
+	if err := cfg.Save(filepath.Dir(jsonPath)); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
@@ -2125,7 +2125,7 @@ func TestMigrateYAML_SaveNoLongerWritesYAML(t *testing.T) {
 	}
 
 	// ACT: Save config
-	err := cfg.Save(jsonPath)
+	err := cfg.Save(filepath.Dir(jsonPath))
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
