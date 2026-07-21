@@ -29,9 +29,7 @@ func TestRunMove_Integration_ChangeStatus(t *testing.T) {
 	testutil.AssertContains(t, moveResult.Stdout, "In progress")
 
 	// Verify change via view
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-	testutil.AssertContains(t, viewResult.Stdout, "In progress")
+	testutil.AssertIssueField(t, issueNum, "status", "In progress")
 }
 
 // TestRunMove_Integration_ChangePriority tests changing --priority
@@ -52,9 +50,7 @@ func TestRunMove_Integration_ChangePriority(t *testing.T) {
 	testutil.AssertContains(t, moveResult.Stdout, "P0")
 
 	// Verify change
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-	testutil.AssertContains(t, viewResult.Stdout, "P0")
+	testutil.AssertIssueField(t, issueNum, "priority", "P0")
 }
 
 // TestRunMove_Integration_MultipleFields tests changing multiple fields
@@ -78,10 +74,10 @@ func TestRunMove_Integration_MultipleFields(t *testing.T) {
 	testutil.AssertContains(t, moveResult.Stdout, "Priority")
 
 	// Verify changes
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-	testutil.AssertContains(t, viewResult.Stdout, "In progress")
-	testutil.AssertContains(t, viewResult.Stdout, "P1")
+	testutil.AssertIssueFields(t, issueNum, map[string]string{
+		"status":   "In progress",
+		"priority": "P1",
+	})
 }
 
 // TestRunMove_Integration_FieldAliases tests field value aliases
@@ -101,9 +97,7 @@ func TestRunMove_Integration_FieldAliases(t *testing.T) {
 	testutil.AssertContains(t, moveResult.Stdout, "In review")
 
 	// Verify alias resolved correctly
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-	testutil.AssertContains(t, viewResult.Stdout, "In review")
+	testutil.AssertIssueField(t, issueNum, "status", "In review")
 }
 
 // TestRunMove_Integration_NotInProject tests issue not in project error
@@ -157,11 +151,11 @@ func TestRunMove_Integration_DryRun(t *testing.T) {
 	testutil.AssertExitCode(t, moveResult, 0)
 	testutil.AssertContains(t, moveResult.Stdout, "Dry run")
 
-	// Verify status is still backlog
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-	testutil.AssertContains(t, viewResult.Stdout, "Backlog")
-	testutil.AssertNotContains(t, viewResult.Stdout, "\"Status\": \"Done\"")
+	// Verify status is still backlog — the dry run must not have applied Done.
+	// Comparing the decoded field replaces the old pair of substring checks,
+	// whose AssertNotContains was keyed on a "Status" casing that view never
+	// emits (it emits "status") and so could never have failed (#891).
+	testutil.AssertIssueField(t, issueNum, "status", "Backlog")
 }
 
 // TestRunMove_Integration_Recursive tests --recursive flag with sub-issues

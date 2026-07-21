@@ -93,7 +93,7 @@ func TestRunView_Integration_SubIssueShowsParent(t *testing.T) {
 func TestRunView_Integration_JSONOutput(t *testing.T) {
 	testutil.RequireTestEnv(t)
 
-	result := testutil.RunCommand(t, "view", "1", "--json")
+	result := testutil.RunCommand(t, "view", "1", "--json=number,title,url,fieldValues")
 
 	testutil.AssertExitCode(t, result, 0)
 
@@ -138,7 +138,7 @@ func TestRunView_Integration_JSONOutput(t *testing.T) {
 func TestRunView_Integration_JSONWithSubIssues(t *testing.T) {
 	testutil.RequireTestEnv(t)
 
-	result := testutil.RunCommand(t, "view", "4", "--json")
+	result := testutil.RunCommand(t, "view", "4", "--json=number,subIssues,subProgress")
 
 	testutil.AssertExitCode(t, result, 0)
 
@@ -177,7 +177,7 @@ func TestRunView_Integration_JSONWithSubIssues(t *testing.T) {
 func TestRunView_Integration_JSONSubIssueWithParent(t *testing.T) {
 	testutil.RequireTestEnv(t)
 
-	result := testutil.RunCommand(t, "view", "5", "--json")
+	result := testutil.RunCommand(t, "view", "5", "--json=number,parentIssue")
 
 	testutil.AssertExitCode(t, result, 0)
 

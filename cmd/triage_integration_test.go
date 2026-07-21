@@ -10,46 +10,21 @@ import (
 	"github.com/rubrical-works/gh-pmu/internal/testutil"
 )
 
-// viewIssueFields reads the requested project fields back off an issue via
-// `gh pmu view --json=<fields>` and returns the decoded object. Reading state
-// back is what makes a mutation (or the absence of one, under --dry-run)
-// observable to a test.
-func viewIssueFields(t *testing.T, issueNum int, fields string) map[string]interface{} {
-	t.Helper()
-
-	result := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), fmt.Sprintf("--json=%s", fields))
-	testutil.AssertExitCode(t, result, 0)
-
-	var out map[string]interface{}
-	if err := json.Unmarshal([]byte(result.Stdout), &out); err != nil {
-		t.Fatalf("failed to parse view JSON for #%d: %v\nOutput: %s", issueNum, err, result.Stdout)
-	}
-
-	return out
-}
-
 // assertDryRunLeftIssueUnchanged asserts that a --dry-run triage sweep did not
 // touch the issue's Status or Priority.
+//
+// The generic read-back helpers this used to define now live in
+// internal/testutil so all five integration files share one implementation
+// (#891).
 func assertDryRunLeftIssueUnchanged(t *testing.T, issueNum int, wantStatus, wantPriority string) {
 	t.Helper()
 
-	fields := viewIssueFields(t, issueNum, "number,status,priority")
+	fields := testutil.ViewIssueFields(t, issueNum, "number,status,priority")
 	if fields["status"] != wantStatus {
 		t.Errorf("dry-run mutated status on #%d: expected %q, got %v", issueNum, wantStatus, fields["status"])
 	}
 	if fields["priority"] != wantPriority {
 		t.Errorf("dry-run mutated priority on #%d: expected %q, got %v", issueNum, wantPriority, fields["priority"])
-	}
-}
-
-// assertIssueField asserts that a single project field on an issue has the
-// expected value.
-func assertIssueField(t *testing.T, issueNum int, field, want string) {
-	t.Helper()
-
-	got := viewIssueFields(t, issueNum, fmt.Sprintf("number,%s", field))[field]
-	if got != want {
-		t.Errorf("issue #%d: expected %s %q, got %v", issueNum, field, want, got)
 	}
 }
 
@@ -153,9 +128,7 @@ func TestRunTriage_Integration_AdHocQueryApply(t *testing.T) {
 	testutil.AssertContains(t, result.Stdout, "Updated")
 
 	// Verify the change
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-	testutil.AssertContains(t, viewResult.Stdout, "P1")
+	testutil.AssertIssueField(t, issueNum, "priority", "P1")
 }
 
 // TestRunTriage_Integration_AddLabel tests triage adding labels
@@ -179,9 +152,7 @@ func TestRunTriage_Integration_AddLabel(t *testing.T) {
 	testutil.AssertExitCode(t, result, 0)
 
 	// Verify the label was added
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-	testutil.AssertContains(t, viewResult.Stdout, "bug")
+	testutil.AssertIssueHasLabel(t, issueNum, "bug")
 }
 
 // TestRunTriage_Integration_ConfigNotFound tests error when config doesn't exist
@@ -297,7 +268,7 @@ func TestRunTriage_Integration_JSONOutput(t *testing.T) {
 	}
 
 	// --apply is a real mutation: verify it landed rather than trusting the report.
-	assertIssueField(t, issueNum, "priority", "P0")
+	testutil.AssertIssueField(t, issueNum, "priority", "P0")
 }
 
 // TestRunTriage_Integration_SeedIssuesDryRun tests triage dry-run on seed issues

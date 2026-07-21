@@ -6,11 +6,13 @@ package testutil
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -357,6 +359,80 @@ func AssertNotContains(t *testing.T, output, notExpected string) {
 	if strings.Contains(output, notExpected) {
 		t.Errorf("expected output to not contain %q, got: %s", notExpected, output)
 	}
+}
+
+// ViewIssueFields runs `view <issueNum> --json=<fields>` and returns the
+// decoded object.
+//
+// `view`'s --json is a string flag, so it must be passed as --json=<fields>.
+// A bare --json makes cobra reject the invocation before the command runs:
+// exit 1, empty stdout, and any assertion on that output is checking an empty
+// string (#891). Taking the field list as a parameter makes the value
+// mandatory at every call site.
+func ViewIssueFields(t *testing.T, issueNum int, fields string) map[string]interface{} {
+	t.Helper()
+
+	result := RunCommand(t, "view", fmt.Sprintf("%d", issueNum), fmt.Sprintf("--json=%s", fields))
+	AssertExitCode(t, result, 0)
+
+	var out map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Stdout), &out); err != nil {
+		t.Fatalf("failed to parse view JSON for #%d: %v\nOutput: %s", issueNum, err, result.Stdout)
+	}
+
+	return out
+}
+
+// AssertIssueField asserts that a single project field on an issue has the
+// expected value, comparing decoded JSON rather than a substring of raw output.
+func AssertIssueField(t *testing.T, issueNum int, field, want string) {
+	t.Helper()
+
+	got := ViewIssueFields(t, issueNum, fmt.Sprintf("number,%s", field))[field]
+	if got != want {
+		t.Errorf("issue #%d: expected %s %q, got %v", issueNum, field, want, got)
+	}
+}
+
+// AssertIssueFields asserts several scalar fields in one view call, requesting
+// exactly the fields being asserted.
+//
+// Comparing decoded values rather than substrings matters: a raw-output
+// AssertContains for "P1" also matches a body or title containing "P1", and
+// matches nothing at all when the view call failed and stdout is empty (#891).
+func AssertIssueFields(t *testing.T, issueNum int, want map[string]string) {
+	t.Helper()
+
+	names := make([]string, 0, len(want))
+	for name := range want {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	got := ViewIssueFields(t, issueNum, "number,"+strings.Join(names, ","))
+	for _, name := range names {
+		if got[name] != want[name] {
+			t.Errorf("issue #%d: expected %s %q, got %v", issueNum, name, want[name], got[name])
+		}
+	}
+}
+
+// AssertIssueHasLabel asserts that the issue's decoded labels array contains
+// name. view emits labels as a JSON array of strings.
+func AssertIssueHasLabel(t *testing.T, issueNum int, name string) {
+	t.Helper()
+
+	fields := ViewIssueFields(t, issueNum, "number,labels")
+	raw, ok := fields["labels"].([]interface{})
+	if !ok {
+		t.Fatalf("issue #%d: expected a labels array, got %T (%v)", issueNum, fields["labels"], fields["labels"])
+	}
+	for _, l := range raw {
+		if s, isStr := l.(string); isStr && s == name {
+			return
+		}
+	}
+	t.Errorf("issue #%d: expected label %q among %v", issueNum, name, raw)
 }
 
 // GetTestRepo returns the full repository name (owner/repo) for tests.
