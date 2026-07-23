@@ -1,5 +1,5 @@
 ---
-version: "v0.92.0"
+version: "v0.93.0"
 description: Reset bug/enhancement/prd/proposal/epic issue to clean slate (project)
 argument-hint: "#issue [--dry-run]"
 copyright: "Rubrical Works (c) 2026"

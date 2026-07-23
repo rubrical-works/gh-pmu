@@ -1,5 +1,5 @@
 ---
-version: "v0.92.0"
+version: "v0.93.0"
 description: Safely delete branch with confirmation (project)
 argument-hint: "[branch-name] [--force]"
 copyright: "Rubrical Works (c) 2026"

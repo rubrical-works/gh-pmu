@@ -20,9 +20,7 @@
     "test-scaffold",
     "test-writing-patterns"
   ],
-  "frameworkVersion": "0.92.0",
-  "installedDate": "2026-05-06",
-  "frameworkPath": "C:/ProgramData/praxis-hub/framework_root_0.92.0",
-  "platform": "win32",
+  "frameworkVersion": "0.93.0",
+  "frameworkPath": "C:/ProgramData/praxis-hub/framework_root_0.93.0",
   "$schema": "framework-config.schema.json"
 }
