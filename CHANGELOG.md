@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-23
+
+### Added
+- Pagination for user-facing fetches — labels, comments, projects, and project field values no longer silently truncate at fixed caps (labels 100, comments 50, projects 20, fieldValues 20); truncated internal fetches now emit warnings and caps are documented (#860)
+- `GetProjectItemFieldValue` paginates project items and reports whether the item was found (#860)
+- `Config.GetFieldNameOr` for caller-controlled field-name fallback (#863)
+
+### Fixed
+- Cross-project field contamination: `view` and batch issue fetches scope Status/Priority field values to the configured project instead of collecting from all projects an issue belongs to (#856)
+- Zero-value NUMBER/TEXT project field updates are serialized instead of silently dropped (`omitempty` removed from `ProjectV2FieldValue`) (#857)
+- Non-idempotent mutations (issue/comment/label creation) are no longer retried on 5xx, eliminating duplicate side effects; idempotent reads still retry (#858)
+- Raw GraphQL client resolves its endpoint via go-gh — GHES and `GH_HOST` configurations now work (#859)
+- `queries.go` response handling: integer error-path segments no longer abort whole batches; `ListProjects`/`GetProject` correctly attribute user-path failures (#861)
+- Branch membership model unified between `branch add` and `branch close`; `add`/`remove`/`current` disambiguate when multiple active branch trackers exist instead of picking arbitrarily (#862)
+- `create` and `close --update-status` resolve Status/Priority field names from `.gh-pmu.json` `fields` mappings instead of hardcoding `"Status"`/`"Priority"` (#863)
+- `create --from-file` honors `--branch`/`--title`/`--template` flags, runs IDPF validation, and parses the file once (#864)
+- Config-integrity gaps closed: strict mode is no longer self-referential, monorepo baseline uses the correct HEAD pathspec, and `init` detects a parent config from subdirectories (#865)
+- Checkbox validation matches `* [ ]`, `+ [ ]`, and uppercase `[X]` — acceptance-criteria gates can no longer be bypassed by bullet style (#866)
+- Silent no-op flags now work or fail loudly: `intake --apply` space form rejected, `sub create --inherit-assignees`/`--inherit-milestone` honored, dead `move --force` confirmation guard removed, `edit` with empty `--body-file`/`--body-stdin` errors instead of succeeding silently (#867)
+- Read-command output correctness: `board` surfaces unrecognized statuses and validates `--state`, `list --limit` applies after client-side filters, `view` keys multi-issue results by (owner, repo, number), `history` refuses repo-root targets regardless of cwd (#868)
+- `ResolveFieldValue` is case-insensitive; `MigrateYAML` verifies the written JSON before deleting the legacy YAML (#869)
+- `Spinner` is race-free and restartable — no more data race on message or panic on Start after Stop (#870)
+- cmd-layer silent failures now reported with partial-failure exit codes across `triage`, `branch`, `sub`, `split`, `list`, `move`, `comment`, and framework detection (#871)
+- API-layer error swallowing eliminated: batch parsers, sub-issue counts, and label/assignee lookups propagate failures instead of returning empty data (#872)
+- `config.Save` takes the config directory instead of silently discarding a file path's basename (#874)
+- `sub` write paths guard against unresolved/empty issue node ids (#889)
+- `GetProjectItemFieldValue` selects field name through `ProjectV2FieldCommon` — no more invalid GraphQL against the field-configuration union (#888)
+- `comment --body-stdin` errors on input over 1MB instead of silently truncating
+- `SummaryBox` key padding uses visible width (ANSI-aware)
+
+### Changed
+- Six commands share a single repository-resolution helper, unifying `--repo` validation and config fallback (#873)
+- Internal refactors: generic cursor-pagination helper, shared ProjectV2 field-value helpers, shared IDPF required-field validation between init paths (#874)
+
+### Testing
+- Test-quality overhaul: retired the dormant integration/UAT layer, replaced ~35 assertion-free and tautological tests with real assertions, added command-level scenario tests on a wrapper harness with mock transport (#875, #876, #878, #880, #881, #882, #884, #891)
+- GraphQL operations validated offline against a vendored GitHub schema with provenance tracking (#884)
+- E2E suite hardened with exclusion/AND assertions and read-back verification; fixture owner updated for the `rubrical-works` → `rubrical-worker` account rename
+- CI compile-checks tag-gated test suites; documented as the deliberate CI ceiling (#890)
+
 ## [1.4.10] - 2026-05-14
 
 ### Fixed
