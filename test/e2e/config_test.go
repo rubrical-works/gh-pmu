@@ -14,10 +14,10 @@ const testConfig = `{
   "project": {
     "name": "IDPF-gh-pmu-testing",
     "number": 41,
-    "owner": "rubrical-works"
+    "owner": "rubrical-worker"
   },
   "framework": "IDPF-Agile",
-  "repositories": ["rubrical-works/gh-pmu-e2e-test"],
+  "repositories": ["rubrical-worker/gh-pmu-e2e-test"],
   "defaults": {
     "priority": "p2",
     "status": "backlog"

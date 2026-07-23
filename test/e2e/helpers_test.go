@@ -172,7 +172,7 @@ func waitForProjectSync(t *testing.T, cfg *TestConfig, maxRetries int, args []st
 func deleteTestIssue(t *testing.T, issueNum int) {
 	t.Helper()
 
-	repo := "rubrical-works/gh-pmu-e2e-test"
+	repo := "rubrical-worker/gh-pmu-e2e-test"
 
 	// Close the issue first
 	closeCmd := exec.Command("gh", "issue", "close",
@@ -199,7 +199,7 @@ func deleteTestIssue(t *testing.T, issueNum int) {
 func getIssueLabels(t *testing.T, issueNum int) []string {
 	t.Helper()
 
-	repo := "rubrical-works/gh-pmu-e2e-test"
+	repo := "rubrical-worker/gh-pmu-e2e-test"
 	cmd := exec.Command("gh", "issue", "view",
 		"--repo", repo,
 		strconv.Itoa(issueNum),
@@ -256,7 +256,7 @@ func deleteTestProject(t *testing.T, projectNumber int) {
 
 	cmd := exec.Command("gh", "project", "delete",
 		strconv.Itoa(projectNumber),
-		"--owner", "rubrical-works",
+		"--owner", "rubrical-worker",
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Logf("Warning: failed to delete test project #%d: %v\nOutput: %s", projectNumber, err, output)
