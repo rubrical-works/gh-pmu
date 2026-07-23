@@ -21,7 +21,11 @@ type mockCreateClient struct {
 	issuesByLabel []api.Issue
 
 	// Capture for verification
-	lastBody string
+	lastBody      string
+	lastLabels    []string
+	lastAssignees []string
+	lastMilestone string
+	setFieldCalls []createSetFieldCall
 
 	// Error injection
 	createIssueErr          error
@@ -57,6 +61,9 @@ func (m *mockCreateClient) CreateIssueWithOptions(owner, repo, title, body strin
 		return nil, m.createIssueErr
 	}
 	m.lastBody = body
+	m.lastLabels = labels
+	m.lastAssignees = assignees
+	m.lastMilestone = milestone
 	issue := m.createdIssue
 	issue.Title = title
 	return issue, nil
@@ -84,7 +91,13 @@ func (m *mockCreateClient) AddIssueToProject(projectID, issueID string) (string,
 }
 
 func (m *mockCreateClient) SetProjectItemField(projectID, itemID, fieldName, value string) error {
+	m.setFieldCalls = append(m.setFieldCalls, createSetFieldCall{fieldName: fieldName, value: value})
 	return m.setProjectItemFieldErr
+}
+
+type createSetFieldCall struct {
+	fieldName string
+	value     string
 }
 
 func (m *mockCreateClient) GetOpenIssuesByLabel(owner, repo, label string) ([]api.Issue, error) {
@@ -264,108 +277,106 @@ func TestCreateCommand_RequiresTitleInNonInteractiveMode(t *testing.T) {
 }
 
 // ============================================================================
-// createOptions Tests
-// ============================================================================
-
-func TestCreateOptions_DefaultValues(t *testing.T) {
-	opts := &createOptions{}
-
-	if opts.title != "" {
-		t.Errorf("Expected empty title, got %q", opts.title)
-	}
-	if opts.body != "" {
-		t.Errorf("Expected empty body, got %q", opts.body)
-	}
-	if opts.status != "" {
-		t.Errorf("Expected empty status, got %q", opts.status)
-	}
-	if opts.priority != "" {
-		t.Errorf("Expected empty priority, got %q", opts.priority)
-	}
-	if opts.labels != nil {
-		t.Errorf("Expected nil labels, got %v", opts.labels)
-	}
-}
-
-func TestCreateOptions_WithValues(t *testing.T) {
-	opts := &createOptions{
-		title:    "Test Issue",
-		body:     "Test body content",
-		status:   "in_progress",
-		priority: "p1",
-		labels:   []string{"bug", "urgent"},
-	}
-
-	if opts.title != "Test Issue" {
-		t.Errorf("Expected title 'Test Issue', got %q", opts.title)
-	}
-	if opts.body != "Test body content" {
-		t.Errorf("Expected body 'Test body content', got %q", opts.body)
-	}
-	if len(opts.labels) != 2 {
-		t.Errorf("Expected 2 labels, got %d", len(opts.labels))
-	}
-}
-
-// ============================================================================
 // Label Merging Logic Tests
+//
+// These exercise the real merge in runCreateWithDeps (create.go:256-257) and
+// assert on the labels the mock client actually received, so a regression in
+// the merge — dropped config defaults, dropped CLI labels, or wrong order —
+// fails the test.
 // ============================================================================
+
+// runCreateForLabels invokes the real create path with the given config default
+// labels and CLI labels, returning the labels that reached the API client.
+func runCreateForLabels(t *testing.T, configLabels, cliLabels []string) []string {
+	t.Helper()
+
+	client := newMockCreateClient()
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"owner/repo"},
+		Defaults:     config.Defaults{Labels: configLabels},
+	}
+	opts := &createOptions{title: "Test Issue", labels: cliLabels}
+
+	cmd := NewRootCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	if err := runCreateWithDeps(cmd, opts, cfg, client, "owner", "repo"); err != nil {
+		t.Fatalf("runCreateWithDeps failed: %v", err)
+	}
+	return client.lastLabels
+}
 
 func TestLabelMerging_EmptyDefaults(t *testing.T) {
-	configLabels := []string{}
-	cliLabels := []string{"bug", "urgent"}
-
-	// Simulate the merging logic from runCreate
-	labels := append([]string{}, configLabels...)
-	labels = append(labels, cliLabels...)
+	labels := runCreateForLabels(t, []string{}, []string{"bug", "urgent"})
 
 	if len(labels) != 2 {
-		t.Errorf("Expected 2 labels, got %d", len(labels))
+		t.Fatalf("Expected 2 labels, got %d: %v", len(labels), labels)
 	}
 	if labels[0] != "bug" || labels[1] != "urgent" {
-		t.Errorf("Expected [bug, urgent], got %v", labels)
+		t.Errorf("Expected [bug urgent], got %v", labels)
 	}
 }
 
 func TestLabelMerging_WithDefaults(t *testing.T) {
-	configLabels := []string{"enhancement"}
-	cliLabels := []string{"bug", "urgent"}
-
-	// Simulate the merging logic from runCreate
-	labels := append([]string{}, configLabels...)
-	labels = append(labels, cliLabels...)
+	labels := runCreateForLabels(t, []string{"enhancement"}, []string{"bug", "urgent"})
 
 	if len(labels) != 3 {
-		t.Errorf("Expected 3 labels, got %d", len(labels))
+		t.Fatalf("Expected 3 labels, got %d: %v", len(labels), labels)
 	}
-	if labels[0] != "enhancement" {
-		t.Errorf("Expected first label 'enhancement', got %q", labels[0])
+	// Config defaults must precede CLI labels.
+	if labels[0] != "enhancement" || labels[1] != "bug" || labels[2] != "urgent" {
+		t.Errorf("Expected [enhancement bug urgent], got %v", labels)
 	}
 }
 
 func TestLabelMerging_NoCLILabels(t *testing.T) {
-	configLabels := []string{"enhancement", "auto-created"}
-	var cliLabels []string
-
-	// Simulate the merging logic from runCreate
-	labels := append([]string{}, configLabels...)
-	labels = append(labels, cliLabels...)
+	labels := runCreateForLabels(t, []string{"enhancement", "auto-created"}, nil)
 
 	if len(labels) != 2 {
-		t.Errorf("Expected 2 labels, got %d", len(labels))
+		t.Fatalf("Expected 2 labels, got %d: %v", len(labels), labels)
+	}
+	if labels[0] != "enhancement" || labels[1] != "auto-created" {
+		t.Errorf("Expected [enhancement auto-created], got %v", labels)
 	}
 }
 
 func TestLabelMerging_BothEmpty(t *testing.T) {
-	configLabels := []string{}
-	var cliLabels []string
-
-	// Simulate the merging logic from runCreate
-	labels := append([]string{}, configLabels...)
-	labels = append(labels, cliLabels...)
+	labels := runCreateForLabels(t, []string{}, nil)
 
 	if len(labels) != 0 {
-		t.Errorf("Expected 0 labels, got %d", len(labels))
+		t.Errorf("Expected 0 labels, got %d: %v", len(labels), labels)
+	}
+}
+
+func TestLabelMerging_PassesAssigneesAndMilestone(t *testing.T) {
+	client := newMockCreateClient()
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"owner/repo"},
+		Defaults:     config.Defaults{Labels: []string{"enhancement"}},
+	}
+	opts := &createOptions{
+		title:     "Test Issue",
+		labels:    []string{"bug"},
+		assignees: []string{"octocat"},
+		milestone: "v1.0.0",
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	if err := runCreateWithDeps(cmd, opts, cfg, client, "owner", "repo"); err != nil {
+		t.Fatalf("runCreateWithDeps failed: %v", err)
+	}
+
+	if len(client.lastAssignees) != 1 || client.lastAssignees[0] != "octocat" {
+		t.Errorf("Expected assignees [octocat], got %v", client.lastAssignees)
+	}
+	if client.lastMilestone != "v1.0.0" {
+		t.Errorf("Expected milestone 'v1.0.0', got %q", client.lastMilestone)
 	}
 }
 
@@ -1778,6 +1789,72 @@ func TestRunCreateWithDeps_WithPriority(t *testing.T) {
 	}
 }
 
+// #863 AC1: create resolves the status/priority field NAMES from cfg.Fields
+// rather than hardcoding "Status"/"Priority".
+func TestRunCreateWithDeps_UsesConfiguredFieldNames(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+		Fields: map[string]config.Field{
+			"status":   {Field: "Workflow", Values: map[string]string{"todo": "Todo"}},
+			"priority": {Field: "Urgency", Values: map[string]string{"p1": "P1"}},
+		},
+	}
+
+	cmd := newCreateCommand()
+	opts := &createOptions{title: "Test Issue", status: "todo", priority: "p1"}
+	if err := runCreateWithDeps(cmd, opts, cfg, mock, "owner", "repo"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var sawWorkflow, sawUrgency bool
+	for _, c := range mock.setFieldCalls {
+		if c.fieldName == "Status" || c.fieldName == "Priority" {
+			t.Errorf("expected configured field names, got hardcoded %q", c.fieldName)
+		}
+		if c.fieldName == "Workflow" {
+			sawWorkflow = true
+		}
+		if c.fieldName == "Urgency" {
+			sawUrgency = true
+		}
+	}
+	if !sawWorkflow {
+		t.Errorf("expected status written to 'Workflow' field; calls=%+v", mock.setFieldCalls)
+	}
+	if !sawUrgency {
+		t.Errorf("expected priority written to 'Urgency' field; calls=%+v", mock.setFieldCalls)
+	}
+}
+
+// #863 AC1: absent field mapping falls back to the capitalized default names.
+func TestRunCreateWithDeps_FieldNameFallbacks(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+		Fields:  map[string]config.Field{}, // no status/priority mapping
+	}
+
+	cmd := newCreateCommand()
+	opts := &createOptions{title: "Test Issue", status: "todo", priority: "p1"}
+	if err := runCreateWithDeps(cmd, opts, cfg, mock, "owner", "repo"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var sawStatus, sawPriority bool
+	for _, c := range mock.setFieldCalls {
+		if c.fieldName == "Status" {
+			sawStatus = true
+		}
+		if c.fieldName == "Priority" {
+			sawPriority = true
+		}
+	}
+	if !sawStatus || !sawPriority {
+		t.Errorf("expected fallback 'Status'/'Priority' field names; calls=%+v", mock.setFieldCalls)
+	}
+}
+
 func TestRunCreateWithDeps_WithRelease(t *testing.T) {
 	mock := newMockCreateClient()
 	mock.issuesByLabel = []api.Issue{
@@ -1981,6 +2058,179 @@ func TestRunCreateFromFileWithDeps_MissingTitle(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "title is required in file") {
 		t.Errorf("expected 'title is required in file' error, got: %v", err)
+	}
+}
+
+// ============================================================================
+// #864: --from-file honors flags, validates, and parses once
+// ============================================================================
+
+// writeTempIssueFile writes content to a temp file with the given extension and
+// returns its path (cleaned up by t.Cleanup).
+func writeTempIssueFile(t *testing.T, ext, content string) string {
+	t.Helper()
+	f, err := os.CreateTemp("", "issue-*"+ext)
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	f.Close()
+	t.Cleanup(func() { _ = os.Remove(f.Name()) })
+	return f.Name()
+}
+
+// AC3: unsupported body-source flags are rejected (not silently ignored).
+func TestValidateCreateFromFileFlags_RejectsUnsupportedFlags(t *testing.T) {
+	file := writeTempIssueFile(t, ".yaml", "title: From File\n")
+	cases := []struct {
+		name string
+		opts *createOptions
+		want string
+	}{
+		{"template", &createOptions{fromFile: file, template: "bug"}, "--template"},
+		{"body-file", &createOptions{fromFile: file, bodyFile: "b.md"}, "--body-file"},
+		{"body-stdin", &createOptions{fromFile: file, bodyStdin: true}, "--body-stdin"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateCreateFromFileFlags(tc.opts)
+			if err == nil {
+				t.Fatalf("expected rejection error for %s, got nil", tc.want)
+			}
+			if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "--from-file") {
+				t.Errorf("expected error naming %s and --from-file, got: %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// AC3: --title is honored — it can supply a title missing from the file.
+func TestValidateCreateFromFileFlags_TitleFlagSuppliesMissingTitle(t *testing.T) {
+	file := writeTempIssueFile(t, ".yaml", "body: no title here\n")
+	opts := &createOptions{fromFile: file, title: "CLI Title"}
+	if err := validateCreateFromFileFlags(opts); err != nil {
+		t.Fatalf("expected --title to satisfy title requirement, got: %v", err)
+	}
+	if opts.parsedFile == nil {
+		t.Fatal("expected parsedFile to be stashed for single-parse reuse")
+	}
+}
+
+// AC3/AC5: --title overrides the file title.
+func TestRunCreateFromFileWithDeps_TitleFlagOverridesFile(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{Project: config.Project{Owner: "o", Number: 1}}
+	file := writeTempIssueFile(t, ".yaml", "title: File Title\nbody: b\n")
+
+	opts := &createOptions{fromFile: file, title: "Overridden Title"}
+	if err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mock.createdIssue.Title != "Overridden Title" {
+		t.Errorf("expected CLI --title to win, got %q", mock.createdIssue.Title)
+	}
+}
+
+// AC2: --branch is honored in from-file mode (was silently ignored).
+func TestRunCreateFromFileWithDeps_HonorsBranchFlag(t *testing.T) {
+	mock := newMockCreateClient()
+	mock.issuesByLabel = []api.Issue{{Number: 100, Title: "Branch: v1.0.0"}}
+	cfg := &config.Config{Project: config.Project{Owner: "o", Number: 1}}
+	file := writeTempIssueFile(t, ".yaml", "title: T\nbody: b\n")
+
+	opts := &createOptions{fromFile: file, release: "current"}
+	if err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var branchSet bool
+	for _, c := range mock.setFieldCalls {
+		if c.fieldName == "Branch" && c.value == "v1.0.0" {
+			branchSet = true
+		}
+	}
+	if !branchSet {
+		t.Errorf("expected Branch field set to 'v1.0.0'; calls=%+v", mock.setFieldCalls)
+	}
+}
+
+// AC1: IDPF validation runs on merged values — creating as 'done' with unchecked
+// boxes is rejected in from-file mode, just like the normal path.
+func TestRunCreateFromFileWithDeps_RunsIDPFValidation(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{
+		Project:   config.Project{Owner: "o", Number: 1},
+		Framework: "IDPF",
+		Fields: map[string]config.Field{
+			"status": {Field: "Status", Values: map[string]string{"done": "Done"}},
+		},
+	}
+	file := writeTempIssueFile(t, ".yaml", "title: T\nstatus: done\nbody: \"- [ ] unchecked\"\n")
+
+	opts := &createOptions{fromFile: file}
+	err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r")
+	if err == nil {
+		t.Fatal("expected IDPF validation to reject done+unchecked, got nil")
+	}
+	if !strings.Contains(err.Error(), "unchecked") {
+		t.Errorf("expected unchecked-checkbox validation error, got: %v", err)
+	}
+}
+
+// AC4: file is parsed once — a stashed parsedFile is reused, so execution does not
+// re-read the (here nonexistent) path.
+func TestRunCreateFromFileWithDeps_ReusesPreParsedFile(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{Project: config.Project{Owner: "o", Number: 1}}
+
+	opts := &createOptions{
+		fromFile:   "/nonexistent/should-not-be-read.yaml",
+		parsedFile: &issueFromFile{Title: "Pre-parsed", Body: "b"},
+	}
+	if err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r"); err != nil {
+		t.Fatalf("expected reuse of parsedFile (no re-read), got: %v", err)
+	}
+	if mock.createdIssue.Title != "Pre-parsed" {
+		t.Errorf("expected pre-parsed title, got %q", mock.createdIssue.Title)
+	}
+}
+
+// AC5: CLI --status/--body/--priority take precedence over file values.
+func TestRunCreateFromFileWithDeps_FlagsOverrideFileValues(t *testing.T) {
+	mock := newMockCreateClient()
+	cfg := &config.Config{
+		Project: config.Project{Owner: "o", Number: 1},
+		Fields: map[string]config.Field{
+			"status":   {Field: "Status", Values: map[string]string{"in_progress": "In progress"}},
+			"priority": {Field: "Priority", Values: map[string]string{"p1": "P1"}},
+		},
+	}
+	file := writeTempIssueFile(t, ".yaml", "title: T\nbody: file body\nstatus: backlog\npriority: p3\n")
+
+	opts := &createOptions{fromFile: file, body: "cli body", status: "in_progress", priority: "p1"}
+	if err := runCreateFromFileWithDeps(newCreateCommand(), opts, cfg, mock, "o", "r"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.lastBody != "cli body" {
+		t.Errorf("expected CLI body to win, got %q", mock.lastBody)
+	}
+	var sawInProgress, sawP1 bool
+	for _, c := range mock.setFieldCalls {
+		if c.fieldName == "Status" && c.value == "In progress" {
+			sawInProgress = true
+		}
+		if c.fieldName == "Priority" && c.value == "P1" {
+			sawP1 = true
+		}
+	}
+	if !sawInProgress {
+		t.Errorf("expected CLI --status to win (In progress); calls=%+v", mock.setFieldCalls)
+	}
+	if !sawP1 {
+		t.Errorf("expected CLI --priority to win (P1); calls=%+v", mock.setFieldCalls)
 	}
 }
 

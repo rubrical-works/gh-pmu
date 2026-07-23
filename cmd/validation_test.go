@@ -422,6 +422,98 @@ func TestCountUncheckedBoxes(t *testing.T) {
 }
 
 // =============================================================================
+// #866: Alternate bullet markers (* / +) and uppercase [X] Tests
+// =============================================================================
+
+func TestCountUncheckedBoxes_AlternateBullets(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected int
+	}{
+		{"asterisk bullet unchecked", "* [ ] Todo", 1},
+		{"plus bullet unchecked", "+ [ ] Todo", 1},
+		{"mixed bullet markers", "- [ ] A\n* [ ] B\n+ [ ] C", 3},
+		{"leading whitespace unchecked", "  * [ ] Indented todo", 1},
+		{"asterisk checked not counted as unchecked", "* [x] Done", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := countUncheckedBoxes(tt.body)
+			if result != tt.expected {
+				t.Errorf("countUncheckedBoxes() = %d, want %d", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCountCheckedBoxes_AlternateBulletsAndUppercase(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected int
+	}{
+		{"uppercase X with dash", "- [X] Done", 1},
+		{"asterisk bullet checked", "* [x] Done", 1},
+		{"plus bullet uppercase X", "+ [X] Done", 1},
+		{"mixed markers and case", "- [x] A\n* [X] B\n+ [x] C", 3},
+		{"leading whitespace uppercase", "  - [X] Indented done", 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := countCheckedBoxes(tt.body)
+			if result != tt.expected {
+				t.Errorf("countCheckedBoxes() = %d, want %d", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetUncheckedItems_AlternateBullets(t *testing.T) {
+	body := "* [ ] First item\n+ [ ] Second item\n- [x] Done item"
+	items := getUncheckedItems(body)
+	if len(items) != 2 {
+		t.Fatalf("getUncheckedItems() returned %d items, want 2: %v", len(items), items)
+	}
+	if !strings.Contains(items[0], "First item") {
+		t.Errorf("first item = %q, want to contain 'First item'", items[0])
+	}
+	if !strings.Contains(items[1], "Second item") {
+		t.Errorf("second item = %q, want to contain 'Second item'", items[1])
+	}
+}
+
+func TestValidateStatusTransition_BlocksAlternateBulletUnchecked(t *testing.T) {
+	cfg := &config.Config{Framework: "IDPF-Agile"}
+	ctx := &issueValidationContext{
+		Number:        866,
+		CurrentStatus: "In progress",
+		Body:          "## Acceptance Criteria\n* [ ] Not done yet",
+	}
+
+	err := validateStatusTransition(cfg, ctx, "done", "", false)
+	if err == nil {
+		t.Fatal("expected validation error for unchecked '* [ ]' checkbox, got nil (silent bypass)")
+	}
+}
+
+func TestValidateStatusTransition_UppercaseXCountsAsChecked(t *testing.T) {
+	cfg := &config.Config{Framework: "IDPF-Agile"}
+	ctx := &issueValidationContext{
+		Number:        866,
+		CurrentStatus: "In progress",
+		Body:          "## Acceptance Criteria\n- [X] All done",
+	}
+
+	err := validateStatusTransition(cfg, ctx, "done", "", false)
+	if err != nil {
+		t.Fatalf("expected no error for checked '- [X]' checkbox, got: %v", err)
+	}
+}
+
+// =============================================================================
 // REQ-419: Code Block Checkbox Exclusion Tests
 // =============================================================================
 

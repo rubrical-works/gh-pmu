@@ -34,8 +34,9 @@ func runIntegrityCheck(configPath string, w io.Writer) error {
 		return nil // Can't read config — skip silently
 	}
 
-	// Read committed config via git show
-	committedContent, err := gitShowFile(configDir, "HEAD:"+configName)
+	// Read committed config via git show (cwd-relative pathspec — correct in a
+	// monorepo subdirectory, not just at the repo root)
+	committedContent, err := gitShowFile(configDir, configPathspec("HEAD", configName))
 	if err != nil {
 		// No committed version — skip check (might be new repo)
 		return nil
@@ -61,8 +62,9 @@ func runIntegrityCheck(configPath string, w io.Writer) error {
 	}
 	fmt.Fprintf(w, "Run 'gh pmu config verify' for full details.\n\n")
 
-	// Strict mode: block command execution
-	if isStrictMode(localContent) {
+	// Strict mode: block command execution. Decided from HEAD-or-local so removing
+	// the strict key locally cannot disable enforcement while HEAD still declares it.
+	if isStrictModeEither(localContent, committedContent) {
 		return fmt.Errorf("config integrity check failed (strict mode) — resolve drift before continuing")
 	}
 

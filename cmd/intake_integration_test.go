@@ -104,10 +104,10 @@ func TestRunIntake_Integration_ApplyWithFields(t *testing.T) {
 	testutil.AssertContains(t, result.Stdout, "Added")
 
 	// Verify fields are set
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-	testutil.AssertContains(t, viewResult.Stdout, "In progress")
-	testutil.AssertContains(t, viewResult.Stdout, "P0")
+	testutil.AssertIssueFields(t, issueNum, map[string]string{
+		"status":   "In progress",
+		"priority": "P0",
+	})
 }
 
 // TestRunIntake_Integration_JSONOutput tests --json output format

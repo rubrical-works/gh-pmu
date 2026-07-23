@@ -7,11 +7,13 @@ require (
 	github.com/cli/go-gh/v2 v2.12.1
 	github.com/cli/shurcooL-graphql v0.0.4
 	github.com/spf13/cobra v1.10.1
+	github.com/vektah/gqlparser/v2 v2.5.36
 	golang.org/x/term v0.30.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
+	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect

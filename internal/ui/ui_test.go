@@ -2,7 +2,9 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -352,6 +354,53 @@ func TestSpinner_StartStop(t *testing.T) {
 	})
 }
 
+func TestSpinner_RestartAfterStop(t *testing.T) {
+	// #870 case 2: Start after Stop must not panic with "close of closed channel".
+	var buf bytes.Buffer
+	s := NewSpinner(&buf, "working")
+
+	s.Start()
+	time.Sleep(20 * time.Millisecond)
+	s.Stop()
+
+	// Restart — buggy code spawns a goroutine whose `defer close(s.doneCh)`
+	// panics because doneCh was already closed by the first Stop.
+	s.Start()
+	time.Sleep(20 * time.Millisecond)
+	s.Stop()
+}
+
+func TestSpinner_NoDataRaceOnMessage(t *testing.T) {
+	// #870 case 1: the stopCh clear branch reads s.message without the mutex while
+	// UpdateMessage writes it. Run under -race to detect the race.
+	var buf bytes.Buffer
+	s := NewSpinner(&buf, "initial")
+
+	s.Start()
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-done:
+				return
+			default:
+				s.UpdateMessage(fmt.Sprintf("message-%d", i))
+			}
+		}
+	}()
+
+	// Let the animation and concurrent updates interleave, then Stop while
+	// UpdateMessage is still running so the clear-branch read overlaps a write.
+	time.Sleep(30 * time.Millisecond)
+	s.Stop()
+	close(done)
+	wg.Wait()
+}
+
 func TestSpinner_UpdateMessage(t *testing.T) {
 	t.Run("updates message while running", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -409,13 +458,27 @@ func TestSpinner_OutputFormat(t *testing.T) {
 		s := NewSpinner(&buf, "Test")
 
 		s.Start()
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond) // ≥1 frame at the 80ms tick so maxWidth grows
 		s.Stop()
 
 		output := buf.String()
-		// Should contain carriage return from clearing
-		if !strings.Contains(output, "\r") {
-			t.Errorf("Output should contain carriage return for line clearing, got: %s", output)
+
+		// The clear-on-stop branch (ui.go) writes "\r" + spaces + "\r" to erase the
+		// last frame. A vacuous strings.Contains(output, "\r") check passes even if
+		// that branch is deleted, because every animation frame also emits "\r".
+		// Assert the exact blank-then-CR shape at the tail instead: removing the
+		// clear branch leaves the output ending in the frame's message, not a CR.
+		if !strings.HasSuffix(output, "\r") {
+			t.Fatalf("clear-on-stop must terminate with a carriage return, got: %q", output)
+		}
+		trimmed := strings.TrimSuffix(output, "\r")
+		lastCR := strings.LastIndex(trimmed, "\r")
+		if lastCR < 0 {
+			t.Fatalf("expected a carriage return before the blank clear, got: %q", output)
+		}
+		blank := trimmed[lastCR+1:]
+		if len(blank) == 0 || strings.Trim(blank, " ") != "" {
+			t.Errorf("clear sequence should be CR + blanks + CR, blanks=%q full=%q", blank, output)
 		}
 	})
 
@@ -527,6 +590,70 @@ func TestHeader_MultiByte_WithSubtitle(t *testing.T) {
 		if widths[i] != widths[0] {
 			t.Errorf("Line %d width (%d) != line 0 width (%d)\nLine 0: %q\nLine %d: %q",
 				i, widths[i], widths[0], lines[0], i, lines[i])
+		}
+	}
+}
+
+func TestSummaryBox_MultiByte_AlignedBorders(t *testing.T) {
+	var buf bytes.Buffer
+	u := NewWithOptions(&buf, true) // No color to simplify output parsing
+
+	// Mix a wide multi-byte key with a short ASCII one. The multi-byte key has
+	// more bytes but the SAME rune count is irrelevant here — what matters is that
+	// byte-length padding (len(key)) inflates the pad for the ASCII key and
+	// misaligns the value column. visibleWidth-based padding keeps them aligned.
+	items := map[string]string{
+		"日本語": "valA", // 3 runes, 9 bytes
+		"ID":  "valB", // 2 runes, 2 bytes
+	}
+	order := []string{"日本語", "ID"}
+	u.SummaryBox("Summary", items, order)
+
+	// SummaryBox emits a leading blank line before the top border; trim it so
+	// lines[0] is the actual top border.
+	output := strings.Trim(buf.String(), "\n")
+	lines := strings.Split(output, "\n")
+
+	// (1) Borders/rows all render to the same visible width.
+	if len(lines) < 4 {
+		t.Fatalf("Expected at least 4 lines (top, title, blank, keys, bottom), got %d", len(lines))
+	}
+	base := visibleWidth(lines[0])
+	for i, line := range lines {
+		if visibleWidth(line) != base {
+			t.Errorf("Line %d visible width (%d) != top border width (%d)\nTop:    %q\nLine %d: %q",
+				i, visibleWidth(line), base, lines[0], i, line)
+		}
+	}
+
+	// (2) Value column alignment — the real regression guard. With len(key)-byte
+	// padding the wide multi-byte key inflates maxKeyLen and the ASCII row's value
+	// starts several columns further right. Assert every value begins at the same
+	// visible column. A borders-only check (1) passes even with the bug because the
+	// render loop pads all rows to the box width, so this assertion is essential.
+	valCols := make([]int, 0, len(order))
+	for _, key := range order {
+		val := items[key]
+		var keyLine string
+		for _, line := range lines {
+			if strings.Contains(line, key+":") {
+				keyLine = line
+				break
+			}
+		}
+		if keyLine == "" {
+			t.Fatalf("no rendered line found for key %q", key)
+		}
+		vi := strings.Index(keyLine, val)
+		if vi < 0 {
+			t.Fatalf("value %q not found in line %q", val, keyLine)
+		}
+		valCols = append(valCols, visibleWidth(keyLine[:vi]))
+	}
+	for i := 1; i < len(valCols); i++ {
+		if valCols[i] != valCols[0] {
+			t.Errorf("value column for %q (%d) != value column for %q (%d) — keys misaligned",
+				order[i], valCols[i], order[0], valCols[0])
 		}
 	}
 }

@@ -14,6 +14,9 @@ type mockCommentClient struct {
 	issue   *api.Issue
 	comment *api.Comment
 
+	// Call tracking
+	addCommentBodies []string
+
 	// Error injection
 	getIssueErr   error
 	addCommentErr error
@@ -44,6 +47,7 @@ func (m *mockCommentClient) GetIssueByNumber(owner, repo string, number int) (*a
 }
 
 func (m *mockCommentClient) AddIssueComment(issueID, body string) (*api.Comment, error) {
+	m.addCommentBodies = append(m.addCommentBodies, body)
 	if m.addCommentErr != nil {
 		return nil, m.addCommentErr
 	}
@@ -187,6 +191,27 @@ func TestRunCommentWithDeps_NoBodySource(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "one of --body, --body-file (-F), or --body-stdin is required") {
 		t.Errorf("expected body source required error, got: %v", err)
+	}
+}
+
+func TestRunCommentWithDeps_BodyStdinExceedsLimit(t *testing.T) {
+	// #871 finding 9: --body-stdin over 1MB was silently truncated and posted.
+	// It must error instead (mirroring create.go), posting nothing.
+	mock := newMockCommentClient()
+	cmd := newCommentCommand()
+
+	opts := &commentOptions{issueNumber: 42, bodyStdin: true}
+	oversized := strings.Repeat("a", 1*1024*1024+64) // > 1MB
+	err := runCommentWithDeps(cmd, opts, mock, "owner", "repo", strings.NewReader(oversized))
+
+	if err == nil {
+		t.Fatal("expected error for stdin body exceeding 1MB, got nil (silent truncation)")
+	}
+	if !strings.Contains(err.Error(), "1MB") {
+		t.Errorf("expected size-limit error mentioning 1MB, got: %v", err)
+	}
+	if len(mock.addCommentBodies) != 0 {
+		t.Errorf("expected no comment posted on oversized input, got %d", len(mock.addCommentBodies))
 	}
 }
 

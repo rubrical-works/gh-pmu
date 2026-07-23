@@ -9,11 +9,13 @@ import (
 	"github.com/rubrical-works/gh-pmu/internal/config"
 )
 
-// Regex patterns for checkbox detection
+// Regex patterns for checkbox detection.
+// GitHub renders task-list items using any of the -, *, + bullet markers and
+// treats [x] and [X] as checked; these patterns match all of those forms.
 var (
-	checkedBoxRegex    = regexp.MustCompile(`- \[x\]`)
-	uncheckedBoxRegex  = regexp.MustCompile(`- \[ \]`)
-	uncheckedItemRegex = regexp.MustCompile(`- \[ \] (.+)`)
+	checkedBoxRegex    = regexp.MustCompile(`(?m)^\s*[-*+] \[[xX]\]`)
+	uncheckedBoxRegex  = regexp.MustCompile(`(?m)^\s*[-*+] \[ \]`)
+	uncheckedItemRegex = regexp.MustCompile(`(?m)^\s*[-*+] \[ \] (.+)`)
 )
 
 // ValidationError represents a validation failure with actionable message

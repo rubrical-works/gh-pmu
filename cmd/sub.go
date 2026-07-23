@@ -12,6 +12,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// requireResolvedIssue rejects an issue that decoded from a null GraphQL node.
+//
+// GetIssue does not fail on a bare {"repository":{"issue":null}} response with
+// no errors envelope — shurcooL decodes it into a zero-value api.Issue — so a
+// write path would otherwise send a mutation with an empty node id and report
+// success. GitHub currently returns a NOT_FOUND envelope for a lookup by a
+// nonexistent number, which is what makes GetIssue fail today; this guard means
+// the write paths no longer depend on the server rejecting a malformed mutation
+// (#889).
+func requireResolvedIssue(issue *api.Issue, number int) error {
+	if issue == nil || issue.ID == "" {
+		return fmt.Errorf("issue #%d could not be resolved (empty node id); refusing to send a mutation", number)
+	}
+	return nil
+}
+
 func newSubCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sub",
@@ -92,18 +108,19 @@ func runSubAdd(cmd *cobra.Command, args []string, opts *subAddOptions) error {
 		return fmt.Errorf("invalid child issue: %w", err)
 	}
 
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// Empty defaults are tolerated because issue args may be fully qualified; an
+	// explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 
@@ -135,11 +152,17 @@ func runSubAdd(cmd *cobra.Command, args []string, opts *subAddOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to get parent issue #%d: %w", parentNumber, err)
 	}
+	if err := requireResolvedIssue(parentIssue, parentNumber); err != nil {
+		return err
+	}
 
 	// Validate child issue exists
 	childIssue, err := client.GetIssue(childOwner, childRepo, childNumber)
 	if err != nil {
 		return fmt.Errorf("failed to get child issue #%d: %w", childNumber, err)
+	}
+	if err := requireResolvedIssue(childIssue, childNumber); err != nil {
+		return err
 	}
 
 	// Add sub-issue link
@@ -269,17 +292,14 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 		return fmt.Errorf("invalid parent issue: %w", err)
 	}
 
-	// Default to configured repo if not specified
+	// Default to the configured repo when the parent ref omits owner/repo.
+	// sub create needs a resolved parent, so a missing/malformed config is fatal.
 	if parentOwner == "" || parentRepo == "" {
-		if len(cfg.Repositories) == 0 {
-			return fmt.Errorf("no repository specified and none configured")
+		defOwner, defRepo, dErr := resolveRepoDefaults(cfg, "")
+		if dErr != nil {
+			return dErr
 		}
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid repository format in config: %s", cfg.Repositories[0])
-		}
-		parentOwner = parts[0]
-		parentRepo = parts[1]
+		parentOwner, parentRepo = applyRepoDefaults(parentOwner, parentRepo, defOwner, defRepo)
 	}
 
 	// Determine target repository for new issue
@@ -288,13 +308,11 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	isCrossRepo := false
 
 	if opts.repo != "" {
-		// Parse the --repo flag
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid repository format: %s (expected owner/repo)", opts.repo)
+		var rErr error
+		targetOwner, targetRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		targetOwner = parts[0]
-		targetRepo = parts[1]
 		isCrossRepo = (targetOwner != parentOwner || targetRepo != parentRepo)
 	}
 
@@ -308,6 +326,11 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	parentIssue, err := client.GetIssue(parentOwner, parentRepo, parentNumber)
 	if err != nil {
 		return fmt.Errorf("failed to get parent issue #%d: %w", parentNumber, err)
+	}
+	// Checked before CreateIssue: an unresolved parent must not leave a newly
+	// created orphan issue behind.
+	if err := requireResolvedIssue(parentIssue, parentNumber); err != nil {
+		return err
 	}
 
 	// Build labels list: config defaults + explicit flags + optional inherited
@@ -332,8 +355,12 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 		}
 	}
 
+	// Merge inherited assignees/milestone from the parent when requested.
+	assignees := resolveInheritedAssignees(opts.assignees, parentIssue.Assignees, opts.inheritAssign, isCrossRepo)
+	milestone := resolveInheritedMilestone(opts.milestone, parentIssue.Milestone, opts.inheritMilestone, isCrossRepo)
+
 	// Create the new issue in target repository with extended options
-	newIssue, err := client.CreateIssueWithOptions(targetOwner, targetRepo, opts.title, opts.body, labels, opts.assignees, opts.milestone)
+	newIssue, err := client.CreateIssueWithOptions(targetOwner, targetRepo, opts.title, opts.body, labels, assignees, milestone)
 	if err != nil {
 		return fmt.Errorf("failed to create issue in %s/%s: %w", targetOwner, targetRepo, err)
 	}
@@ -377,11 +404,11 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	if len(labels) > 0 {
 		fmt.Fprintf(w, "  Labels: %s\n", strings.Join(labels, ", "))
 	}
-	if len(opts.assignees) > 0 {
-		fmt.Fprintf(w, "  Assignees: @%s\n", strings.Join(opts.assignees, ", @"))
+	if len(assignees) > 0 {
+		fmt.Fprintf(w, "  Assignees: @%s\n", strings.Join(assignees, ", @"))
 	}
-	if opts.milestone != "" {
-		fmt.Fprintf(w, "  Milestone: %s\n", opts.milestone)
+	if milestone != "" {
+		fmt.Fprintf(w, "  Milestone: %s\n", milestone)
 	}
 	if opts.project > 0 {
 		fmt.Fprintf(w, "  Project: #%d\n", opts.project)
@@ -389,6 +416,46 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	fmt.Fprintf(w, "🔗 %s\n", newIssue.URL)
 
 	return nil
+}
+
+// resolveInheritedAssignees returns the assignee logins to apply to a new
+// sub-issue: the explicitly-requested ones plus, when --inherit-assignees is set
+// and the sub-issue is created in the parent's repository, the parent's
+// assignees. The result is deduplicated and order-stable (explicit first).
+// Cross-repo inheritance is skipped because user membership does not carry across
+// repositories.
+func resolveInheritedAssignees(explicit []string, parentAssignees []api.Actor, inherit, isCrossRepo bool) []string {
+	seen := make(map[string]bool)
+	var result []string
+	add := func(login string) {
+		if login != "" && !seen[login] {
+			seen[login] = true
+			result = append(result, login)
+		}
+	}
+	for _, a := range explicit {
+		add(a)
+	}
+	if inherit && !isCrossRepo {
+		for _, a := range parentAssignees {
+			add(a.Login)
+		}
+	}
+	return result
+}
+
+// resolveInheritedMilestone returns the milestone title to apply to a new
+// sub-issue: the explicitly-requested one, or the parent's when --inherit-milestone
+// is set and the sub-issue is created in the parent's repository. Cross-repo
+// milestone references are not portable, so inheritance is skipped in that case.
+func resolveInheritedMilestone(explicit string, parentMilestone *api.Milestone, inherit, isCrossRepo bool) string {
+	if explicit != "" {
+		return explicit
+	}
+	if inherit && !isCrossRepo && parentMilestone != nil {
+		return parentMilestone.Title
+	}
+	return ""
 }
 
 type subListOptions struct {
@@ -475,18 +542,19 @@ func runSubList(cmd *cobra.Command, args []string, opts *subListOptions) error {
 		return fmt.Errorf("invalid issue: %w", err)
 	}
 
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// Empty defaults are tolerated because issue args may be fully qualified; an
+	// explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 
@@ -947,18 +1015,19 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 		return fmt.Errorf("invalid parent issue: %w", err)
 	}
 
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// Empty defaults are tolerated because issue args may be fully qualified; an
+	// explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 
@@ -980,6 +1049,9 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 	parentIssue, err := client.GetIssue(parentOwner, parentRepo, parentNumber)
 	if err != nil {
 		return fmt.Errorf("failed to get parent issue #%d: %w", parentNumber, err)
+	}
+	if err := requireResolvedIssue(parentIssue, parentNumber); err != nil {
+		return err
 	}
 
 	// Parse all child issue references (args[1:])
@@ -1025,6 +1097,11 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 			results = append(results, fmt.Sprintf("✗ #%d: failed to get issue: %v", child.number, err))
 			continue
 		}
+		if err := requireResolvedIssue(childIssue, child.number); err != nil {
+			failCount++
+			results = append(results, fmt.Sprintf("✗ #%d: %v", child.number, err))
+			continue
+		}
 
 		// Remove sub-issue link
 		err = client.RemoveSubIssue(parentIssue.ID, childIssue.ID)
@@ -1066,10 +1143,24 @@ func runSubRemove(cmd *cobra.Command, args []string, opts *subRemoveOptions) err
 		}
 		fmt.Fprintf(w, "\nSummary: %d succeeded, %d failed\n", successCount, failCount)
 
-		if failCount > 0 && successCount == 0 {
-			return fmt.Errorf("all removals failed")
+		if err := subRemoveBatchError(successCount, failCount, len(children)); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+// subRemoveBatchError returns the error for a batch sub-remove result: any
+// failure yields a non-nil error (partial or total), so scripts see a non-zero
+// exit consistent with the single-child path. Returns nil only when nothing
+// failed.
+func subRemoveBatchError(successCount, failCount, total int) error {
+	if failCount == 0 {
+		return nil
+	}
+	if successCount == 0 {
+		return fmt.Errorf("all %d removals failed", failCount)
+	}
+	return fmt.Errorf("%d of %d removals failed", failCount, total)
 }

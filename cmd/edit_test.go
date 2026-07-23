@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
@@ -183,6 +185,63 @@ func TestRunEditWithDeps_UpdatesBody(t *testing.T) {
 	}
 	if len(mock.updateBodyCalls) != 1 || mock.updateBodyCalls[0] != "New body content" {
 		t.Errorf("Expected body update to 'New body content', got: %v", mock.updateBodyCalls)
+	}
+}
+
+func TestRunEditWithDeps_EmptyBodyFileErrors(t *testing.T) {
+	// #867 finding 4: an explicit --body-file that resolves to empty content must
+	// not be a silent no-op that still reports "Updated issue". It must error.
+	mock := setupMockForEdit()
+	cfg := testEditConfig()
+	cmd, buf := newTestEditCmd()
+
+	emptyFile := filepath.Join(t.TempDir(), "empty.md")
+	if err := os.WriteFile(emptyFile, []byte(""), 0o600); err != nil {
+		t.Fatalf("failed to write empty temp file: %v", err)
+	}
+
+	opts := &editOptions{
+		issueNumber: 123,
+		bodyFile:    emptyFile,
+	}
+
+	// ACT
+	err := runEditWithDeps(cmd, opts, cfg, mock, "testowner", "testrepo")
+
+	// ASSERT
+	if err == nil {
+		t.Fatal("expected error for empty --body-file, got nil (silent no-op)")
+	}
+	if len(mock.updateBodyCalls) != 0 {
+		t.Errorf("expected no body update calls, got: %v", mock.updateBodyCalls)
+	}
+	if contains(buf.String(), "Updated issue") {
+		t.Errorf("expected no success message for empty body, got: %s", buf.String())
+	}
+}
+
+func TestRunEditWithDeps_NonEmptyBodyFileUpdates(t *testing.T) {
+	// Companion to the empty-file case: a non-empty --body-file still updates.
+	mock := setupMockForEdit()
+	cfg := testEditConfig()
+	cmd, _ := newTestEditCmd()
+
+	bodyFile := filepath.Join(t.TempDir(), "body.md")
+	if err := os.WriteFile(bodyFile, []byte("Real body content"), 0o600); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	opts := &editOptions{
+		issueNumber: 123,
+		bodyFile:    bodyFile,
+	}
+
+	err := runEditWithDeps(cmd, opts, cfg, mock, "testowner", "testrepo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(mock.updateBodyCalls) != 1 || mock.updateBodyCalls[0] != "Real body content" {
+		t.Errorf("expected body update to 'Real body content', got: %v", mock.updateBodyCalls)
 	}
 }
 

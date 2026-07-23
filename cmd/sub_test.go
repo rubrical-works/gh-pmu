@@ -442,6 +442,95 @@ func TestSubCreateOptions_Defaults(t *testing.T) {
 	}
 }
 
+// #867 finding 2: --inherit-assignees / --inherit-milestone were defined but
+// never read, so parent assignees/milestone were never inherited despite the
+// advertised (and default-true for milestone) behavior. These tests exercise the
+// extracted resolution helpers that runSubCreate now wires in.
+
+func TestResolveInheritedAssignees(t *testing.T) {
+	parent := []api.Actor{{Login: "alice"}, {Login: "bob"}}
+
+	tests := []struct {
+		name        string
+		explicit    []string
+		inherit     bool
+		isCrossRepo bool
+		expected    []string
+	}{
+		{"inherit off keeps explicit only", []string{"carol"}, false, false, []string{"carol"}},
+		{"inherit on merges parent", []string{"carol"}, true, false, []string{"carol", "alice", "bob"}},
+		{"inherit on cross-repo skips parent", []string{"carol"}, true, true, []string{"carol"}},
+		{"inherit on no explicit", nil, true, false, []string{"alice", "bob"}},
+		{"dedupes overlap", []string{"alice"}, true, false, []string{"alice", "bob"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveInheritedAssignees(tt.explicit, parent, tt.inherit, tt.isCrossRepo)
+			if len(got) != len(tt.expected) {
+				t.Fatalf("resolveInheritedAssignees() = %v, want %v", got, tt.expected)
+			}
+			for i := range got {
+				if got[i] != tt.expected[i] {
+					t.Errorf("resolveInheritedAssignees()[%d] = %q, want %q", i, got[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+func TestResolveInheritedMilestone(t *testing.T) {
+	parent := &api.Milestone{Title: "Sprint 5"}
+
+	tests := []struct {
+		name        string
+		explicit    string
+		parent      *api.Milestone
+		inherit     bool
+		isCrossRepo bool
+		expected    string
+	}{
+		{"explicit wins", "Sprint 9", parent, true, false, "Sprint 9"},
+		{"inherit parent when empty", "", parent, true, false, "Sprint 5"},
+		{"inherit off yields empty", "", parent, false, false, ""},
+		{"cross-repo skips parent", "", parent, true, true, ""},
+		{"nil parent yields empty", "", nil, true, false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveInheritedMilestone(tt.explicit, tt.parent, tt.inherit, tt.isCrossRepo)
+			if got != tt.expected {
+				t.Errorf("resolveInheritedMilestone() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSubRemoveBatchError(t *testing.T) {
+	// #871 finding 5: batch `sub remove` previously returned nil on partial failure
+	// (error only when successCount == 0), inconsistent with the single-child path.
+	// Any failure must now yield a non-nil error.
+	tests := []struct {
+		name                 string
+		success, fail, total int
+		wantErr              bool
+	}{
+		{"all succeeded", 3, 0, 3, false},
+		{"partial failure", 2, 1, 3, true},
+		{"all failed", 0, 3, 3, true},
+		{"none processed", 0, 0, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := subRemoveBatchError(tt.success, tt.fail, tt.total)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("subRemoveBatchError(%d,%d,%d) err=%v, wantErr=%v", tt.success, tt.fail, tt.total, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestSubCreateCommand_HasBodyFlag(t *testing.T) {
 	cmd := NewRootCommand()
 	subCmd, _, err := cmd.Find([]string{"sub", "create"})

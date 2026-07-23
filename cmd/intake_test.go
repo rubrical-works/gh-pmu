@@ -171,6 +171,34 @@ func TestIntakeCommand(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects stray positional arguments", func(t *testing.T) {
+		// #867 finding 1: --apply has NoOptDefVal, so `--apply status:...` leaves
+		// `status:...` as a positional argument. Without an Args validator it was
+		// silently ignored; NoArgs makes it fail loudly.
+		cmd := newIntakeCommand()
+		if cmd.Args == nil {
+			t.Fatal("expected intake to set an Args validator (cobra.NoArgs)")
+		}
+		if err := cmd.Args(cmd, []string{"status:backlog,priority:p1"}); err == nil {
+			t.Error("expected error for stray positional argument, got nil")
+		}
+		if err := cmd.Args(cmd, []string{}); err != nil {
+			t.Errorf("expected no error with zero positional args, got: %v", err)
+		}
+	})
+
+	t.Run("example uses --apply= form for field values", func(t *testing.T) {
+		// #867 finding 1: space-separated `--apply status:...` is silently ignored,
+		// so the help text must show the `--apply=status:...` form instead.
+		cmd := newIntakeCommand()
+		if strings.Contains(cmd.Example, "--apply status:") {
+			t.Error("Example must not show space-separated `--apply status:...` (silently ignored)")
+		}
+		if !strings.Contains(cmd.Example, "--apply=status:") {
+			t.Error("Example should show the `--apply=status:...` form")
+		}
+	})
+
 	t.Run("command is registered in root", func(t *testing.T) {
 		root := NewRootCommand()
 		buf := new(bytes.Buffer)
@@ -231,12 +259,22 @@ func TestOutputIntakeTable(t *testing.T) {
 			t.Fatalf("outputIntakeTable failed: %v", err)
 		}
 
-		// Note: outputIntakeTable writes directly to os.Stdout, not cmd.Out()
-		// We're testing it doesn't error; actual output goes to stdout
+		output := buf.String()
+		if !strings.Contains(output, "NUMBER") || !strings.Contains(output, "TITLE") ||
+			!strings.Contains(output, "REPOSITORY") || !strings.Contains(output, "STATE") {
+			t.Errorf("expected table header with NUMBER/TITLE/REPOSITORY/STATE, got: %s", output)
+		}
+		for _, want := range []string{"#1", "First issue", "#2", "Second issue", "owner/repo", "OPEN"} {
+			if !strings.Contains(output, want) {
+				t.Errorf("expected output to contain %q, got: %s", want, output)
+			}
+		}
 	})
 
 	t.Run("truncates long titles to 50 chars", func(t *testing.T) {
 		cmd := newIntakeCommand()
+		buf := new(bytes.Buffer)
+		cmd.SetOut(buf)
 
 		// Create issue with 60-character title
 		longTitle := strings.Repeat("A", 60)
@@ -249,20 +287,39 @@ func TestOutputIntakeTable(t *testing.T) {
 			},
 		}
 
-		// outputIntakeTable writes to os.Stdout, so we just verify no error
 		err := outputIntakeTable(cmd, issues)
 		if err != nil {
 			t.Fatalf("outputIntakeTable failed with long title: %v", err)
+		}
+
+		output := buf.String()
+		wantTruncated := longTitle[:47] + "..."
+		if !strings.Contains(output, wantTruncated) {
+			t.Errorf("expected truncated title %q, got: %s", wantTruncated, output)
+		}
+		if strings.Contains(output, longTitle) {
+			t.Errorf("expected full title to be truncated, but found it in full: %s", output)
 		}
 	})
 
 	t.Run("handles empty issue list", func(t *testing.T) {
 		cmd := newIntakeCommand()
+		buf := new(bytes.Buffer)
+		cmd.SetOut(buf)
 		issues := []api.Issue{}
 
 		err := outputIntakeTable(cmd, issues)
 		if err != nil {
 			t.Fatalf("outputIntakeTable failed with empty list: %v", err)
+		}
+
+		// Header row is always emitted; no data rows for an empty list.
+		output := buf.String()
+		if !strings.Contains(output, "NUMBER") || !strings.Contains(output, "TITLE") {
+			t.Errorf("expected table header even for empty list, got: %s", output)
+		}
+		if strings.Contains(output, "#") {
+			t.Errorf("expected no issue rows for empty list, got: %s", output)
 		}
 	})
 }
@@ -270,6 +327,8 @@ func TestOutputIntakeTable(t *testing.T) {
 func TestOutputIntakeJSON(t *testing.T) {
 	t.Run("outputs correct JSON structure with dry-run status", func(t *testing.T) {
 		cmd := newIntakeCommand()
+		buf := new(bytes.Buffer)
+		cmd.SetOut(buf)
 
 		issues := []api.Issue{
 			{
@@ -281,30 +340,64 @@ func TestOutputIntakeJSON(t *testing.T) {
 			},
 		}
 
-		// Capture stdout for JSON output
-		// Note: outputIntakeJSON writes to os.Stdout via json.NewEncoder
 		err := outputIntakeJSON(cmd, issues, "dry-run")
 		if err != nil {
 			t.Fatalf("outputIntakeJSON failed: %v", err)
 		}
+
+		var decoded intakeJSONOutput
+		if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+			t.Fatalf("failed to decode JSON output: %v (raw: %s)", err, buf.String())
+		}
+		if decoded.Status != "dry-run" {
+			t.Errorf("expected status 'dry-run', got %q", decoded.Status)
+		}
+		if decoded.Count != 1 {
+			t.Errorf("expected count 1, got %d", decoded.Count)
+		}
+		if len(decoded.Issues) != 1 {
+			t.Fatalf("expected 1 issue, got %d", len(decoded.Issues))
+		}
+		got := decoded.Issues[0]
+		if got.Number != 42 || got.Title != "Test issue" || got.State != "OPEN" {
+			t.Errorf("unexpected issue fields: %+v", got)
+		}
+		if got.URL != "https://github.com/owner/repo/issues/42" {
+			t.Errorf("expected URL to be preserved, got %q", got.URL)
+		}
+		if got.Repository != "owner/repo" {
+			t.Errorf("expected repository 'owner/repo', got %q", got.Repository)
+		}
 	})
 
 	t.Run("status field matches input status", func(t *testing.T) {
-		// Test that various status values are preserved
+		// Test that various status values are preserved in the encoded output
 		statuses := []string{"dry-run", "applied", "untracked"}
 		for _, status := range statuses {
 			cmd := newIntakeCommand()
+			buf := new(bytes.Buffer)
+			cmd.SetOut(buf)
 			issues := []api.Issue{}
 
 			err := outputIntakeJSON(cmd, issues, status)
 			if err != nil {
 				t.Fatalf("outputIntakeJSON failed with status %q: %v", status, err)
 			}
+
+			var decoded intakeJSONOutput
+			if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+				t.Fatalf("failed to decode JSON output: %v (raw: %s)", err, buf.String())
+			}
+			if decoded.Status != status {
+				t.Errorf("expected status %q in output, got %q", status, decoded.Status)
+			}
 		}
 	})
 
 	t.Run("count matches issues length", func(t *testing.T) {
 		cmd := newIntakeCommand()
+		buf := new(bytes.Buffer)
+		cmd.SetOut(buf)
 
 		issues := []api.Issue{
 			{Number: 1, Title: "Issue 1", Repository: api.Repository{Owner: "o", Name: "r"}},
@@ -315,6 +408,17 @@ func TestOutputIntakeJSON(t *testing.T) {
 		err := outputIntakeJSON(cmd, issues, "test")
 		if err != nil {
 			t.Fatalf("outputIntakeJSON failed: %v", err)
+		}
+
+		var decoded intakeJSONOutput
+		if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+			t.Fatalf("failed to decode JSON output: %v (raw: %s)", err, buf.String())
+		}
+		if decoded.Count != 3 {
+			t.Errorf("expected count 3, got %d", decoded.Count)
+		}
+		if len(decoded.Issues) != 3 {
+			t.Errorf("expected 3 issues in output, got %d", len(decoded.Issues))
 		}
 	})
 }

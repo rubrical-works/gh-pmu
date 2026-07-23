@@ -138,3 +138,73 @@ func TestNewClientWithOptions_GraphQLClientIsRetrying(t *testing.T) {
 		t.Errorf("Expected c.rawGQL to be *retryingRawGraphQL, got %T", c.rawGQL)
 	}
 }
+
+// ============================================================================
+// Non-idempotent mutation retry safety (#858)
+// ============================================================================
+//
+// A 502/504 on a create-style mutation is ambiguous: the write may have applied
+// server-side before the response was lost, so a transparent retry can create a
+// duplicate issue/comment/label/field/project. Create-style mutations must
+// therefore retry only on rate limits (rejected before processing), never on
+// 5xx. Idempotent mutations and all queries keep full 5xx retry.
+
+func TestRetryingGraphQL_NonIdempotentMutationSkips5xxRetry(t *testing.T) {
+	gw := &httpStatusError{code: 504, msg: "Gateway Timeout"}
+	inner := &fakeGQL{mutateErrs: []error{gw, gw, gw, gw}}
+	dec := newRetryingGraphQL(inner, 3, []time.Duration{1 * time.Millisecond})
+
+	err := dec.Mutate("CreateIssue", nil, nil)
+	if err != gw {
+		t.Errorf("expected the 504 to surface without retry, got %v", err)
+	}
+	if inner.mutateCalls != 1 {
+		t.Errorf("expected exactly 1 call (no 5xx retry for a create), got %d", inner.mutateCalls)
+	}
+}
+
+func TestRetryingGraphQL_AllNonIdempotentMutationsSkip5xxRetry(t *testing.T) {
+	for _, name := range []string{"CreateIssue", "AddComment", "CreateLabel", "CreateProjectV2Field", "CopyProjectV2"} {
+		t.Run(name, func(t *testing.T) {
+			bg := &httpStatusError{code: 502, msg: "Bad Gateway"}
+			inner := &fakeGQL{mutateErrs: []error{bg, bg, bg, bg}}
+			dec := newRetryingGraphQL(inner, 3, []time.Duration{1 * time.Millisecond})
+
+			err := dec.Mutate(name, nil, nil)
+			if err == nil {
+				t.Fatalf("%s: expected the 5xx error to surface", name)
+			}
+			if inner.mutateCalls != 1 {
+				t.Errorf("%s: expected 1 call (no 5xx retry), got %d", name, inner.mutateCalls)
+			}
+		})
+	}
+}
+
+func TestRetryingGraphQL_NonIdempotentMutationRetriesRateLimit(t *testing.T) {
+	rl := &httpStatusError{code: 429, msg: "Too Many Requests"}
+	inner := &fakeGQL{mutateErrs: []error{rl}} // then success
+	dec := newRetryingGraphQL(inner, 3, []time.Duration{1 * time.Millisecond})
+
+	err := dec.Mutate("CreateIssue", nil, nil)
+	if err != nil {
+		t.Fatalf("expected success after rate-limit retry, got %v", err)
+	}
+	if inner.mutateCalls != 2 {
+		t.Errorf("expected 2 calls (429 is safe to retry for creates), got %d", inner.mutateCalls)
+	}
+}
+
+func TestRetryingGraphQL_IdempotentMutationStillRetries5xx(t *testing.T) {
+	bg := &httpStatusError{code: 502, msg: "Bad Gateway"}
+	inner := &fakeGQL{mutateErrs: []error{bg}} // then success
+	dec := newRetryingGraphQL(inner, 3, []time.Duration{1 * time.Millisecond})
+
+	err := dec.Mutate("UpdateProjectV2ItemFieldValue", nil, nil)
+	if err != nil {
+		t.Fatalf("expected idempotent mutation to retry 5xx and succeed, got %v", err)
+	}
+	if inner.mutateCalls != 2 {
+		t.Errorf("expected 2 calls (idempotent 5xx retry unchanged), got %d", inner.mutateCalls)
+	}
+}

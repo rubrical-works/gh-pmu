@@ -127,16 +127,19 @@ func runInitNonInteractive(cmd *cobra.Command, opts *initOptions) error {
 		framework = "IDPF"
 	}
 
-	// Check if config already exists
+	// Check if a config already exists in the current directory OR any parent
+	// (config.FindConfigFile walks up). Running init from a subdirectory of an
+	// initialized project must not silently create a shadowing nested config or
+	// bypass the sourceProjectGuard.
 	var existingFramework string
 	var existingProjectNumber int
-	if _, err := os.Stat(".gh-pmu.json"); err == nil {
+	if existingPath, findErr := config.FindConfigFile("."); findErr == nil {
 		if existingRaw, err := loadExistingRaw("."); err == nil {
 			existingFramework = existingRaw.Framework
 			existingProjectNumber = existingRaw.Project.Number
 		}
 		if !opts.yes {
-			fmt.Fprintf(os.Stderr, "error: .gh-pmu.json already exists (use --yes to overwrite)\n")
+			fmt.Fprintf(os.Stderr, "error: config already exists at %s (use --yes to overwrite)\n", existingPath)
 			return fmt.Errorf("config already exists")
 		}
 	}
@@ -263,14 +266,16 @@ func runInitExistingProject(cmd *cobra.Command, opts *initOptions) error {
 		framework = "IDPF"
 	}
 
-	// Check if config already exists
+	// Check if a config already exists in the current directory OR any parent
+	// (config.FindConfigFile walks up). Running init from a subdirectory of an
+	// initialized project must not silently create a shadowing nested config.
 	var existingFramework string
-	if _, err := os.Stat(".gh-pmu.json"); err == nil {
+	if existingPath, findErr := config.FindConfigFile("."); findErr == nil {
 		if existingCfg, err := loadExistingFramework("."); err == nil {
 			existingFramework = existingCfg
 		}
 		if !opts.yes {
-			fmt.Fprintf(os.Stderr, "error: .gh-pmu.json already exists (use --yes to overwrite)\n")
+			fmt.Fprintf(os.Stderr, "error: config already exists at %s (use --yes to overwrite)\n", existingPath)
 			return fmt.Errorf("config already exists")
 		}
 	}
@@ -336,33 +341,9 @@ func runInitExistingProject(cmd *cobra.Command, opts *initOptions) error {
 
 	// Validate required fields exist (IDPF only)
 	if framework == "IDPF" {
-		for _, reqField := range defs.Fields.Required {
-			field := findFieldByName(projectFields, reqField.Name)
-			if field == nil {
-				fmt.Fprintf(os.Stderr, "error: required field %q not found in project — create it in the project settings before connecting\n", reqField.Name)
-				return fmt.Errorf("required field %q not found in project", reqField.Name)
-			}
-
-			if field.DataType != reqField.Type {
-				fmt.Fprintf(os.Stderr, "error: field %q has type %s, expected %s\n", reqField.Name, field.DataType, reqField.Type)
-				return fmt.Errorf("field %q has type %s, expected %s", reqField.Name, field.DataType, reqField.Type)
-			}
-
-			if reqField.Type == "SINGLE_SELECT" && len(reqField.Options) > 0 {
-				for _, reqOpt := range reqField.Options {
-					found := false
-					for _, opt := range field.Options {
-						if opt.Name == reqOpt {
-							found = true
-							break
-						}
-					}
-					if !found {
-						fmt.Fprintf(os.Stderr, "error: field %q missing required option %q\n", reqField.Name, reqOpt)
-						return fmt.Errorf("field %q missing required option %q", reqField.Name, reqOpt)
-					}
-				}
-			}
+		if hint, err := validateRequiredFields(projectFields, defs.Fields.Required); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v%s\n", err, hint)
+			return err
 		}
 
 		// Create optional fields if missing (Priority, Branch, …) and refetch
@@ -880,6 +861,48 @@ func ensureOptionalProjectFields(client optionalFieldClient, projectID string, d
 			fmt.Fprintf(errOut, "Warning: failed to create field %q: %v\n", optField.Name, err)
 		}
 	}
+}
+
+// missingFieldHint is operator guidance appended to stderr when a required
+// field is absent. It is deliberately not part of the returned error: both init
+// paths returned byte-identical error strings before this validation was
+// shared, and only runInitExistingProject printed the longer hint (#874).
+const missingFieldHint = " — create it in the project settings before connecting"
+
+// validateRequiredFields checks that every IDPF-required field exists on the
+// project with the expected data type, and that SINGLE_SELECT fields carry
+// every required option.
+//
+// The failure is returned as an error plus an optional stderr-only hint.
+// Callers that print to stderr append the hint; callers that route failures
+// through rollback plumbing ignore it.
+func validateRequiredFields(projectFields []api.ProjectField, required []defaults.FieldDef) (string, error) {
+	for _, reqField := range required {
+		field := findFieldByName(projectFields, reqField.Name)
+		if field == nil {
+			return missingFieldHint, fmt.Errorf("required field %q not found in project", reqField.Name)
+		}
+
+		if field.DataType != reqField.Type {
+			return "", fmt.Errorf("field %q has type %s, expected %s", reqField.Name, field.DataType, reqField.Type)
+		}
+
+		if reqField.Type == "SINGLE_SELECT" && len(reqField.Options) > 0 {
+			for _, reqOpt := range reqField.Options {
+				found := false
+				for _, opt := range field.Options {
+					if opt.Name == reqOpt {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return "", fmt.Errorf("field %q missing required option %q", reqField.Name, reqOpt)
+				}
+			}
+		}
+	}
+	return "", nil
 }
 
 // findFieldByName searches for a field by name in a slice of ProjectFields.

@@ -1,5 +1,5 @@
 ---
-version: "v0.91.1"
+version: "v0.93.0"
 description: Audit project command specs for LLM processing reliability (project)
 argument-hint: "[all|<command-name>|<group description>]"
 copyright: "Rubrical Works (c) 2026"

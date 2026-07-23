@@ -196,6 +196,66 @@ func TestRunBoardWithDeps_WithStatusFilter(t *testing.T) {
 	}
 }
 
+func TestRunBoardWithDeps_InvalidStateErrors(t *testing.T) {
+	// #868 finding 1b: an invalid --state must fail loudly rather than silently
+	// producing an empty board.
+	mock := newMockBoardClient()
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+	}
+
+	cmd := newBoardCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &boardOptions{state: "bogus"}
+	err := runBoardWithDeps(cmd, opts, cfg, mock)
+	if err == nil {
+		t.Fatal("expected error for invalid --state, got nil")
+	}
+	if !strings.Contains(err.Error(), "state") {
+		t.Errorf("expected error to mention 'state', got: %v", err)
+	}
+}
+
+func TestRunBoardWithDeps_SurfacesUnrecognizedStatus(t *testing.T) {
+	// #868 finding 1a: items whose status is not a configured column must not be
+	// silently dropped from output.
+	mock := newMockBoardClient()
+	mock.boardItems = []api.BoardItem{
+		{Number: 1, Title: "Backlog Issue", Status: "Backlog"},
+		{Number: 3, Title: "Weird Issue", Status: "Weird Status"},
+	}
+
+	cfg := &config.Config{
+		Project: config.Project{Owner: "test-org", Number: 1},
+		Fields: map[string]config.Field{
+			"status": {
+				Field:  "Status",
+				Values: map[string]string{"backlog": "Backlog"},
+			},
+		},
+	}
+
+	cmd := newBoardCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &boardOptions{noBorder: true}
+	err := runBoardWithDeps(cmd, opts, cfg, mock)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Weird Status") {
+		t.Errorf("expected unrecognized status 'Weird Status' to be surfaced, got: %s", output)
+	}
+	if !strings.Contains(output, "#3") {
+		t.Errorf("expected unrecognized-status issue #3 to appear, got: %s", output)
+	}
+}
+
 func TestRunBoardWithDeps_WithPriorityFilter(t *testing.T) {
 	mock := newMockBoardClient()
 	mock.boardItems = []api.BoardItem{
@@ -454,6 +514,36 @@ func TestTruncateString(t *testing.T) {
 		if result != tt.expected {
 			t.Errorf("truncateString(%q, %d) = %q, want %q", tt.input, tt.maxLen, result, tt.expected)
 		}
+	}
+}
+
+func TestTruncateString_Runes(t *testing.T) {
+	// #868 finding 1c: truncation must count runes, not bytes, so multi-byte
+	// UTF-8 titles are not sliced mid-rune.
+	tests := []struct {
+		name     string
+		input    string
+		maxLen   int
+		expected string
+	}{
+		{"multibyte under limit unchanged", "café", 10, "café"},
+		{"multibyte exactly at limit", "café", 4, "café"},
+		{"multibyte truncated by rune", "café latte here", 8, "café ..."},
+		{"cjk under limit unchanged", "日本語", 5, "日本語"},
+		{"cjk truncated by rune", "日本語のテスト", 4, "日..."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateString(tt.input, tt.maxLen)
+			if result != tt.expected {
+				t.Errorf("truncateString(%q, %d) = %q, want %q", tt.input, tt.maxLen, result, tt.expected)
+			}
+			// Result must never exceed maxLen runes.
+			if got := len([]rune(result)); got > tt.maxLen {
+				t.Errorf("truncateString(%q, %d) produced %d runes, exceeds maxLen", tt.input, tt.maxLen, got)
+			}
+		})
 	}
 }
 

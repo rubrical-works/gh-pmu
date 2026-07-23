@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/cli/go-gh/v2/pkg/api"
+	"github.com/cli/go-gh/v2/pkg/auth"
 )
 
 // FeatureSubIssues is the GitHub API preview header for sub-issues
@@ -200,9 +201,13 @@ func (h *httpRawGraphQL) DoRaw(query string, headers map[string]string) ([]byte,
 func (h *httpRawGraphQL) DoRawBody(body []byte, headers map[string]string) ([]byte, error) {
 	host := h.host
 	if host == "" {
-		host = "github.com"
+		// Resolve the default host the same way go-gh does (GH_HOST, then gh
+		// config hosts, then github.com) so the raw path targets the configured
+		// host — not a hardcoded api.github.com — and stays in sync with the
+		// typed client (#859).
+		host, _ = auth.DefaultHost()
 	}
-	url := fmt.Sprintf("https://api.%s/graphql", host)
+	url := graphQLEndpoint(host)
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
@@ -229,6 +234,20 @@ func (h *httpRawGraphQL) DoRawBody(body []byte, headers map[string]string) ([]by
 	}
 
 	return data, nil
+}
+
+// graphQLEndpoint builds the GraphQL API endpoint URL for host, mirroring go-gh's
+// (unexported) api.graphQLEndpoint so the raw client matches the typed client in
+// every configuration (#859). GitHub Enterprise Server uses HOST/api/graphql;
+// GitHub.com (and its subdomains, which NormalizeHostname collapses) uses
+// api.HOST/graphql. The niche github.localhost and internal "garage" cases the
+// typed client special-cases are unexported and not reachable by gh-pmu users.
+func graphQLEndpoint(host string) string {
+	host = auth.NormalizeHostname(host)
+	if auth.IsEnterprise(host) {
+		return fmt.Sprintf("https://%s/api/graphql", host)
+	}
+	return fmt.Sprintf("https://api.%s/graphql", host)
 }
 
 // rawHTTPError surfaces the upstream status code through the httpStatusCoder

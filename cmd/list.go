@@ -128,13 +128,13 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 		return fmt.Errorf("failed to get project: %w", err)
 	}
 
-	// Determine repository filter (--repo flag takes precedence over config)
+	// Determine repository filter (--repo flag takes precedence over config).
+	// repoFilter stays as an "owner/repo" string; --repo is validated via the
+	// shared helper (uniform empty-component rejection).
 	repoFilter := ""
 	if opts.repo != "" {
-		// Validate repo format
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		if _, _, err := splitOwnerRepo(opts.repo, "--repo"); err != nil {
+			return err
 		}
 		repoFilter = opts.repo
 	} else if len(cfg.Repositories) > 0 {
@@ -148,6 +148,25 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 	// When no repo: fall back to GetProjectItems (full project scan)
 	stateLower := strings.ToLower(opts.state)
 	useSearchAPI := repoFilter != ""
+
+	// When a client-side-only filter (a project field like status/priority/branch,
+	// no-branch, or sub-issue presence) runs after the fetch, capping the fetch at
+	// --limit can starve it — e.g. `--status done --limit 5` fetches 5 issues of any
+	// status, then filters to done and can yield 0. In that case fetch without a cap
+	// and apply --limit after filtering (below). Server-side filters (assignee/label/
+	// search/state in the search path) are already applied during the fetch and do
+	// not require over-fetching.
+	clientSideFilterActive := opts.status != "" || opts.priority != "" ||
+		opts.branch != "" || opts.noBranch || opts.hasSubIssues
+	if !useSearchAPI {
+		clientSideFilterActive = clientSideFilterActive ||
+			opts.assignee != "" || opts.label != "" || opts.search != "" ||
+			(opts.state != "" && stateLower != "all")
+	}
+	fetchLimit := opts.limit
+	if clientSideFilterActive {
+		fetchLimit = 0 // fetch all; --limit is applied after client-side filtering
+	}
 
 	var items []api.ProjectItem
 
@@ -173,11 +192,11 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 				closedFilters.Labels = []string{opts.label}
 			}
 
-			openIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], openFilters, opts.limit)
+			openIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], openFilters, fetchLimit)
 			if err != nil {
 				return fmt.Errorf("failed to search open issues: %w", err)
 			}
-			closedIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], closedFilters, opts.limit)
+			closedIssues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], closedFilters, fetchLimit)
 			if err != nil {
 				return fmt.Errorf("failed to search closed issues: %w", err)
 			}
@@ -200,7 +219,7 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 				searchFilters.Labels = []string{opts.label}
 			}
 
-			issues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], searchFilters, opts.limit)
+			issues, err := client.SearchRepositoryIssues(repoParts[0], repoParts[1], searchFilters, fetchLimit)
 			if err != nil {
 				return fmt.Errorf("failed to search issues: %w", err)
 			}
@@ -213,9 +232,9 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 	} else {
 		// Full fetch strategy: Use GetProjectItems when no repo filter is available
 		var filter *api.ProjectItemsFilter
-		if opts.limit > 0 {
+		if fetchLimit > 0 {
 			filter = &api.ProjectItemsFilter{
-				Limit: opts.limit,
+				Limit: fetchLimit,
 			}
 		}
 
@@ -255,30 +274,15 @@ func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, 
 	// Apply branch filter
 	if opts.branch != "" {
 		targetBranch := opts.branch
-		if opts.branch == "current" && repoFilter != "" {
-			// Resolve "current" to active branch
-			parts := strings.Split(repoFilter, "/")
-			if len(parts) == 2 {
-				releaseIssues, err := client.GetOpenIssuesByLabel(parts[0], parts[1], "branch")
-				if err == nil {
-					for _, issue := range releaseIssues {
-						// Support both "Branch: " and "Release: " prefixes
-						if strings.HasPrefix(issue.Title, "Branch: ") {
-							targetBranch = strings.TrimPrefix(issue.Title, "Branch: ")
-							if idx := strings.Index(targetBranch, " ("); idx > 0 {
-								targetBranch = targetBranch[:idx]
-							}
-							break
-						} else if strings.HasPrefix(issue.Title, "Release: ") {
-							targetBranch = strings.TrimPrefix(issue.Title, "Release: ")
-							if idx := strings.Index(targetBranch, " ("); idx > 0 {
-								targetBranch = targetBranch[:idx]
-							}
-							break
-						}
-					}
-				}
+		if opts.branch == "current" {
+			// Resolve "current" to the active branch. A failure here must surface
+			// rather than silently filtering by the literal string "current"
+			// (which matches nothing) — mirrors move.go's "no active branch found".
+			resolved, err := resolveCurrentBranchForList(client, repoFilter)
+			if err != nil {
+				return err
 			}
+			targetBranch = resolved
 		}
 		// Filter by both "Branch" and "Release" field names for backward compatibility
 		items = filterByBranchFieldValue(items, targetBranch)
@@ -358,6 +362,43 @@ func filterByEmptyField(items []api.ProjectItem, fieldName string) []api.Project
 		}
 	}
 	return filtered
+}
+
+// resolveCurrentBranchForList resolves --branch current to the active branch
+// tracker's name. It returns an error on every failure path (no repository, a
+// malformed repo, a lookup failure, or no matching tracker) so the caller never
+// silently filters by the literal string "current".
+func resolveCurrentBranchForList(client listClient, repoFilter string) (string, error) {
+	if repoFilter == "" {
+		return "", fmt.Errorf("cannot resolve --branch current: no repository configured (use --repo owner/repo)")
+	}
+	parts := strings.Split(repoFilter, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", fmt.Errorf("cannot resolve --branch current: invalid repository %q", repoFilter)
+	}
+
+	releaseIssues, err := client.GetOpenIssuesByLabel(parts[0], parts[1], "branch")
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve --branch current: %w", err)
+	}
+
+	for _, issue := range releaseIssues {
+		var branch string
+		switch {
+		case strings.HasPrefix(issue.Title, "Branch: "):
+			branch = strings.TrimPrefix(issue.Title, "Branch: ")
+		case strings.HasPrefix(issue.Title, "Release: "):
+			branch = strings.TrimPrefix(issue.Title, "Release: ")
+		default:
+			continue
+		}
+		if idx := strings.Index(branch, " ("); idx > 0 {
+			branch = branch[:idx]
+		}
+		return strings.TrimSpace(branch), nil
+	}
+
+	return "", fmt.Errorf("no active branch found")
 }
 
 // filterByBranchFieldValue filters items by the branch field value

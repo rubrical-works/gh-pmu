@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -435,7 +436,16 @@ func TestOutputFilterTable_WithIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputFilterTable() error = %v", err)
 	}
-	// Function writes to os.Stdout, not buf, so we just verify no error
+
+	output := buf.String()
+	if !strings.Contains(output, "NUMBER\tTITLE\tSTATE") {
+		t.Errorf("expected table header, got: %s", output)
+	}
+	for _, want := range []string{"#42", "Test Issue", "open", "#43", "Another Issue", "closed"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("expected output to contain %q, got: %s", want, output)
+		}
+	}
 }
 
 func TestOutputFilterTable_TitleTruncation(t *testing.T) {
@@ -455,7 +465,15 @@ func TestOutputFilterTable_TitleTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputFilterTable() error = %v", err)
 	}
-	// Function writes to os.Stdout, not buf, so we just verify no error
+
+	output := buf.String()
+	wantTruncated := longTitle[:47] + "..."
+	if !strings.Contains(output, wantTruncated) {
+		t.Errorf("expected truncated title %q, got: %s", wantTruncated, output)
+	}
+	if strings.Contains(output, longTitle) {
+		t.Errorf("expected full title to be truncated, but found it in full: %s", output)
+	}
 }
 
 // ============================================================================
@@ -675,12 +693,21 @@ func TestRunFilterWithDeps_FilterByStatus(t *testing.T) {
 	defer stdin.Close()
 
 	cmd := newFilterCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
 	opts := &filterOptions{status: "ready"}
 	err := runFilterWithDeps(cmd, opts, cfg, mock, stdin)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Output goes to stdout - verified by no error
+
+	output := buf.String()
+	if !strings.Contains(output, "#1") || !strings.Contains(output, "Issue 1") {
+		t.Errorf("expected matching issue #1 in output, got: %s", output)
+	}
+	if strings.Contains(output, "#2") || strings.Contains(output, "Issue 2") {
+		t.Errorf("expected non-matching issue #2 (In Progress) to be filtered out, got: %s", output)
+	}
 }
 
 func TestRunFilterWithDeps_FilterByPriority(t *testing.T) {
@@ -692,6 +719,12 @@ func TestRunFilterWithDeps_FilterByPriority(t *testing.T) {
 				{Field: "Priority", Value: "P1"},
 			},
 		},
+		{
+			Issue: &api.Issue{Number: 2},
+			FieldValues: []api.FieldValue{
+				{Field: "Priority", Value: "P2"},
+			},
+		},
 	}
 	cfg := &config.Config{
 		Project:      config.Project{Owner: "test-org", Number: 1},
@@ -699,68 +732,96 @@ func TestRunFilterWithDeps_FilterByPriority(t *testing.T) {
 		Fields: map[string]config.Field{
 			"priority": {
 				Field:  "Priority",
-				Values: map[string]string{"p1": "P1"},
+				Values: map[string]string{"p1": "P1", "p2": "P2"},
 			},
 		},
 	}
 
-	stdin := createTempStdin(t, `[{"number": 1, "title": "Issue 1", "state": "open"}]`)
+	stdin := createTempStdin(t, `[{"number": 1, "title": "Issue 1", "state": "open"}, {"number": 2, "title": "Issue 2", "state": "open"}]`)
 	defer os.Remove(stdin.Name())
 	defer stdin.Close()
 
 	cmd := newFilterCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
 	opts := &filterOptions{priority: "p1"}
 	err := runFilterWithDeps(cmd, opts, cfg, mock, stdin)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "#1") || !strings.Contains(output, "Issue 1") {
+		t.Errorf("expected matching issue #1 (P1) in output, got: %s", output)
+	}
+	if strings.Contains(output, "#2") || strings.Contains(output, "Issue 2") {
+		t.Errorf("expected non-matching issue #2 (P2) to be filtered out, got: %s", output)
 	}
 }
 
 func TestRunFilterWithDeps_FilterByAssignee(t *testing.T) {
 	mock := newMockFilterClient()
 	mock.projectItems = []api.ProjectItem{
-		{
-			Issue: &api.Issue{Number: 1},
-		},
+		{Issue: &api.Issue{Number: 1}},
+		{Issue: &api.Issue{Number: 2}},
 	}
 	cfg := &config.Config{
 		Project:      config.Project{Owner: "test-org", Number: 1},
 		Repositories: []string{"test-org/repo"},
 	}
 
-	stdin := createTempStdin(t, `[{"number": 1, "title": "Issue 1", "state": "open", "assignees": [{"login": "user1"}]}]`)
+	stdin := createTempStdin(t, `[{"number": 1, "title": "Issue 1", "state": "open", "assignees": [{"login": "user1"}]}, {"number": 2, "title": "Issue 2", "state": "open", "assignees": [{"login": "user2"}]}]`)
 	defer os.Remove(stdin.Name())
 	defer stdin.Close()
 
 	cmd := newFilterCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
 	opts := &filterOptions{assignee: "user1"}
 	err := runFilterWithDeps(cmd, opts, cfg, mock, stdin)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "#1") || !strings.Contains(output, "Issue 1") {
+		t.Errorf("expected matching issue #1 (assignee user1) in output, got: %s", output)
+	}
+	if strings.Contains(output, "#2") || strings.Contains(output, "Issue 2") {
+		t.Errorf("expected non-matching issue #2 (assignee user2) to be filtered out, got: %s", output)
 	}
 }
 
 func TestRunFilterWithDeps_FilterByLabel(t *testing.T) {
 	mock := newMockFilterClient()
 	mock.projectItems = []api.ProjectItem{
-		{
-			Issue: &api.Issue{Number: 1},
-		},
+		{Issue: &api.Issue{Number: 1}},
+		{Issue: &api.Issue{Number: 2}},
 	}
 	cfg := &config.Config{
 		Project:      config.Project{Owner: "test-org", Number: 1},
 		Repositories: []string{"test-org/repo"},
 	}
 
-	stdin := createTempStdin(t, `[{"number": 1, "title": "Issue 1", "state": "open", "labels": [{"name": "bug"}]}]`)
+	stdin := createTempStdin(t, `[{"number": 1, "title": "Issue 1", "state": "open", "labels": [{"name": "bug"}]}, {"number": 2, "title": "Issue 2", "state": "open", "labels": [{"name": "enhancement"}]}]`)
 	defer os.Remove(stdin.Name())
 	defer stdin.Close()
 
 	cmd := newFilterCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
 	opts := &filterOptions{label: "bug"}
 	err := runFilterWithDeps(cmd, opts, cfg, mock, stdin)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "#1") || !strings.Contains(output, "Issue 1") {
+		t.Errorf("expected matching issue #1 (label bug) in output, got: %s", output)
+	}
+	if strings.Contains(output, "#2") || strings.Contains(output, "Issue 2") {
+		t.Errorf("expected non-matching issue #2 (label enhancement) to be filtered out, got: %s", output)
 	}
 }
 
@@ -781,10 +842,23 @@ func TestRunFilterWithDeps_JSONOutput(t *testing.T) {
 	defer stdin.Close()
 
 	cmd := newFilterCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
 	opts := &filterOptions{json: true}
 	err := runFilterWithDeps(cmd, opts, cfg, mock, stdin)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got []FilterInput
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("expected valid JSON output, got parse error %v for: %s", err, buf.String())
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 issue in JSON output, got %d: %s", len(got), buf.String())
+	}
+	if got[0].Number != 1 || got[0].Title != "Issue 1" {
+		t.Errorf("expected JSON issue #1 'Issue 1', got #%d %q", got[0].Number, got[0].Title)
 	}
 }
 

@@ -1,0 +1,7 @@
+{
+  "source": "https://docs.github.com/public/fpt/schema.docs.graphql",
+  "retrieved": "2026-07-14",
+  "bytes": 1519542,
+  "sha256": "744d88c57621107a90c6014c0a912cb226fc9fc09339c0c03dd67acd68d4f858",
+  "note": "Verbatim copy of GitHub's public GraphQL schema (Free/Pro/Team). Never edit by hand — refresh via the procedure in TESTING.md and update this record. Refs #886."
+}

@@ -28,11 +28,20 @@ func WithRetry(fn func() error, maxRetries int) error {
 // This variant is primarily for testing to allow faster tests.
 // If the error carries a Retry-After header, that value overrides the default
 // delay (and is not jittered — server-mandated delay is honored exactly).
+// Retryability is decided by IsRetryable (rate limits + transient 5xx).
 func WithRetryDelays(fn func() error, maxRetries int, delays []time.Duration) error {
+	return withRetryPredicate(fn, maxRetries, delays, IsRetryable)
+}
+
+// withRetryPredicate is the retry core: it retries while shouldRetry reports the
+// error is recoverable. Callers supply the predicate so non-idempotent
+// operations can narrow retries (e.g. rate-limit only) without duplicating the
+// backoff/jitter/Retry-After logic (#858).
+func withRetryPredicate(fn func() error, maxRetries int, delays []time.Duration, shouldRetry func(error) bool) error {
 	var err error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		err = fn()
-		if err == nil || !IsRetryable(err) {
+		if err == nil || !shouldRetry(err) {
 			return err
 		}
 		if attempt < maxRetries {

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -559,9 +561,50 @@ func TestParseSubIssueCountsResponse_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestParseSubIssueCountsResponse_GraphQLErrors(t *testing.T) {
+	// #872 finding 1: a GraphQL errors array must be inspected, not ignored —
+	// otherwise every issue silently gets count 0, indistinguishable from "no
+	// sub-issues".
+	jsonData := []byte(`{"data":{"repository":{}},"errors":[{"message":"rate limited"}]}`)
+	numbers := []int{1, 2}
+
+	_, err := parseSubIssueCountsResponse(jsonData, numbers)
+	if err == nil {
+		t.Fatal("expected error when GraphQL errors array is present, got nil")
+	}
+}
+
 // ============================================================================
 // parseSubIssuesBatchResponse Tests
 // ============================================================================
+
+func TestParseSubIssuesBatchResponse_MalformedItemWarns(t *testing.T) {
+	// #872 finding 2: a malformed per-item response must warn (not silently map to
+	// an empty list that reads as "no sub-issues"). The item is still treated as
+	// empty so the batch continues.
+	data := []byte(`{"data":{"repository":{"i0":{"subIssues":"not-an-object"}}}}`)
+
+	oldErr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	result, _, err := parseSubIssuesBatchResponse(data, []int{5})
+
+	_ = w.Close()
+	os.Stderr = oldErr
+	var buf strings.Builder
+	_, _ = io.Copy(&buf, r)
+
+	if err != nil {
+		t.Fatalf("expected no top-level error for a malformed item, got: %v", err)
+	}
+	if len(result[5]) != 0 {
+		t.Errorf("expected empty sub-issue list for malformed item, got %d", len(result[5]))
+	}
+	if !strings.Contains(buf.String(), "Warning") {
+		t.Errorf("expected a stderr warning for the malformed item, got: %q", buf.String())
+	}
+}
 
 func TestParseSubIssuesBatchResponse_MultipleIssues(t *testing.T) {
 	jsonData := []byte(`{
@@ -844,12 +887,17 @@ func TestListProjects_UserSucceeds(t *testing.T) {
 	}
 }
 
-func TestListProjects_UserEmptyFallsToOrg(t *testing.T) {
+// TestListProjects_UserErrorFallsToOrg verifies the org fallback triggers when
+// the user path FAILS (as GitHub does for an org login: "Could not resolve to a
+// User"). Post-#861, a *successful* user query — even with zero projects — no
+// longer falls through to org (see TestListProjects_ZeroProjectUser); only a
+// user-path error does.
+func TestListProjects_UserErrorFallsToOrg(t *testing.T) {
 	mock := &queryMockClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
 			if name == "ListUserProjects" {
-				// Return empty (no projects)
-				return nil
+				// An org login cannot resolve as a user — GitHub returns an error.
+				return errors.New("Could not resolve to a User with the login of 'myorg'")
 			}
 			if name == "ListOrgProjects" {
 				v := reflect.ValueOf(query).Elem()
@@ -3522,7 +3570,7 @@ func TestParseIssuesBatchResponse_MultipleIssues(t *testing.T) {
 		}
 	}`)
 
-	issues, fieldValues, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 43}, "owner", "repo")
+	issues, fieldValues, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 43}, "", "owner", "repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3578,7 +3626,7 @@ func TestParseIssuesBatchResponse_NullIssue(t *testing.T) {
 		"errors": [{"message": "Could not resolve to an issue", "path": ["repository", "i1"]}]
 	}`)
 
-	issues, _, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 99}, "owner", "repo")
+	issues, _, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 99}, "", "owner", "repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3615,12 +3663,100 @@ func TestParseIssuesBatchResponse_WithFieldValues(t *testing.T) {
 		}
 	}`)
 
-	_, fieldValues, _, err := parseIssuesBatchResponse(data, []int{42}, "owner", "repo")
+	_, fieldValues, _, err := parseIssuesBatchResponse(data, []int{42}, "", "owner", "repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(fieldValues[42]) != 2 {
 		t.Fatalf("expected 2 field values, got %d", len(fieldValues[42]))
+	}
+}
+
+// TestParseIssuesBatchResponse_FiltersByProject covers #856: an issue on more
+// than one project board must surface only the configured project's field
+// values, not a foreign board's Status/Priority.
+func TestParseIssuesBatchResponse_FiltersByProject(t *testing.T) {
+	data := []byte(`{
+		"data": {
+			"repository": {
+				"i0": {
+					"id": "ID1", "number": 42, "title": "Multi-board", "body": "",
+					"state": "OPEN", "url": "https://example.com/42",
+					"author": {"login": "user1"},
+					"assignees": {"nodes": []},
+					"labels": {"nodes": []},
+					"milestone": {"title": ""},
+					"projectItems": {"nodes": [
+						{
+							"project": {"id": "PVT_configured"},
+							"fieldValues": {"nodes": [
+								{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "In progress", "text": "", "field": {"name": "Status"}}
+							]}
+						},
+						{
+							"project": {"id": "PVT_other"},
+							"fieldValues": {"nodes": [
+								{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "Done", "text": "", "field": {"name": "Status"}},
+								{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "P1", "text": "", "field": {"name": "Priority"}}
+							]}
+						}
+					]}
+				}
+			}
+		}
+	}`)
+
+	_, fieldValues, _, err := parseIssuesBatchResponse(data, []int{42}, "PVT_configured", "owner", "repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := fieldValues[42]
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 field value from the configured project, got %d: %+v", len(got), got)
+	}
+	if got[0].Field != "Status" || got[0].Value != "In progress" {
+		t.Errorf("expected Status=In progress from the configured project, got %+v", got[0])
+	}
+	for _, fv := range got {
+		if fv.Value == "Done" || fv.Value == "P1" {
+			t.Errorf("foreign project field leaked into results: %+v", fv)
+		}
+	}
+}
+
+// TestParseIssuesBatchResponse_EmptyProjectIDKeepsAll verifies the backward-compat
+// guard: an empty projectID disables filtering (returns all project items) so
+// callers that cannot resolve a project ID keep the prior behavior.
+func TestParseIssuesBatchResponse_EmptyProjectIDKeepsAll(t *testing.T) {
+	data := []byte(`{
+		"data": {
+			"repository": {
+				"i0": {
+					"id": "ID1", "number": 42, "title": "Multi-board", "body": "",
+					"state": "OPEN", "url": "https://example.com/42",
+					"author": {"login": "user1"},
+					"assignees": {"nodes": []},
+					"labels": {"nodes": []},
+					"milestone": {"title": ""},
+					"projectItems": {"nodes": [
+						{"project": {"id": "PVT_a"}, "fieldValues": {"nodes": [
+							{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "In progress", "text": "", "field": {"name": "Status"}}
+						]}},
+						{"project": {"id": "PVT_b"}, "fieldValues": {"nodes": [
+							{"__typename": "ProjectV2ItemFieldSingleSelectValue", "name": "Done", "text": "", "field": {"name": "Status"}}
+						]}}
+					]}
+				}
+			}
+		}
+	}`)
+
+	_, fieldValues, _, err := parseIssuesBatchResponse(data, []int{42}, "", "owner", "repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fieldValues[42]) != 2 {
+		t.Fatalf("expected all 2 field values when projectID is empty, got %d", len(fieldValues[42]))
 	}
 }
 
@@ -3773,5 +3909,291 @@ func TestDoRawGraphQLBody_NilClient(t *testing.T) {
 	_, err := client.doRawGraphQLBody([]byte(`{}`), nil)
 	if err == nil {
 		t.Fatal("expected error for nil rawGQL")
+	}
+}
+
+// ============================================================================
+// #861: response-handling / attribution
+// ============================================================================
+
+// TestParseIssuesBatchResponse_IntegerPathSegment covers #861 case 1: a GraphQL
+// error whose path contains a list index (integer) must not abort the whole
+// batch. Before the fix, Path []string made json.Unmarshal fail for the entire
+// response.
+func TestParseIssuesBatchResponse_IntegerPathSegment(t *testing.T) {
+	data := []byte(`{
+		"data": {
+			"repository": {
+				"i0": null,
+				"i1": {
+					"id": "ID2", "number": 43, "title": "Second", "body": "",
+					"state": "OPEN", "url": "https://example.com/43",
+					"author": {"login": "u"}, "assignees": {"nodes": []},
+					"labels": {"nodes": []}, "milestone": {"title": ""},
+					"projectItems": {"nodes": []}
+				}
+			}
+		},
+		"errors": [
+			{"message": "boom deep in a list", "path": ["repository", "i0", "projectItems", "nodes", 3, "fieldValues"]}
+		]
+	}`)
+
+	issues, _, issueErrors, err := parseIssuesBatchResponse(data, []int{42, 43}, "", "owner", "repo")
+	if err != nil {
+		t.Fatalf("integer path segment must not abort the batch, got top-level error: %v", err)
+	}
+	if _, ok := issues[43]; !ok {
+		t.Errorf("expected the healthy issue 43 to still parse")
+	}
+	if issueErrors[42] == nil {
+		t.Errorf("expected issue 42 (the errored alias i0) to be mapped to issueErrors")
+	}
+}
+
+// TestListProjects_ZeroProjectUser covers #861 case 2: a user with zero open
+// projects must yield an empty list, not an error from the org fallback.
+func TestListProjects_ZeroProjectUser(t *testing.T) {
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name == "ListUserProjects" {
+				return nil // success, zero open projects (empty result)
+			}
+			if name == "ListOrgProjects" {
+				return errors.New("Could not resolve to an Organization with the login of 'someuser'")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	projects, err := client.ListProjects("someuser")
+	if err != nil {
+		t.Fatalf("zero-project user must return an empty list, got error: %v", err)
+	}
+	if len(projects) != 0 {
+		t.Errorf("expected empty project list, got %d", len(projects))
+	}
+}
+
+// TestGetProject_PreservesBothErrors covers #861 case 3: when both the user and
+// org paths fail, the returned error must preserve both causes, not just the org
+// failure.
+func TestGetProject_PreservesBothErrors(t *testing.T) {
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name == "GetUserProject" {
+				return errors.New("user-path transient boom")
+			}
+			if name == "GetOrgProject" {
+				return errors.New("Could not resolve to an Organization")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	_, err := client.GetProject("someowner", 5)
+	if err == nil {
+		t.Fatal("expected an error when both paths fail")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "user-path transient boom") {
+		t.Errorf("expected the user-path error to be preserved, got: %v", msg)
+	}
+	if !strings.Contains(msg, "Could not resolve to an Organization") {
+		t.Errorf("expected the org-path error to be preserved, got: %v", msg)
+	}
+}
+
+// ============================================================================
+// #860: pagination (AC1/AC5)
+// ============================================================================
+
+// fillConnectionPage populates a GraphQL connection reflect.Value (a struct with
+// Nodes and PageInfo fields) with `count` zero-valued nodes and the given
+// PageInfo, so pagination-loop tests can drive multi-page responses without
+// spelling out every node field.
+func fillConnectionPage(conn reflect.Value, count int, hasNext bool, cursor string) {
+	nodes := conn.FieldByName("Nodes")
+	nodes.Set(reflect.MakeSlice(nodes.Type(), count, count))
+	pi := conn.FieldByName("PageInfo")
+	pi.FieldByName("HasNextPage").SetBool(hasNext)
+	pi.FieldByName("EndCursor").SetString(cursor)
+}
+
+func TestGetOpenIssuesByLabels_Pagination(t *testing.T) {
+	calls := 0
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetIssuesByLabels" {
+				return nil
+			}
+			calls++
+			conn := reflect.ValueOf(query).Elem().FieldByName("Repository").FieldByName("Issues")
+			if calls == 1 {
+				fillConnectionPage(conn, 100, true, "c1")
+			} else {
+				fillConnectionPage(conn, 20, false, "")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	issues, err := client.GetOpenIssuesByLabels("owner", "repo", []string{"branch"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if len(issues) != 120 {
+		t.Errorf("expected 120 issues across 2 pages, got %d", len(issues))
+	}
+}
+
+func TestGetIssueComments_Pagination(t *testing.T) {
+	calls := 0
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetIssueComments" {
+				return nil
+			}
+			calls++
+			conn := reflect.ValueOf(query).Elem().FieldByName("Repository").FieldByName("Issue").FieldByName("Comments")
+			if calls == 1 {
+				fillConnectionPage(conn, 100, true, "c1")
+			} else {
+				fillConnectionPage(conn, 5, false, "")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	comments, err := client.GetIssueComments("owner", "repo", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if len(comments) != 105 {
+		t.Errorf("expected 105 comments across 2 pages, got %d", len(comments))
+	}
+}
+
+func TestListUserProjects_Pagination(t *testing.T) {
+	calls := 0
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "ListUserProjects" {
+				return nil
+			}
+			calls++
+			conn := reflect.ValueOf(query).Elem().FieldByName("User").FieldByName("ProjectsV2")
+			if calls == 1 {
+				fillConnectionPage(conn, 100, true, "c1")
+			} else {
+				fillConnectionPage(conn, 7, false, "")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	projects, err := client.listUserProjects("someuser")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if len(projects) != 107 {
+		t.Errorf("expected 107 projects across 2 pages, got %d", len(projects))
+	}
+}
+
+func TestListOrgProjects_Pagination(t *testing.T) {
+	calls := 0
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "ListOrgProjects" {
+				return nil
+			}
+			calls++
+			conn := reflect.ValueOf(query).Elem().FieldByName("Organization").FieldByName("ProjectsV2")
+			if calls == 1 {
+				fillConnectionPage(conn, 100, true, "c1")
+			} else {
+				fillConnectionPage(conn, 3, false, "")
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	projects, err := client.listOrgProjects("someorg")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if len(projects) != 103 {
+		t.Errorf("expected 103 projects across 2 pages, got %d", len(projects))
+	}
+}
+
+// captureStderr runs fn with os.Stderr redirected to a pipe and returns what was
+// written. Used to assert #860 truncation warnings.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+	fn()
+	_ = w.Close()
+	os.Stderr = old
+	out, _ := io.ReadAll(r)
+	return string(out)
+}
+
+// TestGetProjectItemIDForIssue_TruncationWarning covers #860 AC2: when the issue
+// belongs to more than the fetched cap of project items and the target is not
+// among them, a truncation warning is emitted so the "not in the project" result
+// is not silently misleading.
+func TestGetProjectItemIDForIssue_TruncationWarning(t *testing.T) {
+	mock := &queryMockClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetProjectItemIDForIssue" {
+				return nil
+			}
+			conn := reflect.ValueOf(query).Elem().FieldByName("Repository").FieldByName("Issue").FieldByName("ProjectItems")
+			// One item, in a different project, and there are more pages.
+			nodes := conn.FieldByName("Nodes")
+			nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+			nodes.Index(0).FieldByName("ID").SetString("PVTI_other")
+			nodes.Index(0).FieldByName("Project").FieldByName("ID").SetString("PVT_other")
+			conn.FieldByName("PageInfo").FieldByName("HasNextPage").SetBool(true)
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	var id string
+	var callErr error
+	stderr := captureStderr(t, func() {
+		id, callErr = client.GetProjectItemIDForIssue("PVT_configured", "owner", "repo", 7)
+	})
+
+	if callErr == nil {
+		t.Fatal("expected a 'not in the project' error")
+	}
+	if id != "" {
+		t.Errorf("expected empty item id, got %q", id)
+	}
+	if !strings.Contains(stderr, "Warning") || !strings.Contains(stderr, "more than 20 projects") {
+		t.Errorf("expected a truncation warning on stderr, got: %q", stderr)
 	}
 }

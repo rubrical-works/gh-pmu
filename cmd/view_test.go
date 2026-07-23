@@ -35,6 +35,9 @@ type mockViewClient struct {
 	subIssuesMap    map[int][]api.SubIssue
 	parentIssuesMap map[int]*api.Issue
 	issueErrors     map[int]error
+
+	// Repo-scoped issues for multi-repo collision tests: "owner/repo" -> number -> issue
+	issuesByRepo map[string]map[int]*api.Issue
 }
 
 func newMockViewClient() *mockViewClient {
@@ -58,7 +61,7 @@ func (m *mockViewClient) GetIssue(owner, repo string, number int) (*api.Issue, e
 	return m.issue, nil
 }
 
-func (m *mockViewClient) GetIssueWithProjectFields(owner, repo string, number int) (*api.Issue, []api.FieldValue, error) {
+func (m *mockViewClient) GetIssueWithProjectFields(projectID, owner, repo string, number int) (*api.Issue, []api.FieldValue, error) {
 	if m.getIssueWithProjectFieldsErr != nil {
 		return nil, nil, m.getIssueWithProjectFieldsErr
 	}
@@ -86,10 +89,14 @@ func (m *mockViewClient) GetIssueComments(owner, repo string, number int) ([]api
 	return m.comments, nil
 }
 
-func (m *mockViewClient) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []int) (map[int]*api.Issue, map[int][]api.FieldValue, map[int]error, error) {
+func (m *mockViewClient) GetIssuesWithProjectFieldsBatch(projectID, owner, repo string, numbers []int) (map[int]*api.Issue, map[int][]api.FieldValue, map[int]error, error) {
 	issues := make(map[int]*api.Issue)
 	fvs := make(map[int][]api.FieldValue)
 	errs := make(map[int]error)
+	repoIssues := m.issues
+	if m.issuesByRepo != nil {
+		repoIssues = m.issuesByRepo[owner+"/"+repo]
+	}
 	for _, n := range numbers {
 		if m.issueErrors != nil {
 			if e, ok := m.issueErrors[n]; ok {
@@ -97,8 +104,8 @@ func (m *mockViewClient) GetIssuesWithProjectFieldsBatch(owner, repo string, num
 				continue
 			}
 		}
-		if m.issues != nil {
-			if iss, ok := m.issues[n]; ok {
+		if repoIssues != nil {
+			if iss, ok := repoIssues[n]; ok {
 				issues[n] = iss
 			}
 		}
@@ -509,8 +516,19 @@ func TestOutputViewTable_BasicIssue(t *testing.T) {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
 
-	// Note: outputViewTable writes to os.Stdout, not cmd buffer
-	// We verify no error occurred
+	output := buf.String()
+	if !strings.Contains(output, "Test Issue Title #42") {
+		t.Errorf("expected output to contain title and number, got:\n%s", output)
+	}
+	if !strings.Contains(output, "State: OPEN") {
+		t.Errorf("expected output to contain state, got:\n%s", output)
+	}
+	if !strings.Contains(output, "https://github.com/owner/repo/issues/42") {
+		t.Errorf("expected output to contain URL, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Author: @testuser") {
+		t.Errorf("expected output to contain author, got:\n%s", output)
+	}
 }
 
 func TestOutputViewTable_WithAssignees(t *testing.T) {
@@ -532,6 +550,11 @@ func TestOutputViewTable_WithAssignees(t *testing.T) {
 	err := outputViewTable(cmd, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Assignees: @user1, @user2") {
+		t.Errorf("expected output to list assignees, got:\n%s", output)
 	}
 }
 
@@ -555,6 +578,11 @@ func TestOutputViewTable_WithLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Labels: bug, priority:high") {
+		t.Errorf("expected output to list labels, got:\n%s", output)
+	}
 }
 
 func TestOutputViewTable_WithMilestone(t *testing.T) {
@@ -573,6 +601,11 @@ func TestOutputViewTable_WithMilestone(t *testing.T) {
 	err := outputViewTable(cmd, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Milestone: v1.0.0") {
+		t.Errorf("expected output to show milestone, got:\n%s", output)
 	}
 }
 
@@ -597,6 +630,17 @@ func TestOutputViewTable_WithFieldValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Project Fields:") {
+		t.Errorf("expected output to contain project fields header, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Status: In Progress") {
+		t.Errorf("expected output to contain Status field value, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Priority: High") {
+		t.Errorf("expected output to contain Priority field value, got:\n%s", output)
+	}
 }
 
 func TestOutputViewTable_WithParentIssue(t *testing.T) {
@@ -620,6 +664,11 @@ func TestOutputViewTable_WithParentIssue(t *testing.T) {
 	err := outputViewTable(cmd, issue, nil, nil, parentIssue, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Parent Issue: #10 - Parent Issue") {
+		t.Errorf("expected output to show parent issue reference, got:\n%s", output)
 	}
 }
 
@@ -648,6 +697,24 @@ func TestOutputViewTable_WithSubIssues(t *testing.T) {
 	err := outputViewTable(cmd, issue, nil, subIssues, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Sub-Issues:") {
+		t.Errorf("expected output to contain sub-issues header, got:\n%s", output)
+	}
+	if !strings.Contains(output, "[x] #43 - Sub 1") {
+		t.Errorf("expected closed sub-issue #43 rendered as [x], got:\n%s", output)
+	}
+	if !strings.Contains(output, "[ ] #44 - Sub 2") {
+		t.Errorf("expected open sub-issue #44 rendered as [ ], got:\n%s", output)
+	}
+	if !strings.Contains(output, "[x] #45 - Sub 3") {
+		t.Errorf("expected closed sub-issue #45 rendered as [x], got:\n%s", output)
+	}
+	// 2 of 3 closed = 66%
+	if !strings.Contains(output, "2 of 3 sub-issues complete (66%)") {
+		t.Errorf("expected progress summary '2 of 3 ... (66%%)', got:\n%s", output)
 	}
 }
 
@@ -694,6 +761,20 @@ func TestOutputViewTable_WithCrossRepoSubIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
+
+	output := buf.String()
+	// Same-repo sub renders without repo prefix
+	if !strings.Contains(output, "[ ] #43 - Same Repo Sub") {
+		t.Errorf("expected same-repo sub-issue without repo prefix, got:\n%s", output)
+	}
+	// Cross-repo sub renders with owner/repo prefix
+	if !strings.Contains(output, "[x] owner/other-repo#10 - Cross Repo Sub") {
+		t.Errorf("expected cross-repo sub-issue with repo prefix, got:\n%s", output)
+	}
+	// 1 of 2 closed = 50%
+	if !strings.Contains(output, "1 of 2 sub-issues complete (50%)") {
+		t.Errorf("expected progress summary '1 of 2 ... (50%%)', got:\n%s", output)
+	}
 }
 
 func TestOutputViewTable_WithBody(t *testing.T) {
@@ -712,6 +793,14 @@ func TestOutputViewTable_WithBody(t *testing.T) {
 	err := outputViewTable(cmd, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "This is the issue body with some content.") {
+		t.Errorf("expected output to contain issue body, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Multiple paragraphs.") {
+		t.Errorf("expected output to contain full multi-paragraph body, got:\n%s", output)
 	}
 }
 
@@ -755,6 +844,42 @@ func TestOutputViewTable_FullIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
 	}
+
+	output := buf.String()
+	// Header + core identity
+	if !strings.Contains(output, "Full Featured Issue #42") {
+		t.Errorf("expected output to contain title and number, got:\n%s", output)
+	}
+	// Assignees and labels
+	if !strings.Contains(output, "Assignees: @dev1, @dev2") {
+		t.Errorf("expected output to list assignees, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Labels: bug, urgent") {
+		t.Errorf("expected output to list labels, got:\n%s", output)
+	}
+	// Milestone
+	if !strings.Contains(output, "Milestone: v2.0") {
+		t.Errorf("expected output to show milestone, got:\n%s", output)
+	}
+	// Project fields
+	if !strings.Contains(output, "Status: In Progress") || !strings.Contains(output, "Priority: P1") {
+		t.Errorf("expected output to show project fields, got:\n%s", output)
+	}
+	// Parent issue
+	if !strings.Contains(output, "Parent Issue: #10 - Epic") {
+		t.Errorf("expected output to show parent issue, got:\n%s", output)
+	}
+	// Sub-issues + progress (1 of 2 closed = 50%)
+	if !strings.Contains(output, "[x] #43 - Task 1") || !strings.Contains(output, "[ ] #44 - Task 2") {
+		t.Errorf("expected output to list sub-issues with state markers, got:\n%s", output)
+	}
+	if !strings.Contains(output, "1 of 2 sub-issues complete (50%)") {
+		t.Errorf("expected progress summary '1 of 2 ... (50%%)', got:\n%s", output)
+	}
+	// Body
+	if !strings.Contains(output, "Issue body content") {
+		t.Errorf("expected output to contain body, got:\n%s", output)
+	}
 }
 
 // ============================================================================
@@ -777,6 +902,23 @@ func TestOutputViewJSON_BasicIssue(t *testing.T) {
 	err := outputViewJSON(cmd, opts, issue, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("expected valid JSON, got error: %v\noutput: %s", err, buf.String())
+	}
+	if decoded["number"].(float64) != 42 {
+		t.Errorf("expected number 42, got %v", decoded["number"])
+	}
+	if decoded["title"] != "Test Issue" {
+		t.Errorf("expected title 'Test Issue', got %v", decoded["title"])
+	}
+	if decoded["state"] != "OPEN" {
+		t.Errorf("expected state 'OPEN', got %v", decoded["state"])
+	}
+	if decoded["author"] != "testuser" {
+		t.Errorf("expected author 'testuser', got %v", decoded["author"])
 	}
 }
 
@@ -806,6 +948,32 @@ func TestOutputViewJSON_WithAllFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
 	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("expected valid JSON, got error: %v\noutput: %s", err, buf.String())
+	}
+	if decoded["title"] != "Full Issue" {
+		t.Errorf("expected title 'Full Issue', got %v", decoded["title"])
+	}
+	if decoded["body"] != "Issue description" {
+		t.Errorf("expected body 'Issue description', got %v", decoded["body"])
+	}
+	if decoded["milestone"] != "v1.0" {
+		t.Errorf("expected milestone 'v1.0', got %v", decoded["milestone"])
+	}
+	assignees, ok := decoded["assignees"].([]interface{})
+	if !ok || len(assignees) != 2 || assignees[0] != "dev1" || assignees[1] != "dev2" {
+		t.Errorf("expected assignees [dev1 dev2], got %v", decoded["assignees"])
+	}
+	labels, ok := decoded["labels"].([]interface{})
+	if !ok || len(labels) != 2 || labels[0] != "bug" || labels[1] != "priority:high" {
+		t.Errorf("expected labels [bug priority:high], got %v", decoded["labels"])
+	}
+	fv, ok := decoded["fieldValues"].(map[string]interface{})
+	if !ok || fv["Status"] != "In Progress" || fv["Priority"] != "High" {
+		t.Errorf("expected fieldValues Status/Priority, got %v", decoded["fieldValues"])
+	}
 }
 
 func TestOutputViewJSON_WithSubIssues(t *testing.T) {
@@ -831,6 +999,27 @@ func TestOutputViewJSON_WithSubIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
 	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("expected valid JSON, got error: %v\noutput: %s", err, buf.String())
+	}
+	subs, ok := decoded["subIssues"].([]interface{})
+	if !ok || len(subs) != 3 {
+		t.Fatalf("expected 3 sub-issues, got %v", decoded["subIssues"])
+	}
+	first := subs[0].(map[string]interface{})
+	if first["number"].(float64) != 43 || first["title"] != "Sub 1" || first["state"] != "CLOSED" {
+		t.Errorf("expected first sub-issue #43 'Sub 1' CLOSED, got %v", first)
+	}
+	prog, ok := decoded["subProgress"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected subProgress present, got %v", decoded["subProgress"])
+	}
+	// 2 closed of 3 = 66%
+	if prog["total"].(float64) != 3 || prog["completed"].(float64) != 2 || prog["percentage"].(float64) != 66 {
+		t.Errorf("expected progress total=3 completed=2 percentage=66, got %v", prog)
+	}
 }
 
 func TestOutputViewJSON_WithParentIssue(t *testing.T) {
@@ -855,6 +1044,18 @@ func TestOutputViewJSON_WithParentIssue(t *testing.T) {
 	err := outputViewJSON(cmd, opts, issue, nil, nil, parentIssue, nil)
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("expected valid JSON, got error: %v\noutput: %s", err, buf.String())
+	}
+	parent, ok := decoded["parentIssue"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected parentIssue present, got %v", decoded["parentIssue"])
+	}
+	if parent["number"].(float64) != 10 || parent["title"] != "Parent Issue" {
+		t.Errorf("expected parent #10 'Parent Issue', got %v", parent)
 	}
 }
 
@@ -884,6 +1085,25 @@ func TestOutputViewJSON_SubIssueProgress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
 	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("expected valid JSON, got error: %v\noutput: %s", err, buf.String())
+	}
+	prog, ok := decoded["subProgress"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected subProgress present, got %v", decoded["subProgress"])
+	}
+	// 3 closed of 5 = 60%
+	if prog["total"].(float64) != 5 {
+		t.Errorf("expected total 5, got %v", prog["total"])
+	}
+	if prog["completed"].(float64) != 3 {
+		t.Errorf("expected completed 3, got %v", prog["completed"])
+	}
+	if prog["percentage"].(float64) != 60 {
+		t.Errorf("expected percentage 60, got %v", prog["percentage"])
+	}
 }
 
 func TestOutputViewTable_WithComments(t *testing.T) {
@@ -906,6 +1126,23 @@ func TestOutputViewTable_WithComments(t *testing.T) {
 	err := outputViewTable(cmd, issue, nil, nil, nil, comments)
 	if err != nil {
 		t.Fatalf("outputViewTable() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Comments (2):") {
+		t.Errorf("expected comments count header, got:\n%s", output)
+	}
+	if !strings.Contains(output, "@user1 commented on 2024-01-01T10:00:00Z:") {
+		t.Errorf("expected first comment attribution, got:\n%s", output)
+	}
+	if !strings.Contains(output, "First comment") {
+		t.Errorf("expected first comment body, got:\n%s", output)
+	}
+	if !strings.Contains(output, "@user2 commented on 2024-01-02T11:00:00Z:") {
+		t.Errorf("expected second comment attribution, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Second comment") {
+		t.Errorf("expected second comment body, got:\n%s", output)
 	}
 }
 
@@ -931,118 +1168,219 @@ func TestOutputViewJSON_WithComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outputViewJSON() error = %v", err)
 	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("expected valid JSON, got error: %v\noutput: %s", err, buf.String())
+	}
+	cs, ok := decoded["comments"].([]interface{})
+	if !ok || len(cs) != 2 {
+		t.Fatalf("expected 2 comments, got %v", decoded["comments"])
+	}
+	c0 := cs[0].(map[string]interface{})
+	if c0["author"] != "user1" || c0["body"] != "First comment" || c0["createdAt"] != "2024-01-01T10:00:00Z" {
+		t.Errorf("expected first comment user1/First comment, got %v", c0)
+	}
+	c1 := cs[1].(map[string]interface{})
+	if c1["author"] != "user2" || c1["body"] != "Second comment" {
+		t.Errorf("expected second comment user2/Second comment, got %v", c1)
+	}
 }
 
 // ============================================================================
 // ViewJSONOutput Structure Tests
 // ============================================================================
 
+// TestViewJSONOutput_Structure and the sub-progress/parent-issue tests below
+// build their output with the real buildViewJSONOutput and assert on what it
+// produced, so a regression in the mapping (dropped assignees, mis-derived
+// progress, unset parent) fails the test. Previously they hand-built a
+// ViewJSONOutput and round-tripped it through encoding/json, which only ever
+// exercised the standard library.
 func TestViewJSONOutput_Structure(t *testing.T) {
-	output := ViewJSONOutput{
+	issue := &api.Issue{
 		Number:    42,
 		Title:     "Test Issue",
 		State:     "OPEN",
 		Body:      "Issue body",
 		URL:       "https://github.com/owner/repo/issues/42",
-		Author:    "testuser",
-		Assignees: []string{"user1", "user2"},
-		Labels:    []string{"bug", "urgent"},
-		Milestone: "v1.0",
-		FieldValues: map[string]string{
-			"Status":   "In Progress",
-			"Priority": "High",
-		},
+		Author:    api.Actor{Login: "testuser"},
+		Assignees: []api.Actor{{Login: "user1"}, {Login: "user2"}},
+		Labels:    []api.Label{{Name: "bug"}, {Name: "urgent"}},
+		Milestone: &api.Milestone{Title: "v1.0"},
 	}
+	fieldValues := []api.FieldValue{
+		{Field: "Status", Value: "In Progress"},
+		{Field: "Priority", Value: "High"},
+	}
+
+	output := buildViewJSONOutput(issue, fieldValues, nil, nil, nil)
+
+	if output.Number != 42 {
+		t.Errorf("Expected Number 42, got %d", output.Number)
+	}
+	if output.Title != "Test Issue" {
+		t.Errorf("Expected Title 'Test Issue', got %s", output.Title)
+	}
+	if output.State != "OPEN" {
+		t.Errorf("Expected State 'OPEN', got %s", output.State)
+	}
+	if output.Body != "Issue body" {
+		t.Errorf("Expected Body 'Issue body', got %s", output.Body)
+	}
+	if output.Author != "testuser" {
+		t.Errorf("Expected Author 'testuser', got %s", output.Author)
+	}
+	if output.Milestone != "v1.0" {
+		t.Errorf("Expected Milestone 'v1.0', got %s", output.Milestone)
+	}
+	if len(output.Assignees) != 2 || output.Assignees[0] != "user1" || output.Assignees[1] != "user2" {
+		t.Errorf("Expected assignees [user1 user2], got %v", output.Assignees)
+	}
+	if len(output.Labels) != 2 || output.Labels[0] != "bug" || output.Labels[1] != "urgent" {
+		t.Errorf("Expected labels [bug urgent], got %v", output.Labels)
+	}
+	if output.FieldValues["Status"] != "In Progress" {
+		t.Errorf("Expected Status 'In Progress', got %s", output.FieldValues["Status"])
+	}
+	if output.FieldValues["Priority"] != "High" {
+		t.Errorf("Expected Priority 'High', got %s", output.FieldValues["Priority"])
+	}
+
+	// Absent relationships must stay absent.
+	if output.SubProgress != nil {
+		t.Errorf("Expected no SubProgress without sub-issues, got %+v", output.SubProgress)
+	}
+	if output.ParentIssue != nil {
+		t.Errorf("Expected no ParentIssue when none passed, got %+v", output.ParentIssue)
+	}
+
+	// The mapped struct must survive encoding as the command emits it.
+	data, err := json.Marshal(output)
+	if err != nil {
+		t.Fatalf("Failed to marshal buildViewJSONOutput result: %v", err)
+	}
+	var parsed ViewJSONOutput
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal emitted JSON: %v", err)
+	}
+	if parsed.Number != 42 || parsed.FieldValues["Status"] != "In Progress" {
+		t.Errorf("Emitted JSON lost data: %+v", parsed)
+	}
+}
+
+func TestViewJSONOutput_EmptyAssigneesAndLabelsAreArrays(t *testing.T) {
+	issue := &api.Issue{Number: 1, Title: "Bare", State: "OPEN", URL: "url"}
+
+	output := buildViewJSONOutput(issue, nil, nil, nil, nil)
 
 	data, err := json.Marshal(output)
 	if err != nil {
-		t.Fatalf("Failed to marshal ViewJSONOutput: %v", err)
+		t.Fatalf("Failed to marshal: %v", err)
 	}
 
-	var parsed ViewJSONOutput
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Failed to unmarshal ViewJSONOutput: %v", err)
+	// buildViewJSONOutput uses make(...) so these encode as [] rather than null.
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
 	}
-
-	if parsed.Number != 42 {
-		t.Errorf("Expected Number 42, got %d", parsed.Number)
+	if _, ok := raw["assignees"].([]interface{}); !ok {
+		t.Errorf("Expected assignees to encode as an array, got %T", raw["assignees"])
 	}
-	if parsed.Title != "Test Issue" {
-		t.Errorf("Expected Title 'Test Issue', got %s", parsed.Title)
+	if _, ok := raw["labels"].([]interface{}); !ok {
+		t.Errorf("Expected labels to encode as an array, got %T", raw["labels"])
 	}
-	if len(parsed.Assignees) != 2 {
-		t.Errorf("Expected 2 assignees, got %d", len(parsed.Assignees))
-	}
-	if parsed.FieldValues["Status"] != "In Progress" {
-		t.Errorf("Expected Status 'In Progress', got %s", parsed.FieldValues["Status"])
+	if output.Milestone != "" {
+		t.Errorf("Expected empty milestone when issue has none, got %q", output.Milestone)
 	}
 }
 
 func TestViewJSONOutput_WithSubProgress(t *testing.T) {
-	output := ViewJSONOutput{
-		Number: 42,
-		Title:  "Parent",
-		State:  "OPEN",
-		URL:    "https://example.com",
-		Author: "user",
-		SubIssues: []SubIssueJSON{
-			{Number: 1, Title: "Sub 1", State: "CLOSED"},
-			{Number: 2, Title: "Sub 2", State: "OPEN"},
-		},
-		SubProgress: &SubProgressJSON{
-			Total:      2,
-			Completed:  1,
-			Percentage: 50,
-		},
+	issue := &api.Issue{Number: 42, Title: "Parent", State: "OPEN", URL: "https://example.com"}
+	subIssues := []api.SubIssue{
+		{Number: 1, Title: "Sub 1", State: "CLOSED", URL: "url1"},
+		{Number: 2, Title: "Sub 2", State: "OPEN", URL: "url2"},
 	}
 
-	data, err := json.Marshal(output)
-	if err != nil {
-		t.Fatalf("Failed to marshal: %v", err)
+	output := buildViewJSONOutput(issue, nil, subIssues, nil, nil)
+
+	if len(output.SubIssues) != 2 {
+		t.Fatalf("Expected 2 sub-issues, got %d", len(output.SubIssues))
+	}
+	if output.SubIssues[0].Number != 1 || output.SubIssues[0].Title != "Sub 1" {
+		t.Errorf("Expected first sub-issue #1 'Sub 1', got %+v", output.SubIssues[0])
 	}
 
-	var parsed ViewJSONOutput
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Failed to unmarshal: %v", err)
-	}
-
-	if parsed.SubProgress == nil {
+	if output.SubProgress == nil {
 		t.Fatal("Expected SubProgress to be present")
 	}
-	if parsed.SubProgress.Percentage != 50 {
-		t.Errorf("Expected 50%% progress, got %d%%", parsed.SubProgress.Percentage)
+	// Progress is derived from sub-issue state, not supplied.
+	if output.SubProgress.Total != 2 {
+		t.Errorf("Expected Total 2, got %d", output.SubProgress.Total)
+	}
+	if output.SubProgress.Completed != 1 {
+		t.Errorf("Expected Completed 1 (one CLOSED), got %d", output.SubProgress.Completed)
+	}
+	if output.SubProgress.Percentage != 50 {
+		t.Errorf("Expected 50%% progress, got %d%%", output.SubProgress.Percentage)
+	}
+}
+
+func TestViewJSONOutput_SubProgressAllClosed(t *testing.T) {
+	issue := &api.Issue{Number: 42, Title: "Parent", State: "OPEN", URL: "url"}
+	subIssues := []api.SubIssue{
+		{Number: 1, Title: "Sub 1", State: "CLOSED"},
+		{Number: 2, Title: "Sub 2", State: "CLOSED"},
+	}
+
+	output := buildViewJSONOutput(issue, nil, subIssues, nil, nil)
+
+	if output.SubProgress == nil {
+		t.Fatal("Expected SubProgress to be present")
+	}
+	if output.SubProgress.Completed != 2 || output.SubProgress.Percentage != 100 {
+		t.Errorf("Expected 2 completed at 100%%, got %d at %d%%",
+			output.SubProgress.Completed, output.SubProgress.Percentage)
 	}
 }
 
 func TestViewJSONOutput_WithParentIssue(t *testing.T) {
-	output := ViewJSONOutput{
-		Number: 42,
-		Title:  "Sub-Issue",
-		State:  "OPEN",
-		URL:    "https://example.com",
-		Author: "user",
-		ParentIssue: &ParentIssueJSON{
-			Number: 10,
-			Title:  "Parent Issue",
-			URL:    "https://example.com/10",
-		},
-	}
+	issue := &api.Issue{Number: 42, Title: "Sub-Issue", State: "OPEN", URL: "https://example.com"}
+	parent := &api.Issue{Number: 10, Title: "Parent Issue", URL: "https://example.com/10"}
 
-	data, err := json.Marshal(output)
-	if err != nil {
-		t.Fatalf("Failed to marshal: %v", err)
-	}
+	output := buildViewJSONOutput(issue, nil, nil, parent, nil)
 
-	var parsed ViewJSONOutput
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Failed to unmarshal: %v", err)
-	}
-
-	if parsed.ParentIssue == nil {
+	if output.ParentIssue == nil {
 		t.Fatal("Expected ParentIssue to be present")
 	}
-	if parsed.ParentIssue.Number != 10 {
-		t.Errorf("Expected parent number 10, got %d", parsed.ParentIssue.Number)
+	if output.ParentIssue.Number != 10 {
+		t.Errorf("Expected parent number 10, got %d", output.ParentIssue.Number)
+	}
+	if output.ParentIssue.Title != "Parent Issue" {
+		t.Errorf("Expected parent title 'Parent Issue', got %s", output.ParentIssue.Title)
+	}
+	if output.ParentIssue.URL != "https://example.com/10" {
+		t.Errorf("Expected parent url to match, got %s", output.ParentIssue.URL)
+	}
+}
+
+func TestViewJSONOutput_WithComments(t *testing.T) {
+	issue := &api.Issue{Number: 42, Title: "Commented", State: "OPEN", URL: "url"}
+	comments := []api.Comment{
+		{Author: "alice", Body: "First comment", CreatedAt: "2026-01-01T00:00:00Z"},
+		{Author: "bob", Body: "Second comment", CreatedAt: "2026-01-02T00:00:00Z"},
+	}
+
+	output := buildViewJSONOutput(issue, nil, nil, nil, comments)
+
+	if len(output.Comments) != 2 {
+		t.Fatalf("Expected 2 comments, got %d", len(output.Comments))
+	}
+	if output.Comments[0].Author != "alice" || output.Comments[0].Body != "First comment" {
+		t.Errorf("Expected first comment from alice, got %+v", output.Comments[0])
+	}
+	if output.Comments[1].CreatedAt != "2026-01-02T00:00:00Z" {
+		t.Errorf("Expected second comment timestamp to map, got %q", output.Comments[1].CreatedAt)
 	}
 }
 
@@ -1068,31 +1406,44 @@ func TestSubIssueJSON_Structure(t *testing.T) {
 	}
 }
 
+// TestSubProgressJSON_Structure verifies the sub-progress block as the view
+// command actually emits it: derived by buildViewJSONOutput from sub-issue
+// state, then encoded. It previously round-tripped a hand-built struct, which
+// asserted nothing about how progress is computed or named on the wire.
 func TestSubProgressJSON_Structure(t *testing.T) {
-	progress := SubProgressJSON{
-		Total:      10,
-		Completed:  6,
-		Percentage: 60,
+	subIssues := make([]api.SubIssue, 0, 10)
+	for i := 1; i <= 10; i++ {
+		state := "OPEN"
+		if i <= 6 {
+			state = "CLOSED"
+		}
+		subIssues = append(subIssues, api.SubIssue{Number: i, Title: "Sub", State: state})
 	}
 
-	data, err := json.Marshal(progress)
+	issue := &api.Issue{Number: 1, Title: "Parent", State: "OPEN", URL: "url"}
+	output := buildViewJSONOutput(issue, nil, subIssues, nil, nil)
+
+	if output.SubProgress == nil {
+		t.Fatal("Expected SubProgress to be present")
+	}
+	if output.SubProgress.Total != 10 {
+		t.Errorf("Expected Total 10, got %d", output.SubProgress.Total)
+	}
+	if output.SubProgress.Completed != 6 {
+		t.Errorf("Expected Completed 6, got %d", output.SubProgress.Completed)
+	}
+	if output.SubProgress.Percentage != 60 {
+		t.Errorf("Expected Percentage 60, got %d", output.SubProgress.Percentage)
+	}
+
+	data, err := json.Marshal(output.SubProgress)
 	if err != nil {
-		t.Fatalf("Failed to marshal SubProgressJSON: %v", err)
+		t.Fatalf("Failed to marshal SubProgress: %v", err)
 	}
-
-	var parsed SubProgressJSON
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Failed to unmarshal SubProgressJSON: %v", err)
-	}
-
-	if parsed.Total != 10 {
-		t.Errorf("Expected Total 10, got %d", parsed.Total)
-	}
-	if parsed.Completed != 6 {
-		t.Errorf("Expected Completed 6, got %d", parsed.Completed)
-	}
-	if parsed.Percentage != 60 {
-		t.Errorf("Expected Percentage 60, got %d", parsed.Percentage)
+	for _, field := range []string{"total", "completed", "percentage"} {
+		if !bytes.Contains(data, []byte(field)) {
+			t.Errorf("Expected emitted JSON to contain field %q, got: %s", field, data)
+		}
 	}
 }
 
@@ -1795,6 +2146,52 @@ func TestRunViewMulti_TableWithSeparator(t *testing.T) {
 	// Should contain separator
 	if !strings.Contains(output, "\u2550") {
 		t.Error("expected output to contain separator line")
+	}
+}
+
+func TestRunViewMulti_SameNumberDifferentRepos(t *testing.T) {
+	// #868 finding 3: viewing two same-numbered issues from different repos must
+	// not collide — keying result maps by number alone lets the second repo's data
+	// overwrite the first's, and refOrder then emits the same issue twice.
+	mock := &mockViewClient{
+		issuesByRepo: map[string]map[int]*api.Issue{
+			"o1/r1": {5: {Number: 5, Title: "Repo1 Issue Five", State: "OPEN", URL: "https://github.com/o1/r1/issues/5", Author: api.Actor{Login: "u1"}}},
+			"o2/r2": {5: {Number: 5, Title: "Repo2 Issue Five", State: "OPEN", URL: "https://github.com/o2/r2/issues/5", Author: api.Actor{Login: "u2"}}},
+		},
+		fieldValuesMap:  map[int][]api.FieldValue{},
+		subIssuesMap:    map[int][]api.SubIssue{},
+		parentIssuesMap: map[int]*api.Issue{},
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(w)
+	opts := &viewOptions{}
+	refs := []viewIssueRef{
+		{owner: "o1", repo: "r1", number: 5},
+		{owner: "o2", repo: "r2", number: 5},
+	}
+
+	err := runViewMulti(cmd, opts, mock, refs, nil)
+
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Repo1 Issue Five") {
+		t.Errorf("expected repo1's issue #5 in output, got: %s", output)
+	}
+	if !strings.Contains(output, "Repo2 Issue Five") {
+		t.Errorf("expected repo2's issue #5 in output (collision would drop it), got: %s", output)
 	}
 }
 

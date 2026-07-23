@@ -26,14 +26,22 @@ type frameworkConfig struct {
 //
 // Returns empty string if no framework is configured (no restriction applied).
 func DetectFramework(dir string) (string, error) {
-	// Check .gh-pmu.json first (takes precedence)
+	// Check .gh-pmu.json first (takes precedence). A missing file is fine (fall
+	// through), but a corrupt/unreadable one must surface an error rather than be
+	// silently treated as "no framework" — that would disable command restrictions.
 	framework, err := detectFromGhPmuJson(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to detect framework from .gh-pmu.json: %w", err)
+	}
 	if err == nil && framework != "" {
 		return framework, nil
 	}
 
-	// Fall back to framework-config.json
+	// Fall back to framework-config.json (same not-exists-vs-corrupt distinction).
 	framework, err = detectFromFrameworkConfigJson(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to detect framework from framework-config.json: %w", err)
+	}
 	if err == nil && framework != "" {
 		return framework, nil
 	}

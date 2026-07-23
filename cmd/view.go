@@ -23,18 +23,26 @@ import (
 // This allows for easier testing with mock implementations.
 type viewClient interface {
 	GetIssue(owner, repo string, number int) (*api.Issue, error)
-	GetIssueWithProjectFields(owner, repo string, number int) (*api.Issue, []api.FieldValue, error)
+	GetIssueWithProjectFields(projectID, owner, repo string, number int) (*api.Issue, []api.FieldValue, error)
 	GetSubIssues(owner, repo string, number int) ([]api.SubIssue, error)
 	GetParentIssue(owner, repo string, number int) (*api.Issue, error)
 	GetIssueComments(owner, repo string, number int) ([]api.Comment, error)
 	// Batch methods for multi-issue mode
-	GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []int) (map[int]*api.Issue, map[int][]api.FieldValue, map[int]error, error)
+	GetIssuesWithProjectFieldsBatch(projectID, owner, repo string, numbers []int) (map[int]*api.Issue, map[int][]api.FieldValue, map[int]error, error)
 	GetSubIssuesBatch(owner, repo string, numbers []int) (map[int][]api.SubIssue, error)
 	GetParentIssueBatch(owner, repo string, numbers []int) (map[int]*api.Issue, error)
 }
 
 // viewIssueRef represents a parsed issue reference for the view command
 type viewIssueRef struct {
+	owner  string
+	repo   string
+	number int
+}
+
+// issueKey uniquely identifies an issue by repository and number, so multi-issue
+// result maps do not collide across repositories that reuse issue numbers.
+type issueKey struct {
 	owner  string
 	repo   string
 	number int
@@ -58,6 +66,11 @@ type viewOptions struct {
 	repo       string
 	bodyFile   bool
 	bodyStdout bool
+	// projectID is the configured project's node ID, resolved once in runView and
+	// threaded to the batch/single field-fetch calls so an issue on multiple
+	// boards surfaces only the configured project's field values (#856). Empty
+	// when the project could not be resolved, which disables the filter.
+	projectID string
 }
 
 // viewAvailableFields lists all available JSON fields for the view command
@@ -146,18 +159,19 @@ func runView(cmd *cobra.Command, args []string, opts *viewOptions) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// view tolerates empty defaults because issue args may be fully qualified;
+	// an explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 
@@ -185,6 +199,17 @@ func runView(cmd *cobra.Command, args []string, opts *viewOptions) error {
 	client, err := api.NewClient()
 	if err != nil {
 		return err
+	}
+
+	// Resolve the configured project's node ID once so field-value fetches can
+	// scope to this board only — an issue on multiple ProjectV2 boards would
+	// otherwise merge foreign Status/Priority values (#856). Non-fatal: if the
+	// project cannot be resolved, opts.projectID stays empty and the fetch falls
+	// back to returning values from every board (prior behavior).
+	if project, perr := client.GetProject(cfg.Project.Owner, cfg.Project.Number); perr == nil {
+		opts.projectID = project.ID
+	} else {
+		fmt.Fprintf(os.Stderr, "Warning: could not resolve configured project; cross-project field filtering disabled: %v\n", perr)
 	}
 
 	// Single-issue path (backward compatible, unchanged behavior)
@@ -224,43 +249,45 @@ func runViewMulti(cmd *cobra.Command, opts *viewOptions, client viewClient, refs
 		return fmt.Errorf("no valid issue numbers provided")
 	}
 
-	// Group by repo (all issues typically in same repo)
+	// Group by repo (all issues typically in same repo). Result maps are keyed by
+	// (owner, repo, number) — not number alone — so two same-numbered issues from
+	// different repos do not collide (one overwriting the other's data).
 	type repoKey struct{ owner, repo string }
 	grouped := make(map[repoKey][]int)
-	refOrder := make([]int, 0, len(refs))
+	refOrder := make([]issueKey, 0, len(refs))
 	for _, ref := range refs {
 		key := repoKey{ref.owner, ref.repo}
 		grouped[key] = append(grouped[key], ref.number)
-		refOrder = append(refOrder, ref.number)
+		refOrder = append(refOrder, issueKey(ref))
 	}
 
 	// Fetch all data with batch calls
-	allIssues := make(map[int]*api.Issue)
-	allFieldValues := make(map[int][]api.FieldValue)
-	allSubIssues := make(map[int][]api.SubIssue)
-	allParentIssues := make(map[int]*api.Issue)
-	allErrors := make(map[int]error)
+	allIssues := make(map[issueKey]*api.Issue)
+	allFieldValues := make(map[issueKey][]api.FieldValue)
+	allSubIssues := make(map[issueKey][]api.SubIssue)
+	allParentIssues := make(map[issueKey]*api.Issue)
+	allErrors := make(map[issueKey]error)
 
 	for key, numbers := range grouped {
 		// Call 1: Issues + project fields
-		issues, fieldValues, issueErrors, err := client.GetIssuesWithProjectFieldsBatch(key.owner, key.repo, numbers)
+		issues, fieldValues, issueErrors, err := client.GetIssuesWithProjectFieldsBatch(opts.projectID, key.owner, key.repo, numbers)
 		if err != nil {
 			return fmt.Errorf("failed to fetch issues: %w", err)
 		}
 		for num, issue := range issues {
-			allIssues[num] = issue
+			allIssues[issueKey{key.owner, key.repo, num}] = issue
 		}
 		for num, fvs := range fieldValues {
-			allFieldValues[num] = fvs
+			allFieldValues[issueKey{key.owner, key.repo, num}] = fvs
 		}
 		for num, e := range issueErrors {
-			allErrors[num] = e
+			allErrors[issueKey{key.owner, key.repo, num}] = e
 		}
 
 		// Collect successfully fetched issue numbers for sub-issue/parent batch
 		var validNumbers []int
 		for _, num := range numbers {
-			if _, ok := allIssues[num]; ok {
+			if _, ok := allIssues[issueKey{key.owner, key.repo, num}]; ok {
 				validNumbers = append(validNumbers, num)
 			}
 		}
@@ -282,43 +309,44 @@ func runViewMulti(cmd *cobra.Command, opts *viewOptions, client viewClient, refs
 		wg.Wait()
 
 		for num, subs := range subIssuesMap {
-			allSubIssues[num] = subs
+			allSubIssues[issueKey{key.owner, key.repo, num}] = subs
 		}
 		for num, parent := range parentIssuesMap {
-			allParentIssues[num] = parent
+			allParentIssues[issueKey{key.owner, key.repo, num}] = parent
 		}
 	}
 
 	// Fetch comments per-issue if requested (sequential, opt-in)
-	allComments := make(map[int][]api.Comment)
+	allComments := make(map[issueKey][]api.Comment)
 	if opts.comments {
 		for _, ref := range refs {
-			if _, ok := allIssues[ref.number]; ok {
+			k := issueKey(ref)
+			if _, ok := allIssues[k]; ok {
 				comments, _ := client.GetIssueComments(ref.owner, ref.repo, ref.number)
-				allComments[ref.number] = comments
+				allComments[k] = comments
 			}
 		}
 	}
 
 	// Build results in argument order
 	var results []viewResult
-	for _, num := range refOrder {
-		if e, ok := allErrors[num]; ok && e != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to get issue #%d: %v\n", num, e)
+	for _, k := range refOrder {
+		if e, ok := allErrors[k]; ok && e != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to get issue #%d: %v\n", k.number, e)
 			continue
 		}
-		issue, ok := allIssues[num]
+		issue, ok := allIssues[k]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "Warning: issue #%d not found\n", num)
+			fmt.Fprintf(os.Stderr, "Warning: issue #%d not found\n", k.number)
 			continue
 		}
 		results = append(results, viewResult{
-			number:      num,
+			number:      k.number,
 			issue:       issue,
-			fieldValues: allFieldValues[num],
-			subIssues:   allSubIssues[num],
-			parentIssue: allParentIssues[num],
-			comments:    allComments[num],
+			fieldValues: allFieldValues[k],
+			subIssues:   allSubIssues[k],
+			parentIssue: allParentIssues[k],
+			comments:    allComments[k],
 		})
 	}
 
@@ -400,7 +428,7 @@ func runViewWithDeps(cmd *cobra.Command, opts *viewOptions, client viewClient, o
 	}
 
 	// Fetch issue with project field values in a single query (optimized)
-	issue, fieldValues, err := client.GetIssueWithProjectFields(owner, repo, number)
+	issue, fieldValues, err := client.GetIssueWithProjectFields(opts.projectID, owner, repo, number)
 	if err != nil {
 		return fmt.Errorf("failed to get issue: %w", err)
 	}

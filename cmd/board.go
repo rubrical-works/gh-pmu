@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
@@ -132,6 +134,15 @@ func runBoard(cmd *cobra.Command, opts *boardOptions) error {
 
 // runBoardWithDeps is the testable implementation of runBoard
 func runBoardWithDeps(cmd *cobra.Command, opts *boardOptions, cfg *config.Config, client boardClient) error {
+	// Validate --state up front so an invalid value fails loudly instead of
+	// silently filtering out every item and rendering an empty board.
+	switch strings.ToLower(opts.state) {
+	case "", "open", "closed", "all":
+		// valid
+	default:
+		return fmt.Errorf("invalid --state %q: must be one of open, closed, all", opts.state)
+	}
+
 	// Get project
 	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
 	if err != nil {
@@ -239,6 +250,14 @@ func runBoardWithDeps(cmd *cobra.Command, opts *boardOptions, cfg *config.Config
 
 	// Group items by status
 	grouped := groupBoardItemsByStatus(items, columns)
+
+	// Surface items whose status is not a configured column (empty/"(none)" or an
+	// unrecognized value) as extra columns so they are not silently dropped from
+	// every output mode. Skipped when --status narrows the board to one column,
+	// where excluding other statuses is the requested behavior.
+	if opts.status == "" {
+		columns = appendUnrecognizedColumns(columns, grouped)
+	}
 
 	// Apply limit per column
 	for status, columnItems := range grouped {
@@ -403,6 +422,31 @@ func groupBoardItemsByStatus(items []api.BoardItem, columns []statusColumn) map[
 	return grouped
 }
 
+// appendUnrecognizedColumns appends synthetic columns for any grouped status
+// bucket that holds items but is not already a configured column. Without this,
+// items whose status is empty ("(none)") or an unrecognized value are dropped
+// from every output mode, which iterates only over the configured columns.
+// Unknown statuses are appended in a stable (sorted) order.
+func appendUnrecognizedColumns(columns []statusColumn, grouped map[string][]api.BoardItem) []statusColumn {
+	known := make(map[string]bool, len(columns))
+	for _, col := range columns {
+		known[col.value] = true
+	}
+
+	var unknown []string
+	for status, items := range grouped {
+		if len(items) > 0 && !known[status] {
+			unknown = append(unknown, status)
+		}
+	}
+	sort.Strings(unknown)
+
+	for _, status := range unknown {
+		columns = append(columns, statusColumn{alias: status, value: status})
+	}
+	return columns
+}
+
 // safeFdToInt converts a uintptr file descriptor to int safely.
 // Returns (0, false) if the value would overflow int.
 func safeFdToInt(fd uintptr) (int, bool) {
@@ -425,15 +469,17 @@ func getTerminalWidth() int {
 	return width
 }
 
-// truncateString truncates a string to maxLen with ellipsis
+// truncateString truncates a string to maxLen runes (not bytes) with ellipsis,
+// so multi-byte UTF-8 titles are never sliced mid-rune.
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
+	runes := []rune(s)
 	if maxLen <= 3 {
-		return s[:maxLen]
+		return string(runes[:maxLen])
 	}
-	return s[:maxLen-3] + "..."
+	return string(runes[:maxLen-3]) + "..."
 }
 
 // outputBoardBox outputs the board with box drawing characters
@@ -484,7 +530,7 @@ func outputBoardBox(cmd *cobra.Command, grouped map[string][]api.BoardItem, colu
 		items := grouped[col.value]
 		header := fmt.Sprintf("%s (%d)", col.value, len(items))
 		header = truncateString(header, colWidth-2)
-		padding := colWidth - len(header) - 1
+		padding := colWidth - utf8.RuneCountInString(header) - 1
 		if padding < 0 {
 			padding = 0
 		}
@@ -514,7 +560,7 @@ func outputBoardBox(cmd *cobra.Command, grouped map[string][]api.BoardItem, colu
 				cell = fmt.Sprintf("#%d %s", item.Number, item.Title)
 			}
 			cell = truncateString(cell, colWidth-2)
-			padding := colWidth - len(cell) - 1
+			padding := colWidth - utf8.RuneCountInString(cell) - 1
 			if padding < 0 {
 				padding = 0
 			}

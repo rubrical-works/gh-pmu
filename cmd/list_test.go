@@ -24,7 +24,9 @@ type mockListClient struct {
 
 	// Call tracking
 	searchCalls           []api.SearchFilters
+	searchLimits          []int
 	getProjectItemsCalled bool
+	projectItemsFilter    *api.ProjectItemsFilter
 
 	// Error injection
 	getProjectErr               error
@@ -58,6 +60,7 @@ func (m *mockListClient) GetProject(owner string, number int) (*api.Project, err
 
 func (m *mockListClient) GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error) {
 	m.getProjectItemsCalled = true
+	m.projectItemsFilter = filter
 	if m.getProjectItemsErr != nil {
 		return nil, m.getProjectItemsErr
 	}
@@ -80,6 +83,7 @@ func (m *mockListClient) GetSubIssueCounts(owner, repo string, numbers []int) (m
 
 func (m *mockListClient) SearchRepositoryIssues(owner, repo string, filters api.SearchFilters, limit int) ([]api.Issue, error) {
 	m.searchCalls = append(m.searchCalls, filters)
+	m.searchLimits = append(m.searchLimits, limit)
 	if m.searchRepositoryIssuesErr != nil {
 		return nil, m.searchRepositoryIssuesErr
 	}
@@ -193,6 +197,13 @@ func TestRunListWithDeps_WithStatusFilter(t *testing.T) {
 				{Field: "Status", Value: "Backlog"},
 			},
 		},
+		{
+			ID:    "item-2",
+			Issue: &api.Issue{Number: 2, Title: "Progress Issue"},
+			FieldValues: []api.FieldValue{
+				{Field: "Status", Value: "In Progress"},
+			},
+		},
 	}
 
 	cfg := &config.Config{
@@ -213,6 +224,14 @@ func TestRunListWithDeps_WithStatusFilter(t *testing.T) {
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Backlog Issue") {
+		t.Errorf("expected matching 'Backlog Issue' (status=Backlog) in output, got: %s", output)
+	}
+	if strings.Contains(output, "Progress Issue") {
+		t.Errorf("expected non-matching 'Progress Issue' (status=In Progress) to be filtered out, got: %s", output)
 	}
 }
 
@@ -373,10 +392,21 @@ func TestRunListWithDeps_WithPriorityFilter(t *testing.T) {
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{priority: "p1"}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "P1 Issue") {
+		t.Errorf("expected matching 'P1 Issue' (priority=P1) in output, got: %s", output)
+	}
+	if strings.Contains(output, "P2 Issue") {
+		t.Errorf("expected non-matching 'P2 Issue' (priority=P2) to be filtered out, got: %s", output)
 	}
 }
 
@@ -406,10 +436,21 @@ func TestRunListWithDeps_WithAssigneeFilter(t *testing.T) {
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{assignee: "alice"}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Alice's Issue") {
+		t.Errorf("expected matching \"Alice's Issue\" (assignee alice) in output, got: %s", output)
+	}
+	if strings.Contains(output, "Bob's Issue") {
+		t.Errorf("expected non-matching \"Bob's Issue\" (assignee bob) to be filtered out, got: %s", output)
 	}
 }
 
@@ -439,10 +480,21 @@ func TestRunListWithDeps_WithLabelFilter(t *testing.T) {
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{label: "bug"}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Bug Issue") {
+		t.Errorf("expected matching 'Bug Issue' (label bug) in output, got: %s", output)
+	}
+	if strings.Contains(output, "Feature Issue") {
+		t.Errorf("expected non-matching 'Feature Issue' (label enhancement) to be filtered out, got: %s", output)
 	}
 }
 
@@ -472,10 +524,21 @@ func TestRunListWithDeps_WithSearchFilter(t *testing.T) {
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{search: "login"}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Fix login bug") {
+		t.Errorf("expected matching 'Fix login bug' (search login) in output, got: %s", output)
+	}
+	if strings.Contains(output, "Add feature") {
+		t.Errorf("expected non-matching 'Add feature' to be filtered out, got: %s", output)
 	}
 }
 
@@ -484,23 +547,42 @@ func TestRunListWithDeps_WithReleaseFilter(t *testing.T) {
 	mock.projectItems = []api.ProjectItem{
 		{
 			ID:    "item-1",
-			Issue: &api.Issue{Number: 1, Title: "Release Issue"},
+			Issue: &api.Issue{Number: 1, Title: "Target Release Item"},
 			FieldValues: []api.FieldValue{
 				{Field: "Release", Value: "v1.0.0"},
 			},
 		},
+		{
+			ID:    "item-2",
+			Issue: &api.Issue{Number: 2, Title: "Skipped Milestone Item"},
+			FieldValues: []api.FieldValue{
+				{Field: "Release", Value: "v2.0.0"},
+			},
+		},
 	}
 
+	// No repositories configured so items flow through GetProjectItems and the
+	// branch (Release) field filter is exercised client-side on the fixtures above.
 	cfg := &config.Config{
-		Project:      config.Project{Owner: "test-org", Number: 1},
-		Repositories: []string{"owner/repo"},
+		Project: config.Project{Owner: "test-org", Number: 1},
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{branch: "v1.0.0"}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Target Release Item") {
+		t.Errorf("expected matching 'Target Release Item' (Release=v1.0.0) in output, got: %s", output)
+	}
+	if strings.Contains(output, "Skipped Milestone Item") {
+		t.Errorf("expected non-matching 'Skipped Milestone Item' (Release=v2.0.0) to be filtered out, got: %s", output)
 	}
 }
 
@@ -556,10 +638,21 @@ func TestRunListWithDeps_WithNoReleaseFilter(t *testing.T) {
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{noBranch: true}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "No Release") {
+		t.Errorf("expected matching 'No Release' (empty branch field) in output, got: %s", output)
+	}
+	if strings.Contains(output, "Has Release") {
+		t.Errorf("expected non-matching 'Has Release' (Release=v1.0.0) to be filtered out, got: %s", output)
 	}
 }
 
@@ -599,10 +692,21 @@ func TestRunListWithDeps_WithHasSubIssuesFilter(t *testing.T) {
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{hasSubIssues: true}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Parent Issue") {
+		t.Errorf("expected matching 'Parent Issue' (2 sub-issues) in output, got: %s", output)
+	}
+	if strings.Contains(output, "Child Issue") {
+		t.Errorf("expected non-matching 'Child Issue' (0 sub-issues) to be filtered out, got: %s", output)
 	}
 }
 
@@ -621,10 +725,149 @@ func TestRunListWithDeps_WithLimit(t *testing.T) {
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{limit: 3}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	for _, want := range []string{"Issue 1", "Issue 2", "Issue 3"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("expected %q within limit in output, got: %s", want, output)
+		}
+	}
+	for _, notWant := range []string{"Issue 4", "Issue 5"} {
+		if strings.Contains(output, notWant) {
+			t.Errorf("expected %q beyond limit to be excluded, got: %s", notWant, output)
+		}
+	}
+}
+
+func TestRunListWithDeps_OverFetchesWhenClientSideFilterActive(t *testing.T) {
+	// #868 finding 2: a client-side-only filter (status) must not have the API
+	// fetch capped at --limit, or `--status done --limit 5` fetches only 5 issues
+	// of any status and can return 0. Over-fetch, apply --limit after filtering.
+	mock := newMockListClient()
+	mock.searchResults = []api.Issue{
+		{Number: 1, Title: "Issue 1", State: "OPEN"},
+	}
+
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"test-org/test-repo"},
+		Fields: map[string]config.Field{
+			"status": {Field: "Status", Values: map[string]string{"done": "Done"}},
+		},
+	}
+
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{status: "done", limit: 5}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mock.searchLimits) == 0 {
+		t.Fatal("expected SearchRepositoryIssues to be called")
+	}
+	if mock.searchLimits[0] != 0 {
+		t.Errorf("expected unlimited fetch (0) when --status filter active, got limit %d", mock.searchLimits[0])
+	}
+}
+
+func TestRunListWithDeps_UsesLimitWhenNoClientSideFilter(t *testing.T) {
+	// Companion: without client-side filters, the fetch is still capped at --limit
+	// (the optimization must not regress).
+	mock := newMockListClient()
+	mock.searchResults = []api.Issue{
+		{Number: 1, Title: "Issue 1", State: "OPEN"},
+	}
+
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"test-org/test-repo"},
+	}
+
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{limit: 5}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mock.searchLimits) == 0 {
+		t.Fatal("expected SearchRepositoryIssues to be called")
+	}
+	if mock.searchLimits[0] != 5 {
+		t.Errorf("expected fetch capped at --limit 5 with no client-side filter, got %d", mock.searchLimits[0])
+	}
+}
+
+func TestRunListWithDeps_BranchCurrentNoRepo_Errors(t *testing.T) {
+	// #871 finding 7: --branch current with no repository to resolve against must
+	// error, not silently filter by the literal string "current".
+	mock := newMockListClient()
+	cfg := &config.Config{Project: config.Project{Owner: "test-org", Number: 1}}
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{branch: "current"}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err == nil {
+		t.Fatal("expected error resolving --branch current with no repository configured")
+	}
+}
+
+func TestRunListWithDeps_BranchCurrentLookupError_Errors(t *testing.T) {
+	// #871 finding 7: a branch-tracker lookup failure must surface, not degrade.
+	mock := newMockListClient()
+	mock.getOpenIssuesByLabelErr = errors.New("api unavailable")
+	cfg := &config.Config{Project: config.Project{Owner: "test-org", Number: 1}, Repositories: []string{"o/r"}}
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{branch: "current"}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err == nil {
+		t.Fatal("expected error when --branch current lookup fails")
+	}
+}
+
+func TestRunListWithDeps_BranchCurrentNoTracker_Errors(t *testing.T) {
+	// #871 finding 7: no matching active branch tracker must error.
+	mock := newMockListClient()
+	mock.openIssuesByLabel = []api.Issue{}
+	cfg := &config.Config{Project: config.Project{Owner: "test-org", Number: 1}, Repositories: []string{"o/r"}}
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{branch: "current"}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err == nil {
+		t.Fatal("expected error when no active branch tracker found for --branch current")
+	}
+}
+
+func TestRunListWithDeps_BranchCurrentResolves(t *testing.T) {
+	// Positive: --branch current resolves to the active tracker's branch name.
+	mock := newMockListClient()
+	mock.openIssuesByLabel = []api.Issue{{Number: 100, Title: "Branch: release/v2.0.0", State: "OPEN"}}
+	cfg := &config.Config{Project: config.Project{Owner: "test-org", Number: 1}, Repositories: []string{"o/r"}}
+	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	opts := &listOptions{branch: "current"}
+	if err := runListWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error resolving --branch current to an active tracker: %v", err)
 	}
 }
 
@@ -1128,11 +1371,18 @@ func TestOutputTable_TitleTruncation(t *testing.T) {
 		},
 	}
 
-	// Note: outputTable writes to os.Stdout, not cmd.Out()
-	// We can't capture this directly, but we can verify no error
 	err := outputTable(cmd, items)
 	if err != nil {
 		t.Fatalf("outputTable() error = %v", err)
+	}
+
+	output := buf.String()
+	wantTruncated := longTitle[:47] + "..."
+	if !strings.Contains(output, wantTruncated) {
+		t.Errorf("expected truncated title %q in output, got: %s", wantTruncated, output)
+	}
+	if strings.Contains(output, longTitle) {
+		t.Errorf("expected full title to be truncated, but found it in full: %s", output)
 	}
 }
 
@@ -1162,6 +1412,16 @@ func TestOutputTable_WithAssignees(t *testing.T) {
 	err := outputTable(cmd, items)
 	if err != nil {
 		t.Fatalf("outputTable() error = %v", err)
+	}
+
+	// Note: outputTable uses tabwriter, which replaces tab separators with
+	// padding spaces, so assert on individual column words and cell values
+	// rather than a tab-joined header string.
+	output := buf.String()
+	for _, want := range []string{"NUMBER", "TITLE", "STATUS", "PRIORITY", "ASSIGNEES", "#42", "Test Issue", "In Progress", "P1", "user1, user2"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("expected output to contain %q, got: %s", want, output)
+		}
 	}
 }
 
@@ -1254,6 +1514,39 @@ func TestOutputJSON_WithItems(t *testing.T) {
 	err := outputJSON(cmd, items)
 	if err != nil {
 		t.Fatalf("outputJSON() error = %v", err)
+	}
+
+	var got JSONOutput
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("expected valid JSON output, got parse error %v for: %s", err, buf.String())
+	}
+	if len(got.Items) != 1 {
+		t.Fatalf("expected 1 item in JSON output, got %d: %s", len(got.Items), buf.String())
+	}
+	item := got.Items[0]
+	if item.Number != 42 {
+		t.Errorf("expected number 42, got %d", item.Number)
+	}
+	if item.Title != "Test Issue" {
+		t.Errorf("expected title 'Test Issue', got %q", item.Title)
+	}
+	if item.State != "OPEN" {
+		t.Errorf("expected state 'OPEN', got %q", item.State)
+	}
+	if item.URL != "https://github.com/owner/repo/issues/42" {
+		t.Errorf("expected URL to be populated, got %q", item.URL)
+	}
+	if item.Repository != "owner/repo" {
+		t.Errorf("expected repository 'owner/repo', got %q", item.Repository)
+	}
+	if len(item.Assignees) != 1 || item.Assignees[0] != "user1" {
+		t.Errorf("expected assignees [user1], got %v", item.Assignees)
+	}
+	if item.FieldValues["Status"] != "In Progress" {
+		t.Errorf("expected Status 'In Progress', got %q", item.FieldValues["Status"])
+	}
+	if item.FieldValues["Priority"] != "P1" {
+		t.Errorf("expected Priority 'P1', got %q", item.FieldValues["Priority"])
 	}
 }
 
@@ -1912,10 +2205,21 @@ func TestRunListWithDeps_WithStateFilterOpen(t *testing.T) {
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{state: "open"}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Open Issue") || !strings.Contains(output, "Another Open") {
+		t.Errorf("expected OPEN issues 'Open Issue' and 'Another Open' in output, got: %s", output)
+	}
+	if strings.Contains(output, "Closed Issue") {
+		t.Errorf("expected CLOSED 'Closed Issue' to be filtered out, got: %s", output)
 	}
 }
 
@@ -1937,10 +2241,21 @@ func TestRunListWithDeps_WithStateFilterClosed(t *testing.T) {
 	}
 
 	cmd := newListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
 	opts := &listOptions{state: "closed"}
 	err := runListWithDeps(cmd, opts, cfg, mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Closed Issue") {
+		t.Errorf("expected CLOSED 'Closed Issue' in output, got: %s", output)
+	}
+	if strings.Contains(output, "Open Issue") {
+		t.Errorf("expected OPEN 'Open Issue' to be filtered out, got: %s", output)
 	}
 }
 

@@ -25,7 +25,7 @@ func TestInitNonInteractiveMode(t *testing.T) {
 		result := runPMU(t, tmpDir, "init",
 			"--non-interactive",
 			"--source-project", "41",
-			"--repo", "rubrical-works/gh-pmu-e2e-test",
+			"--repo", "rubrical-worker/gh-pmu-e2e-test",
 		)
 
 		assertExitCode(t, result, 0)
@@ -63,8 +63,8 @@ func TestInitNonInteractiveMode(t *testing.T) {
 			if num, ok := project["number"].(float64); !ok || num <= 0 {
 				t.Errorf("Expected positive project number, got %v", project["number"])
 			}
-			if project["owner"] != "rubrical-works" {
-				t.Errorf("Expected owner 'rubrical-works', got %v", project["owner"])
+			if project["owner"] != "rubrical-worker" {
+				t.Errorf("Expected owner 'rubrical-worker', got %v", project["owner"])
 			}
 		}
 
@@ -74,8 +74,8 @@ func TestInitNonInteractiveMode(t *testing.T) {
 			t.Error("Config missing 'repositories' section")
 		} else if len(repos) == 0 {
 			t.Error("No repositories configured")
-		} else if repos[0] != "rubrical-works/gh-pmu-e2e-test" {
-			t.Errorf("Expected repo 'rubrical-works/gh-pmu-e2e-test', got %v", repos[0])
+		} else if repos[0] != "rubrical-worker/gh-pmu-e2e-test" {
+			t.Errorf("Expected repo 'rubrical-worker/gh-pmu-e2e-test', got %v", repos[0])
 		}
 
 		// Verify framework defaults to IDPF
@@ -100,7 +100,7 @@ func TestInitNonInteractiveFrameworkNone(t *testing.T) {
 	result := runPMU(t, tmpDir, "init",
 		"--non-interactive",
 		"--source-project", "41",
-		"--repo", "rubrical-works/gh-pmu-e2e-test",
+		"--repo", "rubrical-worker/gh-pmu-e2e-test",
 		"--framework", "none",
 	)
 
@@ -133,30 +133,55 @@ func TestInitNonInteractiveFrameworkNone(t *testing.T) {
 	}
 }
 
-// TestInitNonInteractiveWithOwner tests init with explicit --owner flag.
+// TestInitNonInteractiveWithOwner tests that --owner is honored over the owner
+// that would otherwise be inferred from --repo.
+//
+// The e2e infra is single-owner: the source template project #41 and project
+// creation only work under "rubrical-worker", so --owner must be rubrical-worker.
+// To make the flag's effect observable, --repo deliberately points at a repo under
+// a DIFFERENT owner (octocat/Hello-World). Repository linking and label creation are
+// warn-only in init (init.go / init_atomic.go), so the unrelated repo does not fail
+// init. If --owner were ignored, the resolved owner would fall back to the --repo
+// owner "octocat", source-project #41 lookup under octocat would fail, and init would
+// exit non-zero. Honoring --owner yields exit 0 and project.owner == "rubrical-worker"
+// — distinguishable from the repo owner, unlike the previous same-owner assertion.
 func TestInitNonInteractiveWithOwner(t *testing.T) {
 	tmpDir := t.TempDir()
 	initGitRepo(t, tmpDir)
 
-	// Using explicit owner (same as repo owner in this test)
 	result := runPMU(t, tmpDir, "init",
 		"--non-interactive",
 		"--source-project", "41",
-		"--repo", "rubrical-works/gh-pmu-e2e-test",
-		"--owner", "rubrical-works",
+		"--repo", "octocat/Hello-World", // repo owner deliberately != --owner
+		"--owner", "rubrical-worker",
 	)
 
 	assertExitCode(t, result, 0)
 
-	// Clean up the created project
+	// Clean up the created project (created under the --owner, rubrical-worker)
 	if projNum := extractProjectNumber(t, result.Stdout); projNum > 0 {
 		t.Cleanup(func() { deleteTestProject(t, projNum) })
 	}
 
-	// Verify config was created
+	// Parse the generated config and assert project.owner reflects --owner, not the
+	// --repo owner. A silently-ignored --owner could not produce this value.
 	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		t.Error("Config file was not created")
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(configData, &config); err != nil {
+		t.Fatalf("Failed to parse config: %v", err)
+	}
+
+	project, ok := config["project"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Config missing 'project' section")
+	}
+	if project["owner"] != "rubrical-worker" {
+		t.Errorf("Expected project.owner 'rubrical-worker' (from --owner), got %v — --owner not honored", project["owner"])
 	}
 }
 
@@ -182,7 +207,7 @@ func TestInitNonInteractiveOverwrite(t *testing.T) {
 	result := runPMU(t, tmpDir, "init",
 		"--non-interactive",
 		"--source-project", "41",
-		"--repo", "rubrical-works/gh-pmu-e2e-test",
+		"--repo", "rubrical-worker/gh-pmu-e2e-test",
 		"--yes",
 		"--force",
 	)
@@ -203,7 +228,7 @@ func TestInitNonInteractiveOverwrite(t *testing.T) {
 	if strings.Contains(string(configData), "existing") {
 		t.Error("Expected existing config to be overwritten")
 	}
-	if !strings.Contains(string(configData), "rubrical-works") {
+	if !strings.Contains(string(configData), "rubrical-worker") {
 		t.Error("Expected new config to contain repo owner")
 	}
 }
@@ -272,7 +297,7 @@ func TestInitNonInteractiveExistingConfigNoYes(t *testing.T) {
 	result := runPMU(t, tmpDir, "init",
 		"--non-interactive",
 		"--source-project", "41",
-		"--repo", "rubrical-works/gh-pmu-e2e-test",
+		"--repo", "rubrical-worker/gh-pmu-e2e-test",
 	)
 
 	assertExitCode(t, result, 1)

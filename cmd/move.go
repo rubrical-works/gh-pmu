@@ -107,7 +107,7 @@ Examples:
 	cmd.Flags().IntVar(&opts.depth, "depth", 10, "Maximum depth for recursive operations")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show what would be changed without making changes")
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Bypass checkbox validation (still requires body and branch)")
-	cmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Skip confirmation prompts (for --recursive and --force)")
+	cmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Skip confirmation prompts (for --recursive)")
 	cmd.Flags().StringVarP(&opts.repo, "repo", "R", "", "Repository for the issue (owner/repo format)")
 
 	return cmd
@@ -165,18 +165,20 @@ func runMove(cmd *cobra.Command, args []string, opts *moveOptions) error {
 // runMoveWithDeps is the testable implementation of runMove
 // runMoveWithDeps is the testable implementation of runMove
 func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *config.Config, client moveClient) error {
-	// Determine default repository (--repo flag takes precedence over config)
+	// Determine default repository (--repo flag takes precedence over config).
+	// move tolerates empty defaults because issue args may be fully qualified
+	// (owner/repo#N), so a malformed config repo is skipped rather than fatal — but
+	// an explicit --repo is validated with uniform empty-component rejection.
 	defaultOwner, defaultRepo := "", ""
 	if opts.repo != "" {
-		parts := strings.Split(opts.repo, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid --repo format: expected owner/repo, got %s", opts.repo)
+		var rErr error
+		defaultOwner, defaultRepo, rErr = splitOwnerRepo(opts.repo, "--repo")
+		if rErr != nil {
+			return rErr
 		}
-		defaultOwner, defaultRepo = parts[0], parts[1]
 	} else if len(cfg.Repositories) > 0 {
-		parts := strings.Split(cfg.Repositories[0], "/")
-		if len(parts) == 2 {
-			defaultOwner, defaultRepo = parts[0], parts[1]
+		if o, r, cErr := splitOwnerRepo(cfg.Repositories[0], "configured repository"); cErr == nil {
+			defaultOwner, defaultRepo = o, r
 		}
 	}
 
@@ -303,6 +305,11 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 				}
 				if len(missingRefs) > 0 {
 					subItems, serr := client.GetProjectItemsByIssues(project.ID, missingRefs)
+					if serr != nil {
+						// Swallowing this made the affected sub-issues look like they
+						// were "(not in project, will skip)". Surface the real cause.
+						fmt.Fprintf(os.Stderr, "Warning: failed to enrich %d sub-issue(s) with project data; they may be misreported as not in project: %v\n", len(missingRefs), serr)
+					}
 					if serr == nil {
 						for _, item := range subItems {
 							if item.Issue != nil {
@@ -427,17 +434,17 @@ func runMoveWithDeps(cmd *cobra.Command, args []string, opts *moveOptions, cfg *
 		if !opts.dryRun && validationErrors.HasErrors() {
 			return &validationErrors
 		}
-		// Prompt for confirmation when --force bypasses checkbox validation
+		// Warn when --force bypasses checkbox validation. forceWarnings is only
+		// populated when opts.force is set, and --force is itself the explicit
+		// confirmation to bypass (issue #778: --force implies --yes), so no
+		// additional confirmation gate is required here. The previous
+		// `!opts.yes && !opts.force` guard was unreachable dead code.
 		if !opts.dryRun && len(forceWarnings) > 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "Warning: --force bypasses checkbox validation:\n")
 			for _, w := range forceWarnings {
 				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", w)
 			}
 			fmt.Fprintln(cmd.OutOrStdout())
-
-			if !opts.yes && !opts.force {
-				return fmt.Errorf("use --yes or --force to confirm")
-			}
 		}
 	}
 

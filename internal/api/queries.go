@@ -20,19 +20,24 @@ func safeGraphQLInt(n int) (graphql.Int, error) {
 	return graphql.Int(n), nil
 }
 
-// GetProject fetches a project by owner and number
+// GetProject fetches a project by owner and number.
+//
+// It tries the user-owned project first, then falls back to an org-owned
+// project. If both fail, both errors are preserved (errors.Join) so a genuine
+// user-path failure (e.g. a transient error on a user-owned project) is not
+// masked by the org fallback's "Could not resolve to an Organization" (#861).
 func (c *Client) GetProject(owner string, number int) (*Project, error) {
 
 	// First try as user project
-	project, err := c.getUserProject(owner, number)
-	if err == nil {
+	project, userErr := c.getUserProject(owner, number)
+	if userErr == nil {
 		return project, nil
 	}
 
 	// If that fails, try as organization project
-	project, err = c.getOrgProject(owner, number)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get project %s/%d: %w", owner, number, err)
+	project, orgErr := c.getOrgProject(owner, number)
+	if orgErr != nil {
+		return nil, fmt.Errorf("failed to get project %s/%d: %w", owner, number, errors.Join(userErr, orgErr))
 	}
 
 	return project, nil
@@ -430,7 +435,17 @@ func (c *Client) GetIssue(owner, repo string, number int) (*Issue, error) {
 
 // GetIssueWithProjectFields fetches an issue and its project field values in a single query.
 // This is more efficient than calling GetIssue + GetProjectItems when you only need one issue.
-func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Issue, []FieldValue, error) {
+//
+// projectID scopes the returned field values to a single project board: an issue
+// can belong to several ProjectV2 boards (each typically defining its own Status
+// field), so only project items whose project ID matches projectID contribute
+// field values. An empty projectID disables filtering and returns values from all
+// boards (backward-compatible behavior for callers that cannot resolve a project).
+//
+// Only the first 10 project items are inspected; if the issue belongs to more
+// boards a truncation warning is emitted to stderr, since the configured
+// project's item could lie beyond the fetched page (#860).
+func (c *Client) GetIssueWithProjectFields(projectID, owner, repo string, number int) (*Issue, []FieldValue, error) {
 	if err := validateOwnerRepo(owner, repo); err != nil {
 		return nil, nil, err
 	}
@@ -463,29 +478,15 @@ func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Iss
 				}
 				ProjectItems struct {
 					Nodes []struct {
+						Project struct {
+							ID string
+						} `graphql:"project"`
 						FieldValues struct {
-							Nodes []struct {
-								TypeName string `graphql:"__typename"`
-								// Single select field value
-								ProjectV2ItemFieldSingleSelectValue struct {
-									Name  string
-									Field struct {
-										ProjectV2SingleSelectField struct {
-											Name string
-										} `graphql:"... on ProjectV2SingleSelectField"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldSingleSelectValue"`
-								// Text field value
-								ProjectV2ItemFieldTextValue struct {
-									Text  string
-									Field struct {
-										ProjectV2Field struct {
-											Name string
-										} `graphql:"... on ProjectV2Field"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldTextValue"`
-							}
+							Nodes []typedFieldValueNode
 						} `graphql:"fieldValues(first: 20)"`
+					}
+					PageInfo struct {
+						HasNextPage bool
 					}
 				} `graphql:"projectItems(first: 10)"`
 			} `graphql:"issue(number: $number)"`
@@ -506,6 +507,10 @@ func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Iss
 	err = c.gql.Query("GetIssueWithProjectFields", &query, variables)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get issue %s/%s#%d: %w", owner, repo, number, err)
+	}
+
+	if query.Repository.Issue.ProjectItems.PageInfo.HasNextPage {
+		fmt.Fprintf(os.Stderr, "Warning: issue #%d belongs to more than 10 projects; only the first 10 were read, so its field values may be incomplete.\n", number)
 	}
 
 	issue := &Issue{
@@ -534,27 +539,15 @@ func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Iss
 		issue.Milestone = &Milestone{Title: query.Repository.Issue.Milestone.Title}
 	}
 
-	// Extract field values from project items
+	// Extract field values from project items, scoped to the configured project.
+	// An issue on multiple boards would otherwise merge foreign Status/Priority
+	// values (#856). An empty projectID disables the filter.
 	var fieldValues []FieldValue
 	for _, projectItem := range query.Repository.Issue.ProjectItems.Nodes {
-		for _, fv := range projectItem.FieldValues.Nodes {
-			switch fv.TypeName {
-			case "ProjectV2ItemFieldSingleSelectValue":
-				if fv.ProjectV2ItemFieldSingleSelectValue.Name != "" {
-					fieldValues = append(fieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldSingleSelectValue.Field.ProjectV2SingleSelectField.Name,
-						Value: fv.ProjectV2ItemFieldSingleSelectValue.Name,
-					})
-				}
-			case "ProjectV2ItemFieldTextValue":
-				if fv.ProjectV2ItemFieldTextValue.Text != "" {
-					fieldValues = append(fieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldTextValue.Field.ProjectV2Field.Name,
-						Value: fv.ProjectV2ItemFieldTextValue.Text,
-					})
-				}
-			}
+		if projectID != "" && projectItem.Project.ID != projectID {
+			continue
 		}
+		fieldValues = appendTypedFieldValues(fieldValues, projectItem.FieldValues.Nodes)
 	}
 
 	return issue, fieldValues, nil
@@ -562,6 +555,11 @@ func (c *Client) GetIssueWithProjectFields(owner, repo string, number int) (*Iss
 
 // GetProjectItemIDForIssue looks up the project item ID for a specific issue in a project.
 // This is more efficient than fetching all project items when you only need one.
+//
+// It inspects only the first 20 project items on the issue (issues rarely belong
+// to more than a handful of projects). If the target project is not among those
+// 20 and more exist, a truncation warning is emitted to stderr so a false
+// "not in the project" result is visible rather than silent (#860).
 func (c *Client) GetProjectItemIDForIssue(projectID, owner, repo string, number int) (string, error) {
 
 	var query struct {
@@ -573,6 +571,9 @@ func (c *Client) GetProjectItemIDForIssue(projectID, owner, repo string, number 
 						Project struct {
 							ID string
 						}
+					}
+					PageInfo struct {
+						HasNextPage bool
 					}
 				} `graphql:"projectItems(first: 20)"`
 			} `graphql:"issue(number: $number)"`
@@ -602,6 +603,10 @@ func (c *Client) GetProjectItemIDForIssue(projectID, owner, repo string, number 
 		}
 	}
 
+	if query.Repository.Issue.ProjectItems.PageInfo.HasNextPage {
+		fmt.Fprintf(os.Stderr, "Warning: issue #%d belongs to more than 20 projects; only the first 20 were checked, so \"not in the project\" may be inaccurate.\n", number)
+	}
+
 	return "", fmt.Errorf("issue #%d is not in the project", number)
 }
 
@@ -609,7 +614,10 @@ func (c *Client) GetProjectItemIDForIssue(projectID, owner, repo string, number 
 type ProjectItemsFilter struct {
 	Repository string  // Filter by repository (owner/repo format)
 	State      *string // Filter by issue state: "OPEN", "CLOSED", or nil for all
-	Limit      int     // Maximum number of items to return (0 = no limit)
+	// Limit is the maximum number of items to return. 0 is not unlimited: it
+	// applies GetProjectItems' default cap of 10000, above which items are still
+	// truncated (#860).
+	Limit int
 }
 
 // GetProjectItems fetches all items from a project with their field values.
@@ -618,8 +626,6 @@ type ProjectItemsFilter struct {
 func (c *Client) GetProjectItems(projectID string, filter *ProjectItemsFilter) ([]ProjectItem, error) {
 
 	const defaultMaxItems = 10000
-	var allItems []ProjectItem
-	var cursor *string
 	limit := 0
 	if filter != nil {
 		limit = filter.Limit
@@ -628,20 +634,17 @@ func (c *Client) GetProjectItems(projectID string, filter *ProjectItemsFilter) (
 		limit = defaultMaxItems
 	}
 
-	for {
-		items, pageInfo, err := c.getProjectItemsPage(projectID, cursor)
-		if err != nil {
-			return nil, err
-		}
-
-		// Filter and process items from this page
-		for _, item := range items {
+	return collectPages(
+		func(cursor *string) ([]ProjectItem, pageInfo, error) {
+			return c.getProjectItemsPage(projectID, cursor)
+		},
+		func(item ProjectItem) bool {
 			// Apply repository filter if specified
 			if filter != nil && filter.Repository != "" {
 				if item.Issue != nil && item.Issue.Repository.Owner != "" {
 					repoName := item.Issue.Repository.Owner + "/" + item.Issue.Repository.Name
 					if repoName != filter.Repository {
-						continue
+						return false
 					}
 				}
 			}
@@ -649,26 +652,14 @@ func (c *Client) GetProjectItems(projectID string, filter *ProjectItemsFilter) (
 			// Apply state filter if specified
 			if filter != nil && filter.State != nil {
 				if item.Issue == nil || item.Issue.State != *filter.State {
-					continue
+					return false
 				}
 			}
 
-			allItems = append(allItems, item)
-
-			// Early termination if limit is reached
-			if limit > 0 && len(allItems) >= limit {
-				return allItems[:limit], nil
-			}
-		}
-
-		// Check if there are more pages
-		if !pageInfo.HasNextPage {
-			break
-		}
-		cursor = &pageInfo.EndCursor
-	}
-
-	return allItems, nil
+			return true
+		},
+		limit,
+	)
 }
 
 // pageInfo holds pagination information from GraphQL responses
@@ -710,27 +701,7 @@ func (c *Client) getProjectItemsPage(projectID string, cursor *string) ([]Projec
 							} `graphql:"... on Issue"`
 						}
 						FieldValues struct {
-							Nodes []struct {
-								TypeName string `graphql:"__typename"`
-								// Single select field value
-								ProjectV2ItemFieldSingleSelectValue struct {
-									Name  string
-									Field struct {
-										ProjectV2SingleSelectField struct {
-											Name string
-										} `graphql:"... on ProjectV2SingleSelectField"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldSingleSelectValue"`
-								// Text field value
-								ProjectV2ItemFieldTextValue struct {
-									Text  string
-									Field struct {
-										ProjectV2Field struct {
-											Name string
-										} `graphql:"... on ProjectV2Field"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldTextValue"`
-							}
+							Nodes []typedFieldValueNode
 						} `graphql:"fieldValues(first: 20)"`
 					}
 					PageInfo struct {
@@ -796,24 +767,7 @@ func (c *Client) getProjectItemsPage(projectID string, cursor *string) ([]Projec
 		}
 
 		// Parse field values
-		for _, fv := range node.FieldValues.Nodes {
-			switch fv.TypeName {
-			case "ProjectV2ItemFieldSingleSelectValue":
-				if fv.ProjectV2ItemFieldSingleSelectValue.Name != "" {
-					item.FieldValues = append(item.FieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldSingleSelectValue.Field.ProjectV2SingleSelectField.Name,
-						Value: fv.ProjectV2ItemFieldSingleSelectValue.Name,
-					})
-				}
-			case "ProjectV2ItemFieldTextValue":
-				if fv.ProjectV2ItemFieldTextValue.Text != "" {
-					item.FieldValues = append(item.FieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldTextValue.Field.ProjectV2Field.Name,
-						Value: fv.ProjectV2ItemFieldTextValue.Text,
-					})
-				}
-			}
-		}
+		item.FieldValues = appendTypedFieldValues(item.FieldValues, node.FieldValues.Nodes)
 
 		items = append(items, item)
 	}
@@ -841,41 +795,29 @@ func splitRepoName(nameWithOwner string) []string {
 // for matching items only.
 func (c *Client) GetProjectItemsMinimal(projectID string, filter *ProjectItemsFilter) ([]MinimalProjectItem, error) {
 
-	var allItems []MinimalProjectItem
-	var cursor *string
-
-	for {
-		items, pInfo, err := c.getMinimalProjectItemsPage(projectID, cursor)
-		if err != nil {
-			return nil, err
-		}
-
-		// Filter and process items from this page
-		for _, item := range items {
+	return collectPages(
+		func(cursor *string) ([]MinimalProjectItem, pageInfo, error) {
+			return c.getMinimalProjectItemsPage(projectID, cursor)
+		},
+		func(item MinimalProjectItem) bool {
 			// Apply repository filter if specified
 			if filter != nil && filter.Repository != "" {
 				if item.Repository != filter.Repository {
-					continue
+					return false
 				}
 			}
 
 			// Apply state filter if specified
 			if filter != nil && filter.State != nil {
 				if item.IssueState != *filter.State {
-					continue
+					return false
 				}
 			}
 
-			allItems = append(allItems, item)
-		}
-
-		if !pInfo.HasNextPage {
-			break
-		}
-		cursor = &pInfo.EndCursor
-	}
-
-	return allItems, nil
+			return true
+		},
+		0,
+	)
 }
 
 // getMinimalProjectItemsPage fetches a single page of project items with minimal data
@@ -897,27 +839,7 @@ func (c *Client) getMinimalProjectItemsPage(projectID string, cursor *string) ([
 							} `graphql:"... on Issue"`
 						}
 						FieldValues struct {
-							Nodes []struct {
-								TypeName string `graphql:"__typename"`
-								// Single select field value
-								ProjectV2ItemFieldSingleSelectValue struct {
-									Name  string
-									Field struct {
-										ProjectV2SingleSelectField struct {
-											Name string
-										} `graphql:"... on ProjectV2SingleSelectField"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldSingleSelectValue"`
-								// Text field value
-								ProjectV2ItemFieldTextValue struct {
-									Text  string
-									Field struct {
-										ProjectV2Field struct {
-											Name string
-										} `graphql:"... on ProjectV2Field"`
-									}
-								} `graphql:"... on ProjectV2ItemFieldTextValue"`
-							}
+							Nodes []typedFieldValueNode
 						} `graphql:"fieldValues(first: 20)"`
 					}
 					PageInfo struct {
@@ -957,24 +879,7 @@ func (c *Client) getMinimalProjectItemsPage(projectID string, cursor *string) ([
 		}
 
 		// Parse field values
-		for _, fv := range node.FieldValues.Nodes {
-			switch fv.TypeName {
-			case "ProjectV2ItemFieldSingleSelectValue":
-				if fv.ProjectV2ItemFieldSingleSelectValue.Name != "" {
-					item.FieldValues = append(item.FieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldSingleSelectValue.Field.ProjectV2SingleSelectField.Name,
-						Value: fv.ProjectV2ItemFieldSingleSelectValue.Name,
-					})
-				}
-			case "ProjectV2ItemFieldTextValue":
-				if fv.ProjectV2ItemFieldTextValue.Text != "" {
-					item.FieldValues = append(item.FieldValues, FieldValue{
-						Field: fv.ProjectV2ItemFieldTextValue.Field.ProjectV2Field.Name,
-						Value: fv.ProjectV2ItemFieldTextValue.Text,
-					})
-				}
-			}
-		}
+		item.FieldValues = appendTypedFieldValues(item.FieldValues, node.FieldValues.Nodes)
 
 		items = append(items, item)
 	}
@@ -1150,20 +1055,15 @@ func (c *Client) GetProjectItemsByIssues(projectID string, refs []IssueRef) ([]P
 							ID string `json:"id"`
 						} `json:"project"`
 						FieldValues struct {
-							Nodes []struct {
-								TypeName string `json:"__typename"`
-								Name     string `json:"name"`
-								Text     string `json:"text"`
-								Field    struct {
-									Name string `json:"name"`
-								} `json:"field"`
-							} `json:"nodes"`
+							Nodes []rawFieldValueNode `json:"nodes"`
 						} `json:"fieldValues"`
 					} `json:"nodes"`
 				} `json:"projectItems"`
 			}
 
 			if err := json.Unmarshal(issueData, &issue); err != nil {
+				// Warn instead of silently dropping the issue from the batch.
+				fmt.Fprintf(os.Stderr, "Warning: failed to parse batch project item %s/%s; skipping: %v\n", repoAlias, issueAlias, err)
 				continue
 			}
 
@@ -1195,25 +1095,7 @@ func (c *Client) GetProjectItemsByIssues(projectID string, refs []IssueRef) ([]P
 
 				// Build field values
 				var fieldValues []FieldValue
-				for _, fv := range pItem.FieldValues.Nodes {
-					var fieldName, value string
-					switch fv.TypeName {
-					case "ProjectV2ItemFieldSingleSelectValue":
-						fieldName = fv.Field.Name
-						value = fv.Name
-					case "ProjectV2ItemFieldTextValue":
-						fieldName = fv.Field.Name
-						value = fv.Text
-					default:
-						continue
-					}
-					if fieldName != "" {
-						fieldValues = append(fieldValues, FieldValue{
-							Field: fieldName,
-							Value: value,
-						})
-					}
-				}
+				fieldValues = appendRawFieldValues(fieldValues, pItem.FieldValues.Nodes)
 
 				items = append(items, ProjectItem{
 					ID: pItem.ID,
@@ -1252,40 +1134,28 @@ type BoardItemsFilter struct {
 // Uses cursor-based pagination to retrieve all items regardless of project size.
 func (c *Client) GetProjectItemsForBoard(projectID string, filter *BoardItemsFilter) ([]BoardItem, error) {
 
-	var allItems []BoardItem
-	var cursor *string
-
-	for {
-		items, pInfo, err := c.getBoardItemsPage(projectID, cursor)
-		if err != nil {
-			return nil, err
-		}
-
-		// Filter and process items from this page
-		for _, item := range items {
+	return collectPages(
+		func(cursor *string) ([]BoardItem, pageInfo, error) {
+			return c.getBoardItemsPage(projectID, cursor)
+		},
+		func(item BoardItem) bool {
 			if filter != nil && filter.Repository != "" {
 				if item.Repository != filter.Repository {
-					continue
+					return false
 				}
 			}
 
 			// Apply state filter if specified
 			if filter != nil && filter.State != nil {
 				if item.State != *filter.State {
-					continue
+					return false
 				}
 			}
 
-			allItems = append(allItems, item)
-		}
-
-		if !pInfo.HasNextPage {
-			break
-		}
-		cursor = &pInfo.EndCursor
-	}
-
-	return allItems, nil
+			return true
+		},
+		0,
+	)
 }
 
 // getBoardItemsPage fetches a single page of board items with minimal data
@@ -1506,10 +1376,20 @@ func parseSubIssueCountsResponse(data []byte, numbers []int) (map[int]int, error
 				} `json:"subIssues"`
 			} `json:"repository"`
 		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
 	}
 
 	if err := json.Unmarshal(data, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse batch sub-issue response: %w", err)
+	}
+
+	// Inspect the GraphQL errors array (as parseSubIssuesBatchResponse does).
+	// Without this, a partial/total failure silently yields count 0 for every
+	// issue — indistinguishable from a genuine "no sub-issues".
+	if len(response.Errors) > 0 {
+		return nil, fmt.Errorf("GraphQL errors: %s", response.Errors[0].Message)
 	}
 
 	result := make(map[int]int)
@@ -1582,7 +1462,9 @@ func (c *Client) GetSubIssuesBatch(owner, repo string, numbers []int) (map[int][
 		fmt.Fprintf(os.Stderr, "Note: Issue #%d has >100 sub-issues, fetching all pages...\n", num)
 		allSubIssues, err := c.GetSubIssues(owner, repo, num)
 		if err != nil {
-			// If fallback fails, keep partial results from batch
+			// If fallback fails, keep the truncated batch results but warn so the
+			// caller knows #num's sub-issue list is incomplete, not authoritative.
+			fmt.Fprintf(os.Stderr, "Warning: failed to fetch remaining sub-issues for #%d; results are truncated to the first 100: %v\n", num, err)
 			continue
 		}
 		result[num] = allSubIssues
@@ -1645,6 +1527,9 @@ func parseSubIssuesBatchResponse(data []byte, numbers []int) (map[int][]SubIssue
 		}
 
 		if err := json.Unmarshal(issueData, &issueResponse); err != nil {
+			// Warn rather than silently returning an empty list, which reads as
+			// "no sub-issues" when in fact the per-item response was malformed.
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse sub-issues for #%d; treating as none: %v\n", num, err)
 			result[num] = []SubIssue{}
 			continue
 		}
@@ -1936,14 +1821,7 @@ func (c *Client) getProjectFieldsForIssuesBatch(projectID string, issueIDs []str
 						ID string `json:"id"`
 					} `json:"project"`
 					FieldValues struct {
-						Nodes []struct {
-							TypeName string `json:"__typename"`
-							Name     string `json:"name"`
-							Text     string `json:"text"`
-							Field    struct {
-								Name string `json:"name"`
-							} `json:"field"`
-						} `json:"nodes"`
+						Nodes []rawFieldValueNode `json:"nodes"`
 					} `json:"fieldValues"`
 				} `json:"nodes"`
 			} `json:"projectItems"`
@@ -1968,24 +1846,7 @@ func (c *Client) getProjectFieldsForIssuesBatch(projectID string, issueIDs []str
 				continue
 			}
 
-			for _, fv := range projectItem.FieldValues.Nodes {
-				switch fv.TypeName {
-				case "ProjectV2ItemFieldSingleSelectValue":
-					if fv.Name != "" && fv.Field.Name != "" {
-						fieldValues = append(fieldValues, FieldValue{
-							Field: fv.Field.Name,
-							Value: fv.Name,
-						})
-					}
-				case "ProjectV2ItemFieldTextValue":
-					if fv.Text != "" && fv.Field.Name != "" {
-						fieldValues = append(fieldValues, FieldValue{
-							Field: fv.Field.Name,
-							Value: fv.Text,
-						})
-					}
-				}
-			}
+			fieldValues = appendRawFieldValues(fieldValues, projectItem.FieldValues.Nodes)
 		}
 
 		result[nodeData.ID] = fieldValues
@@ -2132,6 +1993,28 @@ func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]I
 		gqlLabels = append(gqlLabels, graphql.String(l))
 	}
 
+	var allIssues []Issue
+	var cursor *string
+	for {
+		issues, pi, err := c.getOpenIssuesByLabelsPage(owner, repo, labels, gqlLabels, cursor)
+		if err != nil {
+			return nil, err
+		}
+		allIssues = append(allIssues, issues...)
+		if !pi.HasNextPage {
+			break
+		}
+		cursor = &pi.EndCursor
+	}
+
+	return allIssues, nil
+}
+
+// getOpenIssuesByLabelsPage fetches a single page of open issues carrying all of
+// the given labels, using cursor-based pagination so callers see every match
+// rather than only the first 100 (#860). labels is passed through solely for
+// error messages.
+func (c *Client) getOpenIssuesByLabelsPage(owner, repo string, labels []string, gqlLabels []graphql.String, cursor *string) ([]Issue, pageInfo, error) {
 	var query struct {
 		Repository struct {
 			Issues struct {
@@ -2154,7 +2037,7 @@ func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]I
 					HasNextPage bool
 					EndCursor   string
 				}
-			} `graphql:"issues(first: 100, states: $states, labels: $labels)"`
+			} `graphql:"issues(first: 100, after: $cursor, states: $states, labels: $labels)"`
 		} `graphql:"repository(owner: $owner, name: $repo)"`
 	}
 
@@ -2163,11 +2046,15 @@ func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]I
 		"repo":   graphql.String(repo),
 		"labels": gqlLabels,
 		"states": []IssueState{IssueStateOpen},
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
 	err := c.gql.Query("GetIssuesByLabels", &query, variables)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get issues with labels %v from %s/%s: %w", labels, owner, repo, err)
+		return nil, pageInfo{}, fmt.Errorf("failed to get issues with labels %v from %s/%s: %w", labels, owner, repo, err)
 	}
 
 	var issues []Issue
@@ -2191,7 +2078,10 @@ func (c *Client) GetOpenIssuesByLabels(owner, repo string, labels []string) ([]I
 		})
 	}
 
-	return issues, nil
+	return issues, pageInfo{
+		HasNextPage: query.Repository.Issues.PageInfo.HasNextPage,
+		EndCursor:   query.Repository.Issues.PageInfo.EndCursor,
+	}, nil
 }
 
 // getIssuesByLabelPaginated fetches all issues with a specific label using cursor-based pagination
@@ -2347,26 +2237,45 @@ func (c *Client) GetParentIssue(owner, repo string, number int) (*Issue, error) 
 // ListProjects fetches all projects for an owner (user or organization)
 func (c *Client) ListProjects(owner string) ([]Project, error) {
 
-	// First try as user projects
-	projects, err := c.listUserProjects(owner)
-	if err == nil && len(projects) > 0 {
+	// First try as user projects. A successful user query means the owner IS a
+	// user, so return its projects even when empty — a user with zero open
+	// projects must yield an empty list, not fall through to the org path and
+	// surface "Could not resolve to an Organization" (#861).
+	projects, userErr := c.listUserProjects(owner)
+	if userErr == nil {
 		return projects, nil
 	}
 
-	// If that fails or returns empty, try as organization projects
-	orgProjects, err := c.listOrgProjects(owner)
-	if err != nil {
-		// If both fail, return user error if we had one
-		if projects != nil {
-			return projects, nil
-		}
-		return nil, fmt.Errorf("failed to list projects for %s: %w", owner, err)
+	// User path failed (owner is likely an organization); try org projects.
+	orgProjects, orgErr := c.listOrgProjects(owner)
+	if orgErr != nil {
+		return nil, fmt.Errorf("failed to list projects for %s: %w", owner, errors.Join(userErr, orgErr))
 	}
 
 	return orgProjects, nil
 }
 
 func (c *Client) listUserProjects(owner string) ([]Project, error) {
+	var projects []Project
+	var cursor *string
+	for {
+		page, pi, err := c.listUserProjectsPage(owner, cursor)
+		if err != nil {
+			return nil, err
+		}
+		projects = append(projects, page...)
+		if !pi.HasNextPage {
+			break
+		}
+		cursor = &pi.EndCursor
+	}
+	return projects, nil
+}
+
+// listUserProjectsPage fetches a single page of a user's open projects, using
+// cursor-based pagination so older open projects past the first page are not
+// dropped (#860). Closed projects are filtered client-side.
+func (c *Client) listUserProjectsPage(owner string, cursor *string) ([]Project, pageInfo, error) {
 	var query struct {
 		User struct {
 			ProjectsV2 struct {
@@ -2377,17 +2286,24 @@ func (c *Client) listUserProjects(owner string) ([]Project, error) {
 					URL    string `graphql:"url"`
 					Closed bool
 				}
-			} `graphql:"projectsV2(first: 20, orderBy: {field: UPDATED_AT, direction: DESC})"`
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+			} `graphql:"projectsV2(first: 100, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC})"`
 		} `graphql:"user(login: $owner)"`
 	}
 
 	variables := map[string]interface{}{
-		"owner": graphql.String(owner),
+		"owner":  graphql.String(owner),
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
-	err := c.gql.Query("ListUserProjects", &query, variables)
-	if err != nil {
-		return nil, err
+	if err := c.gql.Query("ListUserProjects", &query, variables); err != nil {
+		return nil, pageInfo{}, err
 	}
 
 	var projects []Project
@@ -2408,7 +2324,10 @@ func (c *Client) listUserProjects(owner string) ([]Project, error) {
 		})
 	}
 
-	return projects, nil
+	return projects, pageInfo{
+		HasNextPage: query.User.ProjectsV2.PageInfo.HasNextPage,
+		EndCursor:   query.User.ProjectsV2.PageInfo.EndCursor,
+	}, nil
 }
 
 // Comment represents an issue comment
@@ -2426,6 +2345,32 @@ func (c *Client) GetIssueComments(owner, repo string, number int) ([]Comment, er
 		return nil, err
 	}
 
+	gqlNumber, err := safeGraphQLInt(number)
+	if err != nil {
+		return nil, err
+	}
+
+	var comments []Comment
+	var cursor *string
+	for {
+		page, pi, err := c.getIssueCommentsPage(owner, repo, gqlNumber, cursor)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get comments for %s/%s#%d: %w", owner, repo, number, err)
+		}
+		comments = append(comments, page...)
+		if !pi.HasNextPage {
+			break
+		}
+		cursor = &pi.EndCursor
+	}
+
+	return comments, nil
+}
+
+// getIssueCommentsPage fetches a single page of an issue's comments, using
+// cursor-based pagination so all comments are returned rather than only the
+// first 50 (#860).
+func (c *Client) getIssueCommentsPage(owner, repo string, gqlNumber graphql.Int, cursor *string) ([]Comment, pageInfo, error) {
 	var query struct {
 		Repository struct {
 			Issue struct {
@@ -2439,25 +2384,27 @@ func (c *Client) GetIssueComments(owner, repo string, number int) ([]Comment, er
 							Login string
 						}
 					}
-				} `graphql:"comments(first: 50)"`
+					PageInfo struct {
+						HasNextPage bool
+						EndCursor   string
+					}
+				} `graphql:"comments(first: 100, after: $cursor)"`
 			} `graphql:"issue(number: $number)"`
 		} `graphql:"repository(owner: $owner, name: $repo)"`
-	}
-
-	gqlNumber, err := safeGraphQLInt(number)
-	if err != nil {
-		return nil, err
 	}
 
 	variables := map[string]interface{}{
 		"owner":  graphql.String(owner),
 		"repo":   graphql.String(repo),
 		"number": gqlNumber,
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
-	err = c.gql.Query("GetIssueComments", &query, variables)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get comments for %s/%s#%d: %w", owner, repo, number, err)
+	if err := c.gql.Query("GetIssueComments", &query, variables); err != nil {
+		return nil, pageInfo{}, err
 	}
 
 	var comments []Comment
@@ -2471,10 +2418,33 @@ func (c *Client) GetIssueComments(owner, repo string, number int) ([]Comment, er
 		})
 	}
 
-	return comments, nil
+	return comments, pageInfo{
+		HasNextPage: query.Repository.Issue.Comments.PageInfo.HasNextPage,
+		EndCursor:   query.Repository.Issue.Comments.PageInfo.EndCursor,
+	}, nil
 }
 
 func (c *Client) listOrgProjects(owner string) ([]Project, error) {
+	var projects []Project
+	var cursor *string
+	for {
+		page, pi, err := c.listOrgProjectsPage(owner, cursor)
+		if err != nil {
+			return nil, err
+		}
+		projects = append(projects, page...)
+		if !pi.HasNextPage {
+			break
+		}
+		cursor = &pi.EndCursor
+	}
+	return projects, nil
+}
+
+// listOrgProjectsPage fetches a single page of an org's open projects, using
+// cursor-based pagination so older open projects past the first page are not
+// dropped (#860). Closed projects are filtered client-side.
+func (c *Client) listOrgProjectsPage(owner string, cursor *string) ([]Project, pageInfo, error) {
 	var query struct {
 		Organization struct {
 			ProjectsV2 struct {
@@ -2485,17 +2455,24 @@ func (c *Client) listOrgProjects(owner string) ([]Project, error) {
 					URL    string `graphql:"url"`
 					Closed bool
 				}
-			} `graphql:"projectsV2(first: 20, orderBy: {field: UPDATED_AT, direction: DESC})"`
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+			} `graphql:"projectsV2(first: 100, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC})"`
 		} `graphql:"organization(login: $owner)"`
 	}
 
 	variables := map[string]interface{}{
-		"owner": graphql.String(owner),
+		"owner":  graphql.String(owner),
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
-	err := c.gql.Query("ListOrgProjects", &query, variables)
-	if err != nil {
-		return nil, err
+	if err := c.gql.Query("ListOrgProjects", &query, variables); err != nil {
+		return nil, pageInfo{}, err
 	}
 
 	var projects []Project
@@ -2516,13 +2493,20 @@ func (c *Client) listOrgProjects(owner string) ([]Project, error) {
 		})
 	}
 
-	return projects, nil
+	return projects, pageInfo{
+		HasNextPage: query.Organization.ProjectsV2.PageInfo.HasNextPage,
+		EndCursor:   query.Organization.ProjectsV2.PageInfo.EndCursor,
+	}, nil
 }
 
 // GetIssuesWithProjectFieldsBatch fetches multiple issues with full detail
 // (including author, milestone, labels, assignees) and project field values
 // in a single GraphQL query. Optimized for the view command's batch mode.
-func (c *Client) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []int) (map[int]*Issue, map[int][]FieldValue, map[int]error, error) {
+//
+// projectID scopes the returned field values to a single project board; see
+// GetIssueWithProjectFields for the rationale. An empty projectID disables the
+// filter.
+func (c *Client) GetIssuesWithProjectFieldsBatch(projectID, owner, repo string, numbers []int) (map[int]*Issue, map[int][]FieldValue, map[int]error, error) {
 	issues := make(map[int]*Issue)
 	fieldValues := make(map[int][]FieldValue)
 	issueErrors := make(map[int]error)
@@ -2550,6 +2534,7 @@ func (c *Client) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []i
 			milestone { title }
 			projectItems(first: 10) {
 				nodes {
+					project { id }
 					fieldValues(first: 20) {
 						nodes {
 							__typename
@@ -2577,18 +2562,24 @@ func (c *Client) GetIssuesWithProjectFieldsBatch(owner, repo string, numbers []i
 		return nil, nil, nil, fmt.Errorf("failed to execute batch issues query: %w", err)
 	}
 
-	return parseIssuesBatchResponse(output, numbers, owner, repo)
+	return parseIssuesBatchResponse(output, numbers, projectID, owner, repo)
 }
 
 // parseIssuesBatchResponse parses the JSON response from a batch issues query.
-func parseIssuesBatchResponse(data []byte, numbers []int, owner, repo string) (map[int]*Issue, map[int][]FieldValue, map[int]error, error) {
+// projectID scopes field values to a single project board (#856); an empty
+// projectID disables that filter.
+func parseIssuesBatchResponse(data []byte, numbers []int, projectID, owner, repo string) (map[int]*Issue, map[int][]FieldValue, map[int]error, error) {
 	var response struct {
 		Data struct {
 			Repository map[string]json.RawMessage `json:"repository"`
 		} `json:"data"`
 		Errors []struct {
-			Message string   `json:"message"`
-			Path    []string `json:"path"`
+			Message string `json:"message"`
+			// Path segments may be strings (field/alias names) or integers (list
+			// indices) per the GraphQL spec, so decode as []interface{}; a numeric
+			// segment must not fail the whole response unmarshal and abort the
+			// batch (#861).
+			Path []interface{} `json:"path"`
 		} `json:"errors"`
 	}
 
@@ -2600,11 +2591,14 @@ func parseIssuesBatchResponse(data []byte, numbers []int, owner, repo string) (m
 	fieldValues := make(map[int][]FieldValue)
 	issueErrors := make(map[int]error)
 
-	// Map GraphQL errors to specific aliases
+	// Map GraphQL errors to specific aliases. The alias segment (path[1], e.g.
+	// "i0") is a string; ignore errors whose second segment is not a string.
 	aliasErrors := make(map[string]string)
 	for _, gqlErr := range response.Errors {
 		if len(gqlErr.Path) >= 2 {
-			aliasErrors[gqlErr.Path[1]] = gqlErr.Message
+			if alias, ok := gqlErr.Path[1].(string); ok {
+				aliasErrors[alias] = gqlErr.Message
+			}
 		}
 	}
 
@@ -2648,15 +2642,11 @@ func parseIssuesBatchResponse(data []byte, numbers []int, owner, repo string) (m
 			} `json:"milestone"`
 			ProjectItems struct {
 				Nodes []struct {
+					Project struct {
+						ID string `json:"id"`
+					} `json:"project"`
 					FieldValues struct {
-						Nodes []struct {
-							TypeName string `json:"__typename"`
-							Name     string `json:"name"`
-							Text     string `json:"text"`
-							Field    struct {
-								Name string `json:"name"`
-							} `json:"field"`
-						} `json:"nodes"`
+						Nodes []rawFieldValueNode `json:"nodes"`
 					} `json:"fieldValues"`
 				} `json:"nodes"`
 			} `json:"projectItems"`
@@ -2695,24 +2685,10 @@ func parseIssuesBatchResponse(data []byte, numbers []int, owner, repo string) (m
 
 		var fvs []FieldValue
 		for _, projectItem := range raw.ProjectItems.Nodes {
-			for _, fv := range projectItem.FieldValues.Nodes {
-				switch fv.TypeName {
-				case "ProjectV2ItemFieldSingleSelectValue":
-					if fv.Name != "" {
-						fvs = append(fvs, FieldValue{
-							Field: fv.Field.Name,
-							Value: fv.Name,
-						})
-					}
-				case "ProjectV2ItemFieldTextValue":
-					if fv.Text != "" {
-						fvs = append(fvs, FieldValue{
-							Field: fv.Field.Name,
-							Value: fv.Text,
-						})
-					}
-				}
+			if projectID != "" && projectItem.Project.ID != projectID {
+				continue
 			}
+			fvs = appendRawFieldValues(fvs, projectItem.FieldValues.Nodes)
 		}
 		fieldValues[num] = fvs
 	}
@@ -2793,6 +2769,8 @@ func parseParentIssueBatchResponse(data []byte, numbers []int) (map[int]*Issue, 
 		}
 
 		if err := json.Unmarshal(issueData, &raw); err != nil {
+			// Warn rather than silently returning "no parent" for a malformed item.
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse parent issue for #%d; treating as no parent: %v\n", num, err)
 			result[num] = nil
 			continue
 		}

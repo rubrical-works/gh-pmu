@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -10,6 +12,45 @@ import (
 	"github.com/rubrical-works/gh-pmu/internal/config"
 	"github.com/spf13/cobra"
 )
+
+func TestRunMoveWithDeps_RecursiveEnrichmentFailureWarns(t *testing.T) {
+	// #871 finding 8: when the recursive enrichment query (GetProjectItemsByIssues)
+	// fails, the failure was swallowed and the affected sub-issues were misreported
+	// as "(not in project, will skip)". A warning must now be emitted.
+	mock := newMockMoveClient()
+	mock.project = &api.Project{ID: "proj-1", Number: 1, Title: "Test Project"}
+	mock.issues["testowner/testrepo#1"] = &api.Issue{ID: "issue-1", Number: 1, Title: "Parent Issue"}
+	mock.projectItems = []api.ProjectItem{
+		{ID: "item-1", Issue: &api.Issue{Number: 1, Repository: api.Repository{Owner: "testowner", Name: "testrepo"}}},
+	}
+	mock.subIssues["testowner/testrepo#1"] = []api.SubIssue{
+		{ID: "issue-2", Number: 2, Title: "Sub", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
+	}
+	mock.getProjectItemsByIssuesErr = fmt.Errorf("enrichment API failure")
+
+	cfg := testMoveConfig()
+
+	cmd := &cobra.Command{}
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+
+	oldErr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	opts := &moveOptions{status: "in_progress", recursive: true, yes: true, depth: 10}
+	_ = runMoveWithDeps(cmd, []string{"1"}, opts, cfg, mock)
+
+	_ = w.Close()
+	os.Stderr = oldErr
+	var errBuf bytes.Buffer
+	_, _ = io.Copy(&errBuf, r)
+
+	if !strings.Contains(strings.ToLower(errBuf.String()), "enrich") {
+		t.Errorf("expected a stderr warning about failed sub-issue enrichment, got: %q", errBuf.String())
+	}
+}
 
 // mockMoveClient implements moveClient for testing
 type mockMoveClient struct {
@@ -474,6 +515,27 @@ func TestMoveCommand_HasYesFlag(t *testing.T) {
 
 	if flag.Shorthand != "y" {
 		t.Errorf("Expected --yes shorthand to be 'y', got '%s'", flag.Shorthand)
+	}
+}
+
+func TestMoveCommand_YesFlagHelpDoesNotGateForce(t *testing.T) {
+	// #867 finding 3: --force implies confirmation (issue #778, AC-778-1), so the
+	// `!opts.yes && !opts.force` guard was unreachable dead code. The --yes help
+	// text must not claim to gate --force — that was the documented contradiction.
+	cmd := NewRootCommand()
+	moveCmd, _, err := cmd.Find([]string{"move"})
+	if err != nil {
+		t.Fatalf("move command not found: %v", err)
+	}
+	flag := moveCmd.Flags().Lookup("yes")
+	if flag == nil {
+		t.Fatal("Expected --yes flag to exist")
+	}
+	if strings.Contains(flag.Usage, "--force") {
+		t.Errorf("--yes help must not claim to gate --force (force self-confirms); got %q", flag.Usage)
+	}
+	if !strings.Contains(flag.Usage, "--recursive") {
+		t.Errorf("--yes help should still mention --recursive; got %q", flag.Usage)
 	}
 }
 

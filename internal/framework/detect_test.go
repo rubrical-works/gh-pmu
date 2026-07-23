@@ -85,6 +85,34 @@ func TestDetectFramework_NoConfig_ReturnsEmpty(t *testing.T) {
 	}
 }
 
+// #871 finding 10: a corrupt/unparsable .gh-pmu.json must surface an error, not
+// be silently treated as "no framework" (which disables command restrictions).
+func TestDetectFramework_CorruptGhPmuJson_ReturnsError(t *testing.T) {
+	tempDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(tempDir, ".gh-pmu.json"), []byte("{not valid json"), 0644); err != nil {
+		t.Fatalf("Failed to write corrupt .gh-pmu.json: %v", err)
+	}
+
+	framework, err := DetectFramework(tempDir)
+	if err == nil {
+		t.Fatalf("expected error for corrupt .gh-pmu.json, got nil (framework=%q)", framework)
+	}
+}
+
+func TestDetectFramework_CorruptFrameworkConfig_ReturnsError(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// No .gh-pmu.json (missing is fine); framework-config.json is corrupt.
+	if err := os.WriteFile(filepath.Join(tempDir, "framework-config.json"), []byte("{broken"), 0644); err != nil {
+		t.Fatalf("Failed to write corrupt framework-config.json: %v", err)
+	}
+
+	if _, err := DetectFramework(tempDir); err == nil {
+		t.Fatal("expected error for corrupt framework-config.json, got nil")
+	}
+}
+
 // Test priority: .gh-pmu.json takes precedence over framework-config.json
 func TestDetectFramework_GhPmuJsonTakesPrecedence(t *testing.T) {
 	// ARRANGE

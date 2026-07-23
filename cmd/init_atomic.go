@@ -55,28 +55,10 @@ func runInitPostCreate(client initPostCreateClient, in *initPostCreateInputs) er
 	}
 
 	if in.Framework == "IDPF" {
-		for _, reqField := range in.Defs.Fields.Required {
-			field := findFieldByName(projectFields, reqField.Name)
-			if field == nil {
-				return rollback(FailedStepValidateRequiredFields, fmt.Errorf("required field %q not found in project", reqField.Name), false)
-			}
-			if field.DataType != reqField.Type {
-				return rollback(FailedStepValidateRequiredFields, fmt.Errorf("field %q has type %s, expected %s", reqField.Name, field.DataType, reqField.Type), false)
-			}
-			if reqField.Type == "SINGLE_SELECT" && len(reqField.Options) > 0 {
-				for _, reqOpt := range reqField.Options {
-					found := false
-					for _, opt := range field.Options {
-						if opt.Name == reqOpt {
-							found = true
-							break
-						}
-					}
-					if !found {
-						return rollback(FailedStepValidateRequiredFields, fmt.Errorf("field %q missing required option %q", reqField.Name, reqOpt), false)
-					}
-				}
-			}
+		// The stderr hint is intentionally discarded: this path reports failures
+		// through the rollback trailer, not a bare stderr line (#874).
+		if _, err := validateRequiredFields(projectFields, in.Defs.Fields.Required); err != nil {
+			return rollback(FailedStepValidateRequiredFields, err, false)
 		}
 
 		ensureOptionalProjectFields(client, in.NewProject.ID, in.Defs.Fields.CreateIfMissing, in.ErrOut)

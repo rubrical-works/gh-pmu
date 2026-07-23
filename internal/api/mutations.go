@@ -222,7 +222,7 @@ func (c *Client) setSingleSelectField(projectID, itemID string, field *ProjectFi
 		ItemID:    graphql.ID(itemID),
 		FieldID:   graphql.ID(field.ID),
 		Value: ProjectV2FieldValue{
-			SingleSelectOptionId: graphql.String(optionID),
+			SingleSelectOptionId: graphql.NewString(graphql.String(optionID)),
 		},
 	}
 
@@ -250,7 +250,7 @@ func (c *Client) setTextField(projectID, itemID, fieldID, value string) error {
 		ItemID:    graphql.ID(itemID),
 		FieldID:   graphql.ID(fieldID),
 		Value: ProjectV2FieldValue{
-			Text: graphql.String(value),
+			Text: graphql.NewString(graphql.String(value)),
 		},
 	}
 
@@ -283,7 +283,7 @@ func (c *Client) setNumberField(projectID, itemID, fieldID, value string) error 
 		ItemID:    graphql.ID(itemID),
 		FieldID:   graphql.ID(fieldID),
 		Value: ProjectV2FieldValue{
-			Number: graphql.Float(numValue),
+			Number: graphql.NewFloat(graphql.Float(numValue)),
 		},
 	}
 
@@ -344,7 +344,7 @@ func (c *Client) setDateField(projectID, itemID, fieldID, value string) error {
 		ItemID:    graphql.ID(itemID),
 		FieldID:   graphql.ID(fieldID),
 		Value: ProjectV2FieldValue{
-			Date: graphql.String(value),
+			Date: graphql.NewString(graphql.String(value)),
 		},
 	}
 
@@ -368,13 +368,19 @@ type UpdateProjectV2ItemFieldValueInput struct {
 	Value     ProjectV2FieldValue `json:"value"`
 }
 
-// ProjectV2FieldValue represents a field value for a project item
+// ProjectV2FieldValue represents a field value for a project item.
+//
+// Members are pointers so that intentionally-set zero values (a NUMBER of 0, a
+// TEXT of "") serialize instead of being dropped by `omitempty` (#857): a
+// non-nil pointer to a zero value is emitted, while an unset member stays nil
+// and is omitted. Value types with `omitempty` marshaled these as `"value":{}`,
+// silently dropping the update.
 type ProjectV2FieldValue struct {
-	Text                 graphql.String `json:"text,omitempty"`
-	Number               graphql.Float  `json:"number,omitempty"`
-	Date                 graphql.String `json:"date,omitempty"`
-	SingleSelectOptionId graphql.String `json:"singleSelectOptionId,omitempty"`
-	IterationId          graphql.String `json:"iterationId,omitempty"`
+	Text                 *graphql.String `json:"text,omitempty"`
+	Number               *graphql.Float  `json:"number,omitempty"`
+	Date                 *graphql.String `json:"date,omitempty"`
+	SingleSelectOptionId *graphql.String `json:"singleSelectOptionId,omitempty"`
+	IterationId          *graphql.String `json:"iterationId,omitempty"`
 }
 
 // Helper methods
@@ -903,9 +909,13 @@ func (c *Client) resolveLabelIDs(owner, repo string, labels []string) ([]graphql
 		return nil, fmt.Errorf("failed to load defaults: %w", loadErr)
 	}
 
+	// Propagate a lookup failure instead of proceeding with an empty map. Treating
+	// a transient failure as "no labels exist in the repo" causes existing
+	// non-standard labels to be misrejected as "not a standard label" or triggers
+	// spurious CreateLabel calls.
 	labelIDMap, err := c.getLabelIDs(owner, repo, labels)
 	if err != nil {
-		labelIDMap = make(map[string]string)
+		return nil, fmt.Errorf("failed to look up existing labels in %s/%s: %w", owner, repo, err)
 	}
 
 	var labelIDs []graphql.ID
@@ -1052,7 +1062,10 @@ func (c *Client) CreateIssueWithOptions(owner, repo, title, body string, labels,
 		for _, login := range assignees {
 			userID, err := c.getUserID(login)
 			if err != nil {
-				// Skip users that don't exist
+				// Warn per skipped assignee (the milestone branch below also warns)
+				// so a transient lookup failure isn't silently indistinguishable
+				// from "user not found".
+				fmt.Fprintf(os.Stderr, "Warning: skipping assignee %q: %v\n", login, err)
 				continue
 			}
 			assigneeIDs = append(assigneeIDs, graphql.ID(userID))
@@ -1303,8 +1316,43 @@ func (c *Client) GetProjectItemID(projectID, issueID string) (string, error) {
 }
 
 // GetProjectItemFieldValue returns the value of a field on a project item
-func (c *Client) GetProjectItemFieldValue(projectID, itemID, fieldName string) (string, error) {
+func (c *Client) GetProjectItemFieldValue(projectID, itemID, fieldName string) (string, bool, error) {
+	var cursor *string
+	for {
+		value, found, pi, err := c.getProjectItemFieldValuePage(itemID, fieldName, cursor)
+		if err != nil {
+			return "", false, err
+		}
+		if found {
+			return value, true, nil
+		}
+		if !pi.HasNextPage {
+			return "", false, nil
+		}
+		cursor = &pi.EndCursor
+	}
+}
 
+// projectFieldCommon selects a project field's name through the
+// ProjectV2FieldCommon interface. `field` on a value node returns the
+// ProjectV2FieldConfiguration *union*, so `name` cannot be selected directly —
+// GitHub rejects the document (#888). All three union members implement
+// ProjectV2FieldCommon, so one inline fragment covers every case.
+type projectFieldCommon struct {
+	Common struct {
+		Name string
+	} `graphql:"... on ProjectV2FieldCommon"`
+}
+
+// Name returns the field's name as resolved through the interface fragment.
+func (f projectFieldCommon) Name() string { return f.Common.Name }
+
+// getProjectItemFieldValuePage scans a single page of an item's field values for
+// fieldName. It reports found=true with the value when the field is present on
+// the page (empty string is a valid value), and returns the page info so the
+// caller can continue paginating — an item can carry more than a page of
+// populated values (#860).
+func (c *Client) getProjectItemFieldValuePage(itemID, fieldName string, cursor *string) (string, bool, pageInfo, error) {
 	var query struct {
 		Node struct {
 			ProjectV2Item struct {
@@ -1312,41 +1360,47 @@ func (c *Client) GetProjectItemFieldValue(projectID, itemID, fieldName string) (
 					Nodes []struct {
 						ProjectV2ItemFieldTextValue struct {
 							Text  string
-							Field struct {
-								Name string
-							} `graphql:"field"`
+							Field projectFieldCommon `graphql:"field"`
 						} `graphql:"... on ProjectV2ItemFieldTextValue"`
 						ProjectV2ItemFieldSingleSelectValue struct {
 							Name  string
-							Field struct {
-								Name string
-							} `graphql:"field"`
+							Field projectFieldCommon `graphql:"field"`
 						} `graphql:"... on ProjectV2ItemFieldSingleSelectValue"`
 					}
-				} `graphql:"fieldValues(first: 20)"`
+					PageInfo struct {
+						HasNextPage bool
+						EndCursor   string
+					}
+				} `graphql:"fieldValues(first: 100, after: $cursor)"`
 			} `graphql:"... on ProjectV2Item"`
 		} `graphql:"node(id: $itemId)"`
 	}
 
 	variables := map[string]interface{}{
 		"itemId": graphql.ID(itemID),
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
 	}
 
-	err := c.gql.Query("GetProjectItemFieldValue", &query, variables)
-	if err != nil {
-		return "", fmt.Errorf("failed to get field value: %w", err)
+	if err := c.gql.Query("GetProjectItemFieldValue", &query, variables); err != nil {
+		return "", false, pageInfo{}, fmt.Errorf("failed to get field value: %w", err)
 	}
 
 	for _, fv := range query.Node.ProjectV2Item.FieldValues.Nodes {
-		if fv.ProjectV2ItemFieldTextValue.Field.Name == fieldName {
-			return fv.ProjectV2ItemFieldTextValue.Text, nil
+		if fv.ProjectV2ItemFieldTextValue.Field.Name() == fieldName {
+			return fv.ProjectV2ItemFieldTextValue.Text, true, pageInfo{}, nil
 		}
-		if fv.ProjectV2ItemFieldSingleSelectValue.Field.Name == fieldName {
-			return fv.ProjectV2ItemFieldSingleSelectValue.Name, nil
+		if fv.ProjectV2ItemFieldSingleSelectValue.Field.Name() == fieldName {
+			return fv.ProjectV2ItemFieldSingleSelectValue.Name, true, pageInfo{}, nil
 		}
 	}
 
-	return "", nil
+	return "", false, pageInfo{
+		HasNextPage: query.Node.ProjectV2Item.FieldValues.PageInfo.HasNextPage,
+		EndCursor:   query.Node.ProjectV2Item.FieldValues.PageInfo.EndCursor,
+	}, nil
 }
 
 // WriteFile writes content to a file path
@@ -1400,9 +1454,15 @@ func (c *Client) GitTag(tag, message string) error {
 	return nil
 }
 
-// GitCommit creates a git commit with the given message
-func (c *Client) GitCommit(message string) error {
+// GitCommit creates a git commit with the given message in the given working
+// directory. When dir is empty the command runs in the process's current
+// directory (the historical behavior). Passing an explicit dir lets callers and
+// tests target a specific repository without mutating the process cwd.
+func (c *Client) GitCommit(dir, message string) error {
 	cmd := exec.Command("git", "commit", "-m", message)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git commit failed: %s", strings.TrimSpace(string(output)))
@@ -1868,12 +1928,20 @@ func (c *Client) executeBatchMutation(projectID string, updates []FieldUpdate) (
 		return nil, fmt.Errorf("batch mutation failed: %w", err)
 	}
 
-	// Parse response
+	return parseBatchMutationResponse(output, updates)
+}
+
+// parseBatchMutationResponse decodes a batch mutation response into per-update
+// results. Extracted for testability, mirroring parseIssuesBatchResponse.
+func parseBatchMutationResponse(output []byte, updates []FieldUpdate) ([]BatchUpdateResult, error) {
 	var response struct {
 		Data   map[string]json.RawMessage `json:"data"`
 		Errors []struct {
-			Message string   `json:"message"`
-			Path    []string `json:"path"`
+			Message string `json:"message"`
+			// Path segments may be strings (alias names) or integers (list
+			// indices); decode as []interface{} so a numeric segment does not
+			// abort the whole response unmarshal (#861).
+			Path []interface{} `json:"path"`
 		} `json:"errors"`
 	}
 
@@ -1891,12 +1959,15 @@ func (c *Client) executeBatchMutation(projectID string, updates []FieldUpdate) (
 			Success:   true,
 		}
 
-		// Check if this specific update failed
+		// Check if this specific update failed. The leading path segment is the
+		// alias (a string); non-string segments never match an alias.
 		for _, graphErr := range response.Errors {
-			if len(graphErr.Path) > 0 && graphErr.Path[0] == alias {
-				result.Success = false
-				result.Error = graphErr.Message
-				break
+			if len(graphErr.Path) > 0 {
+				if seg, ok := graphErr.Path[0].(string); ok && seg == alias {
+					result.Success = false
+					result.Error = graphErr.Message
+					break
+				}
 			}
 		}
 

@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-const testRepo = "rubrical-works/gh-pmu-e2e-test"
+const testRepo = "rubrical-worker/gh-pmu-e2e-test"
 
 // TestCleanupE2EIssues cleans up any leftover E2E test issues and orphaned projects.
 // This test only runs when E2E_CLEANUP=true is set.
@@ -132,7 +132,7 @@ func cleanupOrphanedProjects(t *testing.T) {
 	t.Helper()
 
 	cmd := exec.Command("gh", "project", "list",
-		"--owner", "rubrical-works",
+		"--owner", "rubrical-worker",
 		"--format", "json",
 		"--limit", "100",
 	)
@@ -167,7 +167,7 @@ func cleanupOrphanedProjects(t *testing.T) {
 		t.Logf("Deleting orphaned project #%d: %s", p.Number, p.Title)
 		delCmd := exec.Command("gh", "project", "delete",
 			strconv.Itoa(p.Number),
-			"--owner", "rubrical-works",
+			"--owner", "rubrical-worker",
 		)
 		if delOutput, err := delCmd.CombinedOutput(); err != nil {
 			t.Logf("  Warning: failed to delete project #%d: %v\n  Output: %s", p.Number, err, delOutput)

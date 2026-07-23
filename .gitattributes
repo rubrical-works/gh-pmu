@@ -1,0 +1,6 @@
+# The vendored GraphQL schema is a verbatim upstream artifact. Its sha256 and
+# byte count are recorded in testdata/graphql/schema-provenance.json and asserted
+# by internal/api/schema_validation_test.go. EOL conversion would rewrite the
+# bytes on checkout (core.autocrlf=true on Windows) and break that check for
+# everyone but the person who vendored it. Refs #886.
+testdata/graphql/schema.docs.graphql -text

@@ -144,9 +144,14 @@ func runCommentWithDeps(cmd *cobra.Command, opts *commentOptions, client comment
 	body := opts.body
 
 	if opts.bodyStdin {
-		content, err := io.ReadAll(io.LimitReader(stdin, 1*1024*1024)) // 1MB limit
+		// Read one byte past the limit so an oversized body is detected and
+		// rejected rather than silently truncated (mirrors create.go).
+		content, err := io.ReadAll(io.LimitReader(stdin, maxBodyFileSize+1))
 		if err != nil {
 			return fmt.Errorf("failed to read body from stdin: %w", err)
+		}
+		if int64(len(content)) > maxBodyFileSize {
+			return fmt.Errorf("stdin input exceeds maximum size of 1MB")
 		}
 		body = string(content)
 	}

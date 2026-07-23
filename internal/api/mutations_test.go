@@ -4,10 +4,76 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestResolveLabelIDs_LookupErrorPropagates(t *testing.T) {
+	// #872 finding 3: a label-lookup failure must propagate, not be swallowed into
+	// an empty map that then misrejects an existing custom label as "not standard".
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	client.rawGQL = &mockRawGraphQL{err: errors.New("batch label lookup network error")}
+
+	_, err := client.resolveLabelIDs("owner", "repo", []string{"custom-existing-label"})
+	if err == nil {
+		t.Fatal("expected the lookup error to propagate, got nil")
+	}
+	if strings.Contains(err.Error(), "is not a standard label") {
+		t.Errorf("expected a propagated lookup error, got misleading standard-label rejection: %v", err)
+	}
+	if !strings.Contains(err.Error(), "look up") {
+		t.Errorf("expected the propagated lookup error, got: %v", err)
+	}
+}
+
+func TestCreateIssueWithOptions_AssigneeLookupFailureWarns(t *testing.T) {
+	// #872 finding 4: an assignee whose lookup fails must be warned about (with the
+	// reason), not silently dropped; issue creation still proceeds.
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name == "GetRepositoryID" {
+				v := reflect.ValueOf(query).Elem()
+				v.FieldByName("Repository").FieldByName("ID").SetString("repo-123")
+				return nil
+			}
+			if name == "GetUserID" {
+				return errors.New("user lookup failed")
+			}
+			return nil
+		},
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	oldErr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	_, err := client.CreateIssueWithOptions("owner", "repo", "title", "body", nil, []string{"ghost"}, "")
+
+	_ = w.Close()
+	os.Stderr = oldErr
+	var buf strings.Builder
+	_, _ = io.Copy(&buf, r)
+
+	if err != nil {
+		t.Fatalf("issue creation should still succeed when an assignee is skipped, got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "ghost") {
+		t.Errorf("expected a stderr warning naming the skipped assignee, got: %q", buf.String())
+	}
+}
 
 // ============================================================================
 // Mock GraphQL Client for Testing
@@ -734,6 +800,9 @@ func TestCreateIssue_WithLabels_ErrorsForNonStandardLabels(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	// Batch label lookup returns an empty repository (no labels found) so resolution
+	// falls through to the standard-label check.
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	// "custom-label" and "unknown" are not in defaults.yml, so they should cause an error
 	_, err := client.CreateIssue("owner", "repo", "title", "body", []string{"custom-label", "unknown"})
 
@@ -796,6 +865,9 @@ func TestCreateIssue_WithLabels_AutoCreatesStandardLabel(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	// Batch label lookup returns an empty repository so "bug" falls through to the
+	// standard-label auto-create path.
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	// "bug" is a standard label, should be auto-created if missing
 	issue, err := client.CreateIssue("owner", "repo", "Test Issue", "body", []string{"bug"})
 
@@ -912,6 +984,8 @@ func TestCreateIssueInput_LabelsIncludedInMutation(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	// Batch label lookup resolves "bug" (l0 alias) directly to its ID.
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{"l0":{"id":"label-bug-id"}}}}`)}
 	issue, err := client.CreateIssue("owner", "repo", "Test Issue", "body", []string{"bug"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -1124,21 +1198,39 @@ func TestGitTag_ErrorMessageIncludesGitOutput(t *testing.T) {
 }
 
 func TestGitCommit_ErrorMessageIncludesGitOutput(t *testing.T) {
-	client, cErr := NewClient()
-	if cErr != nil {
-		t.Skipf("Skipping - requires auth: %v", cErr)
+	// Hermetic repo: git init into a TempDir and point GitCommit at it via its
+	// explicit working-directory argument, so the commit can never run in the
+	// developer's working repo — even if they have staged changes when running the
+	// suite. GitCommit shells out to git and uses no API, so construct the client
+	// directly rather than NewClient() (which may fail/skip without credentials).
+	dir := t.TempDir()
+	gitInDir(t, dir, "init")
+	// Configure identity so `git commit` reaches the deterministic "nothing to
+	// commit" failure rather than erroring earlier on a missing user.name/email.
+	gitInDir(t, dir, "config", "user.email", "test@example.com")
+	gitInDir(t, dir, "config", "user.name", "gh-pmu test")
+
+	client := &Client{}
+
+	// Nothing is staged in the hermetic repo, so the commit must fail. Assert
+	// unconditionally — the old `if err != nil` guard made success a silent pass,
+	// which is exactly the path that would have committed the developer's work.
+	err := client.GitCommit(dir, "test commit message")
+	if err == nil {
+		t.Fatal("expected git commit to fail with nothing staged, got nil")
 	}
+	if !strings.Contains(err.Error(), "git commit failed:") {
+		t.Errorf("expected error to contain 'git commit failed:', got: %v", err)
+	}
+}
 
-	// Try to commit with nothing staged - this will fail in most cases
-	// Note: This test assumes we're not in a state where a commit would succeed
-	err := client.GitCommit("test commit message")
-
-	// If there's nothing to commit, git will return an error
-	// We just verify that IF there's an error, it has the right format
-	if err != nil {
-		if !strings.Contains(err.Error(), "git commit failed:") {
-			t.Errorf("Expected error to contain 'git commit failed:', got: %v", err)
-		}
+// gitInDir runs a git command in dir and fails the test if it errors.
+func gitInDir(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s failed in %s: %v\nOutput: %s", strings.Join(args, " "), dir, err, out)
 	}
 }
 
@@ -2874,6 +2966,7 @@ func TestResolveLabelIDs_FoundLabels(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	ids, err := client.resolveLabelIDs("owner", "repo", []string{"bug"})
 
 	if err != nil {
@@ -2913,6 +3006,7 @@ func TestResolveLabelIDs_AutoCreatesStandardLabel(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	ids, err := client.resolveLabelIDs("owner", "repo", []string{"bug"})
 
 	if err != nil {
@@ -2931,6 +3025,7 @@ func TestResolveLabelIDs_ErrorsForNonStandardLabel(t *testing.T) {
 	}
 
 	client := NewClientWithGraphQL(mock)
+	client.rawGQL = &mockRawGraphQL{response: []byte(`{"data":{"repository":{}}}`)}
 	_, err := client.resolveLabelIDs("owner", "repo", []string{"custom-nonexistent"})
 
 	if err == nil {
@@ -3161,4 +3256,267 @@ func TestDeleteProject_InputVariables(t *testing.T) {
 	}
 	client := NewClientWithGraphQL(mock)
 	_ = client.DeleteProject("PVT_xyz")
+}
+
+// ============================================================================
+// Zero-value field update serialization (#857)
+// ============================================================================
+//
+// ProjectV2FieldValue previously used value types with `omitempty`, so a NUMBER
+// set to 0 or a TEXT set to "" marshaled as `"value":{}` — the intended value
+// was silently dropped. Pointer members fix this: an intentionally-set zero is a
+// non-nil pointer and serializes; an unset member stays nil and is omitted.
+
+func TestSetNumberField_ZeroValueSerializes(t *testing.T) {
+	var captured map[string]interface{}
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			captured = variables
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	if err := client.setNumberField("proj", "item", "field", "0"); err != nil {
+		t.Fatalf("setNumberField(0) error = %v", err)
+	}
+
+	data, err := json.Marshal(captured["input"])
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, `"number":0`) {
+		t.Errorf("expected the zero NUMBER value to serialize, got %s", got)
+	}
+	if strings.Contains(got, `"value":{}`) {
+		t.Errorf("value object was dropped to empty (omitempty bug): %s", got)
+	}
+}
+
+func TestSetTextField_EmptyValueSerializes(t *testing.T) {
+	var captured map[string]interface{}
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			captured = variables
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	if err := client.setTextField("proj", "item", "field", ""); err != nil {
+		t.Fatalf("setTextField(\"\") error = %v", err)
+	}
+
+	data, err := json.Marshal(captured["input"])
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, `"text":""`) {
+		t.Errorf("expected the empty TEXT value to serialize, got %s", got)
+	}
+	if strings.Contains(got, `"value":{}`) {
+		t.Errorf("value object was dropped to empty (omitempty bug): %s", got)
+	}
+}
+
+// TestSetNumberField_UnsetMembersOmitted guards that the pointer change does not
+// start emitting the other members: setting a NUMBER must not carry text/date/etc.
+func TestSetNumberField_UnsetMembersOmitted(t *testing.T) {
+	var captured map[string]interface{}
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			captured = variables
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	if err := client.setNumberField("proj", "item", "field", "5"); err != nil {
+		t.Fatalf("setNumberField(5) error = %v", err)
+	}
+	data, _ := json.Marshal(captured["input"])
+	got := string(data)
+	for _, unwanted := range []string{`"text"`, `"date"`, `"singleSelectOptionId"`, `"iterationId"`} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("unset member %s leaked into the mutation: %s", unwanted, got)
+		}
+	}
+}
+
+// TestSingleAndBatchZeroValueEquivalent covers AC3: the single-item path and the
+// batch path must serialize a zero NUMBER identically (`"value":{"number":0}`).
+func TestSingleAndBatchZeroValueEquivalent(t *testing.T) {
+	// Single path: capture the marshaled value object.
+	var captured map[string]interface{}
+	mock := &mockGraphQLClient{
+		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			captured = variables
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+	if err := client.setNumberField("proj", "item", "field", "0"); err != nil {
+		t.Fatalf("setNumberField(0) error = %v", err)
+	}
+	singleData, _ := json.Marshal(captured["input"])
+	if !strings.Contains(string(singleData), `"value":{"number":0}`) {
+		t.Errorf("single path did not serialize value:{number:0}, got %s", singleData)
+	}
+
+	// Batch path: build the request for the same zero NUMBER update.
+	_, batchBody, err := buildBatchMutationRequest("proj", []FieldUpdate{
+		{ItemID: "item", fieldID: "field", dataType: "NUMBER", Value: "0"},
+	})
+	if err != nil {
+		t.Fatalf("buildBatchMutationRequest error = %v", err)
+	}
+	if !strings.Contains(batchBody, `"value":{"number":0}`) {
+		t.Errorf("batch path did not serialize value:{number:0}, got %s", batchBody)
+	}
+}
+
+// TestParseBatchMutationResponse_IntegerPathSegment covers #861 case 1 for the
+// mutations batch parser: an integer path segment must not abort the parse, and
+// the alias-keyed error must still attribute to the right update.
+func TestParseBatchMutationResponse_IntegerPathSegment(t *testing.T) {
+	updates := []FieldUpdate{
+		{ItemID: "item-0", FieldName: "Status"},
+		{ItemID: "item-1", FieldName: "Priority"},
+	}
+	output := []byte(`{
+		"data": { "u1": { "projectV2Item": { "id": "item-1" } } },
+		"errors": [
+			{"message": "field update failed", "path": ["u0", "projectV2Item", 0, "field"]}
+		]
+	}`)
+
+	results, err := parseBatchMutationResponse(output, updates)
+	if err != nil {
+		t.Fatalf("integer path segment must not abort the parse, got: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Success {
+		t.Errorf("expected update u0 to be marked failed via its aliased error")
+	}
+	if results[0].Error != "field update failed" {
+		t.Errorf("expected u0 error to be attributed, got %q", results[0].Error)
+	}
+	if !results[1].Success {
+		t.Errorf("expected update u1 to succeed")
+	}
+}
+
+// ============================================================================
+// #860: GetProjectItemFieldValue found-bool + pagination (AC3)
+// ============================================================================
+
+// setFieldValueNode populates one fieldValues node as a text field with the
+// given name/value, via reflection.
+func setFieldValueNode(node reflect.Value, fieldName, text string) {
+	tv := node.FieldByName("ProjectV2ItemFieldTextValue")
+	tv.FieldByName("Text").SetString(text)
+	// The field name lives behind the ProjectV2FieldCommon inline fragment —
+	// `field` resolves to a union, so it cannot carry `name` directly (#888).
+	tv.FieldByName("Field").FieldByName("Common").FieldByName("Name").SetString(fieldName)
+}
+
+func fieldValuesConn(query interface{}) reflect.Value {
+	return reflect.ValueOf(query).Elem().
+		FieldByName("Node").FieldByName("ProjectV2Item").FieldByName("FieldValues")
+}
+
+func TestGetProjectItemFieldValue_EmptyIsFound(t *testing.T) {
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetProjectItemFieldValue" {
+				return nil
+			}
+			conn := fieldValuesConn(query)
+			nodes := conn.FieldByName("Nodes")
+			nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+			setFieldValueNode(nodes.Index(0), "Status", "") // present, empty value
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	value, found, err := client.GetProjectItemFieldValue("PVT", "PVTI", "Status")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !found {
+		t.Errorf("expected found=true for a present-but-empty field")
+	}
+	if value != "" {
+		t.Errorf("expected empty value, got %q", value)
+	}
+}
+
+func TestGetProjectItemFieldValue_MissingIsNotFound(t *testing.T) {
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetProjectItemFieldValue" {
+				return nil
+			}
+			conn := fieldValuesConn(query)
+			nodes := conn.FieldByName("Nodes")
+			nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+			setFieldValueNode(nodes.Index(0), "SomethingElse", "x")
+			// single page
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	value, found, err := client.GetProjectItemFieldValue("PVT", "PVTI", "Status")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if found {
+		t.Errorf("expected found=false when the field is absent")
+	}
+	if value != "" {
+		t.Errorf("expected empty value, got %q", value)
+	}
+}
+
+func TestGetProjectItemFieldValue_Pagination(t *testing.T) {
+	calls := 0
+	mock := &mockGraphQLClient{
+		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+			if name != "GetProjectItemFieldValue" {
+				return nil
+			}
+			calls++
+			conn := fieldValuesConn(query)
+			nodes := conn.FieldByName("Nodes")
+			pi := conn.FieldByName("PageInfo")
+			if calls == 1 {
+				// First page: target field absent, more pages available.
+				nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+				setFieldValueNode(nodes.Index(0), "Other", "v")
+				pi.FieldByName("HasNextPage").SetBool(true)
+				pi.FieldByName("EndCursor").SetString("c1")
+			} else {
+				// Second page: target field present.
+				nodes.Set(reflect.MakeSlice(nodes.Type(), 1, 1))
+				setFieldValueNode(nodes.Index(0), "Status", "Done")
+				pi.FieldByName("HasNextPage").SetBool(false)
+			}
+			return nil
+		},
+	}
+	client := NewClientWithGraphQL(mock)
+
+	value, found, err := client.GetProjectItemFieldValue("PVT", "PVTI", "Status")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if !found || value != "Done" {
+		t.Errorf("expected found Status=Done on page 2, got found=%v value=%q", found, value)
+	}
 }

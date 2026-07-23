@@ -1439,6 +1439,42 @@ func TestInitNonInteractive_ExistingConfigWithoutYes(t *testing.T) {
 	}
 }
 
+// #865 Gap 3 (AC3/AC4): running init from a subdirectory of an initialized project
+// detects the parent config (via config.FindConfigFile walking up) and refuses to
+// silently create a shadowing nested config.
+func TestInitNonInteractive_ParentConfigDetectedFromSubdirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, ".gh-pmu.json"), []byte(`{"project":{"owner":"test","number":1}}`), 0644); err != nil {
+		t.Fatalf("Failed to write parent config: %v", err)
+	}
+
+	subdir := filepath.Join(tmpDir, "packages", "app")
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatalf("Failed to create subdir: %v", err)
+	}
+
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(subdir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldWd) }()
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"init", "--non-interactive", "--source-project", "5", "--repo", "owner/repo"})
+	buf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(errBuf)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Expected error when a parent config exists without --yes")
+	}
+	if !strings.Contains(errBuf.String(), "already exists") {
+		t.Errorf("Expected 'already exists' guard from the parent config, got: %s", errBuf.String())
+	}
+}
+
 func TestInitNonInteractive_ConfigUsesNewProjectNumber(t *testing.T) {
 	// Verify that when non-interactive mode creates a project by copying,
 	// the config is written with the NEW project number, not the source number.

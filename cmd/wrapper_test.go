@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -14,11 +15,48 @@ import (
 	"github.com/rubrical-works/gh-pmu/internal/api"
 )
 
+// operationNamePattern extracts the operation name from a GraphQL document,
+// e.g. "query GetUserProject($number:Int!)..." -> "GetUserProject". Anonymous
+// documents ("query { n0: node(...) }", built by getProjectFieldsForIssuesBatch)
+// yield no name and must be matched with respondToQueryContaining instead.
+var operationNamePattern = regexp.MustCompile(`^\s*(?:query|mutation)\s+([A-Za-z_][A-Za-z0-9_]*)`)
+
+func graphQLOperationName(query string) string {
+	m := operationNamePattern.FindStringSubmatch(query)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// queryMatcher is a substring rule for documents that carry no operation name.
+type queryMatcher struct {
+	substring string
+	response  interface{}
+}
+
 // mockGraphQLHandler creates an HTTP handler that responds to GraphQL requests
 // with preconfigured responses.
+//
+// Matching is deterministic and happens in this order:
+//  1. exact operation name (respondTo)
+//  2. substring matchers, in registration order (respondToQueryContaining)
+//  3. defaultResponse
+//
+// Exact-name matching matters because several operation names are prefixes of
+// others — GetIssue is a prefix of GetIssueComments, GetIssueWithProjectFields
+// and GetIssuesByLabel; GetProjectItems is a prefix of GetProjectItemsMinimal
+// and GetProjectItemsForBoard. Substring matching over a map would resolve
+// those in Go's randomized map order and make fixtures flaky.
 type mockGraphQLHandler struct {
-	// Responses maps operation names to their JSON responses
+	// responses maps exact GraphQL operation names to their JSON responses
 	responses map[string]interface{}
+	// responders maps exact GraphQL operation names to a function that derives
+	// the response from the request, for flows that issue the same operation
+	// more than once and must be answered differently each time.
+	responders map[string]func(graphQLRequest) interface{}
+	// matchers holds ordered substring rules for anonymous documents
+	matchers []queryMatcher
 	// Default response for unmatched operations
 	defaultResponse interface{}
 	// Track requests for assertions
@@ -34,9 +72,71 @@ type graphQLRequest struct {
 
 func newMockGraphQLHandler() *mockGraphQLHandler {
 	return &mockGraphQLHandler{
-		responses: make(map[string]interface{}),
-		requests:  []graphQLRequest{},
+		responses:  make(map[string]interface{}),
+		responders: make(map[string]func(graphQLRequest) interface{}),
+		requests:   []graphQLRequest{},
 	}
+}
+
+// respondTo registers a response for an exact GraphQL operation name.
+func (h *mockGraphQLHandler) respondTo(opName string, response interface{}) *mockGraphQLHandler {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.responses[opName] = response
+	return h
+}
+
+// respondToFunc registers a per-request responder for an exact GraphQL
+// operation name. It takes precedence over respondTo for the same name.
+//
+// This exists because a single fixture per operation makes some flows
+// untestable rather than merely awkward: sub add issues GetIssue twice — once
+// for the parent, once for the child — and a static fixture answers both with
+// the same node id. The AddSubIssue payload would then carry identical ids for
+// issueId and subIssueId, so swapping parent and child in the production call
+// would still satisfy the assertion. TESTING.md calls this out under "Watch for
+// symmetric fixtures": when a test distinguishes two things, the fixtures must
+// differ.
+func (h *mockGraphQLHandler) respondToFunc(opName string, fn func(graphQLRequest) interface{}) *mockGraphQLHandler {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.responders[opName] = fn
+	return h
+}
+
+// respondToQueryContaining registers a response for documents containing
+// substr. Use only for anonymous documents that carry no operation name.
+func (h *mockGraphQLHandler) respondToQueryContaining(substr string, response interface{}) *mockGraphQLHandler {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.matchers = append(h.matchers, queryMatcher{substring: substr, response: response})
+	return h
+}
+
+// operationNames returns the operation name of every request received, in
+// order, so scenarios can assert which calls the command actually made.
+// Anonymous documents appear as "".
+func (h *mockGraphQLHandler) operationNames() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	names := make([]string, 0, len(h.requests))
+	for _, r := range h.requests {
+		names = append(names, graphQLOperationName(r.Query))
+	}
+	return names
+}
+
+// requestsFor returns every request made for the given operation name.
+func (h *mockGraphQLHandler) requestsFor(opName string) []graphQLRequest {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []graphQLRequest
+	for _, r := range h.requests {
+		if graphQLOperationName(r.Query) == opName {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func (h *mockGraphQLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -48,20 +148,32 @@ func (h *mockGraphQLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Lock()
 	h.requests = append(h.requests, req)
-	h.mu.Unlock()
 
-	// Find matching response based on query content
+	// 1. Exact operation name — per-request responder first, then static.
 	var response interface{}
-	for opName, resp := range h.responses {
-		if strings.Contains(req.Query, opName) {
+	if op := graphQLOperationName(req.Query); op != "" {
+		if fn, ok := h.responders[op]; ok {
+			response = fn(req)
+		} else if resp, ok := h.responses[op]; ok {
 			response = resp
-			break
 		}
 	}
 
+	// 2. Ordered substring matchers (anonymous documents).
+	if response == nil {
+		for _, m := range h.matchers {
+			if strings.Contains(req.Query, m.substring) {
+				response = m.response
+				break
+			}
+		}
+	}
+
+	// 3. Fallbacks.
 	if response == nil {
 		response = h.defaultResponse
 	}
+	h.mu.Unlock()
 
 	if response == nil {
 		// Return empty data if no response configured
@@ -97,19 +209,10 @@ func (t *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	return t.server.Client().Do(newReq)
 }
 
-// setupTestEnvironment creates a temp directory with a valid config file
-// and sets up the mock GraphQL server. Returns a cleanup function.
-func setupTestEnvironment(t *testing.T, handler *mockGraphQLHandler) (string, func()) {
-	t.Helper()
-
-	// Create temp directory
-	tmpDir, err := os.MkdirTemp("", "gh-pmu-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-
-	// Write config file
-	configContent := `{
+// defaultTestConfig is the config setupTestEnvironment writes. It carries no
+// "branch" field: the branch commands require one, so scenarios for those use
+// setupTestEnvironmentWithConfig and branchTestConfig instead.
+const defaultTestConfig = `{
   "project": {
     "owner": "test-org",
     "number": 1
@@ -134,6 +237,26 @@ func setupTestEnvironment(t *testing.T, handler *mockGraphQLHandler) (string, fu
     }
   }
 }`
+
+// setupTestEnvironment creates a temp directory with a valid config file
+// and sets up the mock GraphQL server. Returns a cleanup function.
+func setupTestEnvironment(t *testing.T, handler *mockGraphQLHandler) (string, func()) {
+	t.Helper()
+	return setupTestEnvironmentWithConfig(t, handler, defaultTestConfig)
+}
+
+// setupTestEnvironmentWithConfig is setupTestEnvironment with a caller-supplied
+// config document, for commands whose behavior depends on fields the default
+// config does not declare.
+func setupTestEnvironmentWithConfig(t *testing.T, handler *mockGraphQLHandler, configContent string) (string, func()) {
+	t.Helper()
+
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "gh-pmu-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+
 	configPath := filepath.Join(tmpDir, ".gh-pmu.json")
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		os.RemoveAll(tmpDir)

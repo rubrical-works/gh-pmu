@@ -1,12 +1,12 @@
 {
-  "version": "1.4.9",
+  "version": "1.4.10",
   "project": {
     "name": "gh-pmu",
     "number": 11,
-    "owner": "rubrical-works"
+    "owner": "rubrical-worker"
   },
   "repositories": [
-    "rubrical-works/gh-pmu"
+    "rubrical-worker/gh-pmu"
   ],
   "framework": "IDPF",
   "defaults": {

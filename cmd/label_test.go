@@ -109,7 +109,7 @@ func setupLabelTestDir(t *testing.T) func() {
 		Repositories: []string{"test-owner/test-repo"},
 	}
 	configPath := filepath.Join(tempDir, ".gh-pmu.json")
-	if err := cfg.Save(configPath); err != nil {
+	if err := cfg.Save(filepath.Dir(configPath)); err != nil {
 		t.Fatalf("Failed to save config: %v", err)
 	}
 	if err := os.Chdir(tempDir); err != nil {

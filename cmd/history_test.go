@@ -324,51 +324,101 @@ func TestCommitInfo_JSONMarshalling(t *testing.T) {
 		FileCount: 2,
 	}
 
-	// Verify struct fields are properly tagged
-	if commit.Hash != "abc1234" {
-		t.Errorf("expected hash abc1234, got %s", commit.Hash)
+	data, err := json.Marshal(commit)
+	if err != nil {
+		t.Fatalf("failed to marshal CommitInfo: %v", err)
 	}
-	if commit.Body != "This is the commit body\nwith multiple lines" {
-		t.Errorf("expected body, got %s", commit.Body)
+
+	// The json tags are the wire contract for `history --json`; renaming one
+	// would silently break consumers, so assert the emitted names.
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("failed to unmarshal into map: %v", err)
 	}
-	if len(commit.References) != 1 {
-		t.Errorf("expected 1 reference, got %d", len(commit.References))
+	for _, field := range []string{
+		"hash", "author", "date", "subject", "body", "change_type",
+		"references", "insertions", "deletions", "comments", "files", "file_count",
+	} {
+		if _, ok := raw[field]; !ok {
+			t.Errorf("expected emitted JSON to contain field %q, got: %s", field, data)
+		}
 	}
-	if commit.Insertions != 10 {
-		t.Errorf("expected 10 insertions, got %d", commit.Insertions)
+
+	var parsed CommitInfo
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal CommitInfo: %v", err)
 	}
-	if commit.Deletions != 5 {
-		t.Errorf("expected 5 deletions, got %d", commit.Deletions)
+
+	if parsed.Hash != "abc1234" {
+		t.Errorf("expected hash abc1234, got %s", parsed.Hash)
 	}
-	if len(commit.Comments) != 1 {
-		t.Errorf("expected 1 comment, got %d", len(commit.Comments))
+	if parsed.Body != "This is the commit body\nwith multiple lines" {
+		t.Errorf("expected body to survive marshalling, got %s", parsed.Body)
 	}
-	if commit.Comments[0].Author != "reviewer" {
-		t.Errorf("expected comment author 'reviewer', got %s", commit.Comments[0].Author)
+	if !parsed.Date.Equal(commit.Date) {
+		t.Errorf("expected date %v, got %v", commit.Date, parsed.Date)
 	}
-	if len(commit.Files) != 2 {
-		t.Errorf("expected 2 files, got %d", len(commit.Files))
+	if parsed.ChangeType != "Fix" {
+		t.Errorf("expected change type Fix, got %s", parsed.ChangeType)
 	}
-	if commit.FileCount != 2 {
-		t.Errorf("expected file count 2, got %d", commit.FileCount)
+	if len(parsed.References) != 1 {
+		t.Fatalf("expected 1 reference, got %d", len(parsed.References))
+	}
+	if parsed.References[0].Number != 123 || parsed.References[0].Type != "related" {
+		t.Errorf("expected reference #123 type 'related', got %+v", parsed.References[0])
+	}
+	if parsed.Insertions != 10 {
+		t.Errorf("expected 10 insertions, got %d", parsed.Insertions)
+	}
+	if parsed.Deletions != 5 {
+		t.Errorf("expected 5 deletions, got %d", parsed.Deletions)
+	}
+	if len(parsed.Comments) != 1 {
+		t.Fatalf("expected 1 comment, got %d", len(parsed.Comments))
+	}
+	if parsed.Comments[0].Author != "reviewer" || parsed.Comments[0].Body != "Great change!" {
+		t.Errorf("expected comment from reviewer, got %+v", parsed.Comments[0])
+	}
+	if !parsed.Comments[0].Date.Equal(commit.Comments[0].Date) {
+		t.Errorf("expected comment date to survive marshalling, got %v", parsed.Comments[0].Date)
+	}
+	if len(parsed.Files) != 2 || parsed.Files[0] != "cmd/history.go" {
+		t.Errorf("expected 2 files starting with cmd/history.go, got %v", parsed.Files)
+	}
+	if parsed.FileCount != 2 {
+		t.Errorf("expected file count 2, got %d", parsed.FileCount)
 	}
 }
 
-func TestCommitComment_Fields(t *testing.T) {
-	comment := CommitComment{
-		Author: "test-user",
-		Body:   "This is a test comment",
-		Date:   time.Date(2025, 12, 10, 12, 0, 0, 0, time.UTC),
+func TestCommitInfo_JSONOmitsEmptyOptionalFields(t *testing.T) {
+	// Only the non-omitempty fields should appear for a bare commit.
+	commit := CommitInfo{
+		Hash:       "abc1234",
+		Author:     "Test Author",
+		Date:       time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
+		Subject:    "Chore: bare commit",
+		ChangeType: "Chore",
 	}
 
-	if comment.Author != "test-user" {
-		t.Errorf("expected author 'test-user', got %s", comment.Author)
+	data, err := json.Marshal(commit)
+	if err != nil {
+		t.Fatalf("failed to marshal CommitInfo: %v", err)
 	}
-	if comment.Body != "This is a test comment" {
-		t.Errorf("expected body, got %s", comment.Body)
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("failed to unmarshal into map: %v", err)
 	}
-	if comment.Date.Year() != 2025 {
-		t.Errorf("expected year 2025, got %d", comment.Date.Year())
+
+	for _, field := range []string{"body", "references", "insertions", "deletions", "comments", "files", "file_count"} {
+		if _, ok := raw[field]; ok {
+			t.Errorf("expected %q to be omitted when empty, got: %s", field, data)
+		}
+	}
+	for _, field := range []string{"hash", "author", "date", "subject", "change_type"} {
+		if _, ok := raw[field]; !ok {
+			t.Errorf("expected required field %q to always be emitted, got: %s", field, data)
+		}
 	}
 }
 
@@ -544,6 +594,32 @@ func TestValidateHistorySafety_NormalPath(t *testing.T) {
 	// This should pass as it's not the repo root
 	if err != nil && strings.Contains(err.Error(), "repository root") {
 		t.Errorf("Expected non-root path to succeed, got: %v", err)
+	}
+}
+
+func TestValidateHistorySafety_RefusesRepoRootFromSubdir(t *testing.T) {
+	// #868 finding 4: targeting the repo root from a subdirectory (absolute path
+	// or `..`) must still be refused. The old inner `cwd == repoRoot` gate let it
+	// through whenever the working directory was not itself the repo root.
+	repoRoot, err := getRepoRoot()
+	if err != nil {
+		t.Skipf("not in a git repo: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+
+	if err := os.Chdir(filepath.Join(repoRoot, "cmd")); err != nil {
+		t.Fatalf("chdir to subdir: %v", err)
+	}
+
+	opts := &historyOptions{force: false}
+	err = validateHistorySafety([]string{repoRoot}, opts)
+	if err == nil || !strings.Contains(err.Error(), "repository root") {
+		t.Errorf("expected refusal when targeting repo root from a subdirectory, got: %v", err)
 	}
 }
 

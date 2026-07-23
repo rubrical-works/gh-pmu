@@ -120,8 +120,9 @@ type branchClient interface {
 	GetIssueByNumber(owner, repo string, number int) (*api.Issue, error)
 	// GetProjectItemID returns the project item ID for an issue
 	GetProjectItemID(projectID, issueID string) (string, error)
-	// GetProjectItemFieldValue returns the current value of a field on a project item
-	GetProjectItemFieldValue(projectID, itemID, fieldID string) (string, error)
+	// GetProjectItemFieldValue returns the current value of a field on a project
+	// item; the bool reports whether the field was present (empty is a value).
+	GetProjectItemFieldValue(projectID, itemID, fieldID string) (string, bool, error)
 	// GetProjectItems returns all items in a project with their field values
 	GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error)
 	// GetProjectItemsMinimal returns project items with minimal issue data for filtering
@@ -150,6 +151,10 @@ type branchClient interface {
 	AddLabelToIssue(owner, repo, issueID, labelName string) error
 	// RemoveLabelFromIssue removes a label from an issue
 	RemoveLabelFromIssue(owner, repo, issueID, labelName string) error
+	// AddSubIssue links a child issue as a sub-issue of a parent (tracker) issue
+	AddSubIssue(parentIssueID, childIssueID string) error
+	// RemoveSubIssue unlinks a child issue from its parent (tracker) issue
+	RemoveSubIssue(parentIssueID, childIssueID string) error
 }
 
 // branchStartOptions holds the options for the branch start command
@@ -471,23 +476,34 @@ func runBranchStartWithDeps(cmd *cobra.Command, opts *branchStartOptions, cfg *c
 	title := fmt.Sprintf("Branch: %s", opts.branchName)
 	body := generateBranchTrackerTemplate(opts.branchName)
 
-	// Create tracker issue with branch label
+	// Create tracker issue with branch label. From here on the git branch already
+	// exists, so failures leave partial state — surface recovery guidance naming
+	// the branch rather than a bare error.
 	labels := []string{"branch"}
 	issue, err := client.CreateIssue(owner, repo, title, body, labels)
 	if err != nil {
-		return fmt.Errorf("failed to create tracker issue: %w", err)
+		return fmt.Errorf("failed to create tracker issue: %w\n"+
+			"Partial state: git branch %q was created but has no tracker. "+
+			"Delete it with 'git branch -D %s' and retry, or create the tracker manually.",
+			err, opts.branchName, opts.branchName)
 	}
 
 	// Get project
 	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
 	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
+		return fmt.Errorf("failed to get project: %w\n"+
+			"Partial state: git branch %q and tracker issue #%d exist but project setup did not complete. "+
+			"Fix the problem and re-run, or use 'gh pmu branch reopen %s'.",
+			err, opts.branchName, issue.Number, opts.branchName)
 	}
 
 	// Add issue to project
 	itemID, err := client.AddIssueToProject(project.ID, issue.ID)
 	if err != nil {
-		return fmt.Errorf("failed to add issue to project: %w", err)
+		return fmt.Errorf("failed to add issue to project: %w\n"+
+			"Partial state: git branch %q and tracker issue #%d exist but the tracker is not on the project board. "+
+			"Add it manually or delete #%d and retry.",
+			err, opts.branchName, issue.Number, issue.Number)
 	}
 
 	// Set status to In Progress
@@ -499,7 +515,10 @@ func runBranchStartWithDeps(cmd *cobra.Command, opts *branchStartOptions, cfg *c
 		}
 		err = client.SetProjectItemField(project.ID, itemID, statusField.Field, statusValue)
 		if err != nil {
-			return fmt.Errorf("failed to set status: %w", err)
+			return fmt.Errorf("failed to set status: %w\n"+
+				"Partial state: git branch %q and tracker issue #%d exist and are on the board but the status was not set. "+
+				"Set it manually with 'gh pmu move %d --status in_progress'.",
+				err, opts.branchName, issue.Number, issue.Number)
 		}
 	}
 
@@ -541,6 +560,32 @@ func findAllActiveBranches(issues []api.Issue) []api.Issue {
 	return branches
 }
 
+// errMultipleActiveBranches builds the disambiguation error listing active branch
+// names. Shared by add/remove/current/close so the message format stays consistent.
+func errMultipleActiveBranches(branches []api.Issue) error {
+	names := make([]string, 0, len(branches))
+	for i := range branches {
+		names = append(names, extractBranchVersion(branches[i].Title))
+	}
+	return fmt.Errorf("multiple active branches. Specify one: %s", strings.Join(names, ", "))
+}
+
+// resolveSingleActiveBranchTracker returns the sole active branch tracker from the
+// given issues. It errors with "no active branch found" when none are active and
+// with a disambiguation list when more than one is active. This prevents add/remove
+// from silently mutating an arbitrary tracker when multiple branches are active.
+func resolveSingleActiveBranchTracker(issues []api.Issue) (*api.Issue, error) {
+	active := findAllActiveBranches(issues)
+	switch len(active) {
+	case 0:
+		return nil, fmt.Errorf("no active branch found")
+	case 1:
+		return &active[0], nil
+	default:
+		return nil, errMultipleActiveBranches(active)
+	}
+}
+
 // resolveCurrentBranch resolves the current branch name when no argument is provided
 // Returns error if no branches or multiple branches are active
 func resolveCurrentBranch(cfg *config.Config, client branchClient) (string, error) {
@@ -554,22 +599,12 @@ func resolveCurrentBranch(cfg *config.Config, client branchClient) (string, erro
 		return "", fmt.Errorf("failed to get branch issues: %w", err)
 	}
 
-	activeBranches := findAllActiveBranches(issues)
-
-	switch len(activeBranches) {
-	case 0:
-		return "", fmt.Errorf("no active branch found")
-	case 1:
-		// Extract branch name from title (e.g., "Branch: patch/0.9.7" -> "patch/0.9.7")
-		return extractBranchVersion(activeBranches[0].Title), nil
-	default:
-		// Multiple branches - build error message with list
-		var names []string
-		for _, b := range activeBranches {
-			names = append(names, extractBranchVersion(b.Title))
-		}
-		return "", fmt.Errorf("multiple active branches. Specify one: %s", strings.Join(names, ", "))
+	tracker, err := resolveSingleActiveBranchTracker(issues)
+	if err != nil {
+		return "", err
 	}
+	// Extract branch name from title (e.g., "Branch: patch/0.9.7" -> "patch/0.9.7")
+	return extractBranchVersion(tracker.Title), nil
 }
 
 // runBranchAddWithDeps is the testable entry point for branch add
@@ -586,10 +621,11 @@ func runBranchAddWithDeps(cmd *cobra.Command, opts *branchAddOptions, cfg *confi
 		return fmt.Errorf("failed to get release issues: %w", err)
 	}
 
-	// Find active release tracker
-	activeRelease := findActiveBranch(issues)
-	if activeRelease == nil {
-		return fmt.Errorf("no active release found")
+	// Resolve the single active branch tracker. Errors with a disambiguation list
+	// when multiple branches are active rather than silently picking an arbitrary one.
+	activeRelease, err := resolveSingleActiveBranchTracker(issues)
+	if err != nil {
+		return err
 	}
 
 	// Extract version from title (e.g., "Release: v1.2.0" or "Release: v1.2.0 (Phoenix)" -> "v1.2.0")
@@ -622,6 +658,14 @@ func runBranchAddWithDeps(cmd *cobra.Command, opts *branchAddOptions, cfg *confi
 	err = client.SetProjectItemField(project.ID, itemID, branchField.Field, releaseVersion)
 	if err != nil {
 		return fmt.Errorf("failed to set branch field: %w", err)
+	}
+
+	// Link the issue as a sub-issue of the tracker so `branch close` (which
+	// enumerates via GetSubIssues) sees it. Keeps add/close membership symmetric —
+	// without this, an added issue is orphaned at close with a stale Branch field.
+	if err := client.AddSubIssue(activeRelease.ID, issue.ID); err != nil {
+		return fmt.Errorf("failed to link issue #%d as a sub-issue of tracker #%d: %w",
+			opts.issueNumber, activeRelease.Number, err)
 	}
 
 	// Output confirmation (AC-019-2)
@@ -658,10 +702,11 @@ func runBranchRemoveWithDeps(cmd *cobra.Command, opts *branchRemoveOptions, cfg 
 		return fmt.Errorf("failed to get release issues: %w", err)
 	}
 
-	// Find active release tracker
-	activeRelease := findActiveBranch(issues)
-	if activeRelease == nil {
-		return fmt.Errorf("no active release found")
+	// Resolve the single active branch tracker. Errors with a disambiguation list
+	// when multiple branches are active rather than silently picking an arbitrary one.
+	activeRelease, err := resolveSingleActiveBranchTracker(issues)
+	if err != nil {
+		return err
 	}
 
 	// Extract version from title
@@ -692,7 +737,7 @@ func runBranchRemoveWithDeps(cmd *cobra.Command, opts *branchRemoveOptions, cfg 
 	}
 
 	// Check current field value (AC-039-3)
-	currentValue, err := client.GetProjectItemFieldValue(project.ID, itemID, branchField.Field)
+	currentValue, _, err := client.GetProjectItemFieldValue(project.ID, itemID, branchField.Field)
 	if err != nil {
 		return fmt.Errorf("failed to get current branch field value: %w", err)
 	}
@@ -707,6 +752,13 @@ func runBranchRemoveWithDeps(cmd *cobra.Command, opts *branchRemoveOptions, cfg 
 	err = client.SetProjectItemField(project.ID, itemID, branchField.Field, "")
 	if err != nil {
 		return fmt.Errorf("failed to clear branch field: %w", err)
+	}
+
+	// Unlink the sub-issue relationship established by `branch add`. Non-fatal: an
+	// issue assigned by field only (legacy, or another tool) may not be a sub-issue.
+	if err := client.RemoveSubIssue(activeRelease.ID, issue.ID); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to unlink #%d from tracker #%d: %v\n",
+			opts.issueNumber, activeRelease.Number, err)
 	}
 
 	// Remove 'assigned' label if issue is open
@@ -737,14 +789,21 @@ func runBranchCurrentWithDeps(cmd *cobra.Command, opts *branchCurrentOptions, cf
 		return err
 	}
 
-	// Fast path: try active+branch label query (O(1) lookup)
+	// Fast path: try active+branch label query (O(1) lookup). Filter to genuine
+	// branch trackers by title — an issue can carry both labels without being one.
 	var activeRelease *api.Issue
 	issues, err := client.GetOpenIssuesByLabels(owner, repo, []string{"active", "branch"})
 	if err != nil {
 		return fmt.Errorf("failed to get branch issues: %w", err)
 	}
-	if len(issues) > 0 {
-		activeRelease = &issues[0]
+	fastTrackers := findAllActiveBranches(issues)
+	switch len(fastTrackers) {
+	case 1:
+		activeRelease = &fastTrackers[0]
+	case 0:
+		// fall through to the title-scan fallback
+	default:
+		return errMultipleActiveBranches(fastTrackers)
 	}
 
 	// Fallback: scan all branch-labeled issues by title pattern
@@ -753,7 +812,15 @@ func runBranchCurrentWithDeps(cmd *cobra.Command, opts *branchCurrentOptions, cf
 		if err != nil {
 			return fmt.Errorf("failed to get release issues: %w", err)
 		}
-		activeRelease = findActiveBranch(fallbackIssues)
+		fallbackTrackers := findAllActiveBranches(fallbackIssues)
+		switch len(fallbackTrackers) {
+		case 1:
+			activeRelease = &fallbackTrackers[0]
+		case 0:
+			// no active branch
+		default:
+			return errMultipleActiveBranches(fallbackTrackers)
+		}
 	}
 
 	if activeRelease == nil {
@@ -972,7 +1039,10 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 			continue
 		}
 
-		status, _ := client.GetProjectItemFieldValue(proj.ID, itemID, statusFieldName)
+		status, _, sErr := client.GetProjectItemFieldValue(proj.ID, itemID, statusFieldName)
+		if sErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  Warning: could not read status for #%d (treating as movable): %v\n", issue.Number, sErr)
+		}
 		if status == parkingLotValue {
 			parkingLotIssues = append(parkingLotIssues, issue)
 		} else {
@@ -1034,7 +1104,9 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 
 				// Clear Branch field
 				if branchField, ok := cfg.Fields["branch"]; ok {
-					_ = client.SetProjectItemField(proj.ID, itemID, branchField.Field, "")
+					if err := client.SetProjectItemField(proj.ID, itemID, branchField.Field, ""); err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "  Warning: failed to clear branch field for #%d: %v\n", issue.Number, err)
+					}
 				}
 
 				// Set status to backlog
@@ -1043,7 +1115,9 @@ func runBranchCloseWithDeps(cmd *cobra.Command, opts *branchCloseOptions, cfg *c
 					if backlogValue == "" {
 						backlogValue = "Backlog"
 					}
-					_ = client.SetProjectItemField(proj.ID, itemID, statusField.Field, backlogValue)
+					if err := client.SetProjectItemField(proj.ID, itemID, statusField.Field, backlogValue); err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "  Warning: failed to move #%d to backlog: %v\n", issue.Number, err)
+					}
 				}
 
 				fmt.Fprintf(cmd.OutOrStdout(), "  #%d - %s\n", issue.Number, issue.Title)

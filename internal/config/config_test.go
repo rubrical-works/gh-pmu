@@ -202,6 +202,30 @@ func TestResolveFieldValue_NoAlias_ReturnsOriginal(t *testing.T) {
 	}
 }
 
+func TestResolveFieldValue_CaseInsensitiveAlias(t *testing.T) {
+	// #869 finding 1: ResolveFieldValue must match aliases case-insensitively to
+	// stay consistent with ValidateFieldValue. Otherwise a case-variant alias
+	// passes validation but resolves to the literal input instead of the
+	// configured GitHub field value.
+	cfg := &Config{
+		Fields: map[string]Field{
+			"status": {
+				Field: "Status",
+				Values: map[string]string{
+					"in_progress": "In progress",
+				},
+			},
+		},
+	}
+
+	cases := []string{"In_Progress", "IN_PROGRESS", "in_progress"}
+	for _, input := range cases {
+		if got := cfg.ResolveFieldValue("status", input); got != "In progress" {
+			t.Errorf("ResolveFieldValue(status, %q) = %q, want %q", input, got, "In progress")
+		}
+	}
+}
+
 func TestResolveFieldValue_UnknownField_ReturnsOriginal(t *testing.T) {
 	// ARRANGE: Config with no fields configured
 	cfg := &Config{
@@ -364,6 +388,35 @@ func TestGetFieldName_NoMapping_ReturnsOriginal(t *testing.T) {
 	// ASSERT: Returns original name
 	if name != "SomeField" {
 		t.Errorf("Expected 'SomeField', got '%s'", name)
+	}
+}
+
+func TestGetFieldNameOr_WithMapping_ReturnsActualName(t *testing.T) {
+	cfg := &Config{
+		Fields: map[string]Field{
+			"status": {Field: "Workflow"},
+		},
+	}
+	if got := cfg.GetFieldNameOr("status", "Status"); got != "Workflow" {
+		t.Errorf("Expected 'Workflow', got '%s'", got)
+	}
+}
+
+func TestGetFieldNameOr_NoMapping_ReturnsFallback(t *testing.T) {
+	cfg := &Config{Fields: map[string]Field{}}
+	if got := cfg.GetFieldNameOr("status", "Status"); got != "Status" {
+		t.Errorf("Expected fallback 'Status', got '%s'", got)
+	}
+}
+
+func TestGetFieldNameOr_EmptyFieldValue_ReturnsFallback(t *testing.T) {
+	cfg := &Config{
+		Fields: map[string]Field{
+			"priority": {Field: ""},
+		},
+	}
+	if got := cfg.GetFieldNameOr("priority", "Priority"); got != "Priority" {
+		t.Errorf("Expected fallback 'Priority', got '%s'", got)
 	}
 }
 
@@ -616,7 +669,7 @@ func TestConfig_Save_Success(t *testing.T) {
 	}
 
 	// ACT: Save config
-	err := cfg.Save(configPath)
+	err := cfg.Save(filepath.Dir(configPath))
 
 	// ASSERT: File saved correctly
 	if err != nil {
@@ -657,7 +710,7 @@ func TestConfig_Save_WithMetadata(t *testing.T) {
 	}
 
 	// ACT: Save config
-	err := cfg.Save(configPath)
+	err := cfg.Save(filepath.Dir(configPath))
 
 	// ASSERT: Metadata preserved
 	if err != nil {
@@ -694,7 +747,7 @@ func TestConfig_Save_WithVersion_RoundTrip(t *testing.T) {
 	}
 
 	// ACT: Save and reload
-	err := cfg.Save(configPath)
+	err := cfg.Save(filepath.Dir(configPath))
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -753,13 +806,13 @@ func TestConfig_Load_WithVersion_ReadsCorrectly(t *testing.T) {
 }
 
 func TestConfig_Save_InvalidPath(t *testing.T) {
-	// ARRANGE: Config with invalid path
+	// ARRANGE: Config with invalid target directory
 	cfg := &Config{
 		Project: Project{Owner: "test", Number: 1},
 	}
 
-	// ACT: Try to save to invalid path
-	err := cfg.Save("/nonexistent/directory/config.yml")
+	// ACT: Try to save into a directory that does not exist
+	err := cfg.Save("/nonexistent/directory")
 
 	// ASSERT: Error returned
 	if err == nil {
@@ -1773,9 +1826,9 @@ func TestRealConfigFileNotCorrupted(t *testing.T) {
 			"Tests that call cfg.Save() must use setupBranchTestDir for isolation.")
 	}
 
-	// Verify it contains expected owner
-	if !strings.Contains(string(content), "rubrical-works") {
-		t.Error("Real config does not contain 'rubrical-works' - the config may be corrupted")
+	// Verify it contains expected owner (org renamed rubrical-works -> rubrical-worker)
+	if !strings.Contains(string(content), "rubrical-worker") {
+		t.Error("Real config does not contain 'rubrical-worker' - the config may be corrupted")
 	}
 }
 
@@ -1792,7 +1845,7 @@ func TestSave_WritesJSONOnly(t *testing.T) {
 	}
 
 	// ACT: Save config
-	err := cfg.Save(jsonPath)
+	err := cfg.Save(filepath.Dir(jsonPath))
 	if err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
@@ -1823,7 +1876,7 @@ func TestSave_JSONContainsExpectedData(t *testing.T) {
 	}
 
 	// ACT: Save config
-	if err := cfg.Save(jsonPath); err != nil {
+	if err := cfg.Save(filepath.Dir(jsonPath)); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
@@ -1996,6 +2049,37 @@ func TestMigrateYAML_BothFilesExist_DeletesYAMLAndUpdatesVersion(t *testing.T) {
 	}
 }
 
+func TestMigrateYAML_CorruptJSON_PreservesYAML(t *testing.T) {
+	// #869 finding 2: MigrateYAML must verify the JSON config is loadable BEFORE
+	// removing the legacy YAML. A corrupt JSON must not destroy the user's only
+	// intact copy of their configuration.
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+	yamlPath := filepath.Join(testDir, ".gh-pmu.yml")
+
+	// Corrupt/unparsable JSON.
+	if err := os.WriteFile(jsonPath, []byte("{not valid json"), 0644); err != nil {
+		t.Fatalf("Failed to write JSON config: %v", err)
+	}
+	yamlContent := "version: 1.1.0\nproject:\n  owner: test-owner\n  number: 1\nrepositories:\n  - test-owner/test-repo\n"
+	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write YAML config: %v", err)
+	}
+
+	var buf strings.Builder
+
+	// ACT: migration should fail because the JSON is unparsable.
+	err := MigrateYAML(jsonPath, "1.4.0", &buf)
+	if err == nil {
+		t.Fatal("expected error migrating with corrupt JSON, got nil")
+	}
+
+	// ASSERT: the legacy YAML must still exist — it was the only intact copy.
+	if _, statErr := os.Stat(yamlPath); os.IsNotExist(statErr) {
+		t.Error("expected .gh-pmu.yml to be preserved when JSON is corrupt, but it was deleted")
+	}
+}
+
 func TestMigrateYAML_OnlyJSONExists_NoOp(t *testing.T) {
 	// ARRANGE: Directory with only .gh-pmu.json
 	testDir := t.TempDir()
@@ -2041,7 +2125,7 @@ func TestMigrateYAML_SaveNoLongerWritesYAML(t *testing.T) {
 	}
 
 	// ACT: Save config
-	err := cfg.Save(jsonPath)
+	err := cfg.Save(filepath.Dir(jsonPath))
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}

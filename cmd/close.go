@@ -248,11 +248,14 @@ func updateStatusToDoneWithDeps(issueNum int, repoOverride string, cfg *config.C
 		return fmt.Errorf("failed to find issue in project: %w", err)
 	}
 
-	// Resolve "done" status value
+	// Resolve "done" status value and the configured status field name (falling
+	// back to "Status"), matching branch.go — a project whose status field is
+	// renamed must still get the move, not just a warning.
 	doneValue := cfg.ResolveFieldValue("status", "done")
+	statusFieldName := cfg.GetFieldNameOr("status", "Status")
 
 	// Update the status
-	if err := client.SetProjectItemField(project.ID, itemID, "Status", doneValue); err != nil {
+	if err := client.SetProjectItemField(project.ID, itemID, statusFieldName, doneValue); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 

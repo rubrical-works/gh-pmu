@@ -30,6 +30,12 @@ type mockCloseClient struct {
 	closedReason   string
 	commentIssueID string
 	commentBody    string
+	setFieldCalls  []closeSetFieldCall
+}
+
+type closeSetFieldCall struct {
+	fieldName string
+	value     string
 }
 
 func newMockCloseClient() *mockCloseClient {
@@ -62,6 +68,7 @@ func (m *mockCloseClient) GetProjectItemIDForIssue(projectID, owner, repo string
 }
 
 func (m *mockCloseClient) SetProjectItemField(projectID, itemID, fieldName, value string) error {
+	m.setFieldCalls = append(m.setFieldCalls, closeSetFieldCall{fieldName: fieldName, value: value})
 	return m.setProjectItemFieldErr
 }
 
@@ -124,6 +131,59 @@ func TestUpdateStatusToDoneWithDeps_Success(t *testing.T) {
 	}
 	if !strings.Contains(output, "Done") {
 		t.Error("expected 'Done' status in output")
+	}
+}
+
+// #863 AC2: --update-status resolves the status field NAME from config rather
+// than hardcoding "Status", matching branch.go.
+func TestUpdateStatusToDoneWithDeps_UsesConfiguredFieldName(t *testing.T) {
+	mock := newMockCloseClient()
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"test-org/test-repo"},
+		Fields: map[string]config.Field{
+			"status": {
+				Field:  "Workflow",
+				Values: map[string]string{"done": "Shipped"},
+			},
+		},
+	}
+
+	stdout, _ := os.CreateTemp("", "stdout")
+	defer os.Remove(stdout.Name())
+
+	if err := updateStatusToDoneWithDeps(42, "", cfg, mock, stdout); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mock.setFieldCalls) != 1 {
+		t.Fatalf("expected 1 SetProjectItemField call, got %d", len(mock.setFieldCalls))
+	}
+	if mock.setFieldCalls[0].fieldName != "Workflow" {
+		t.Errorf("expected field name 'Workflow', got %q", mock.setFieldCalls[0].fieldName)
+	}
+	if mock.setFieldCalls[0].value != "Shipped" {
+		t.Errorf("expected value 'Shipped', got %q", mock.setFieldCalls[0].value)
+	}
+}
+
+// #863 AC2: absent status mapping falls back to the capitalized default name.
+func TestUpdateStatusToDoneWithDeps_FieldNameFallback(t *testing.T) {
+	mock := newMockCloseClient()
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"test-org/test-repo"},
+		Fields:       map[string]config.Field{}, // no status mapping
+	}
+
+	stdout, _ := os.CreateTemp("", "stdout")
+	defer os.Remove(stdout.Name())
+
+	if err := updateStatusToDoneWithDeps(42, "", cfg, mock, stdout); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(mock.setFieldCalls) != 1 || mock.setFieldCalls[0].fieldName != "Status" {
+		t.Errorf("expected fallback field name 'Status', got %+v", mock.setFieldCalls)
 	}
 }
 

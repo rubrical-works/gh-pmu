@@ -94,6 +94,10 @@ type OptionMetadata struct {
 // ConfigFileName is the configuration file name
 const ConfigFileName = ".gh-pmu.json"
 
+// LegacyYAMLFileName is the pre-JSON configuration file name, retained for the
+// one-time MigrateYAML path and for rejecting stale Save call sites.
+const LegacyYAMLFileName = ".gh-pmu.yml"
+
 // Load reads and parses a configuration file from the given path.
 // Detects format (YAML or JSON) based on file extension.
 func Load(path string) (*Config, error) {
@@ -144,7 +148,7 @@ func LoadFromDirectoryAndNormalize(dir string) (*Config, error) {
 	// Normalize: missing framework defaults to IDPF
 	if cfg.Framework == "" {
 		cfg.Framework = "IDPF"
-		if err := cfg.Save(configPath); err != nil {
+		if err := cfg.Save(filepath.Dir(configPath)); err != nil {
 			// Log warning but don't fail - config is still usable
 			// The next save operation will include the framework
 			return cfg, nil
@@ -208,6 +212,15 @@ func (c *Config) ResolveFieldValue(fieldKey, alias string) string {
 		return actual
 	}
 
+	// Fall back to case-insensitive alias matching, consistent with
+	// ValidateFieldValue, so a case-variant alias (e.g. "In_Progress") resolves to
+	// the configured GitHub field value rather than passing through unchanged.
+	for a, actual := range field.Values {
+		if strings.EqualFold(a, alias) {
+			return actual
+		}
+	}
+
 	return alias
 }
 
@@ -258,6 +271,17 @@ func (c *Config) GetFieldName(fieldKey string) string {
 	return fieldKey
 }
 
+// GetFieldNameOr returns the actual GitHub field name for a key, or the provided
+// fallback when the key has no explicit, non-empty Field mapping. Unlike
+// GetFieldName, callers control the default (e.g. "Status"/"Priority") rather than
+// falling back to the lowercase key.
+func (c *Config) GetFieldNameOr(fieldKey, fallback string) string {
+	if field, ok := c.Fields[fieldKey]; ok && field.Field != "" {
+		return field.Field
+	}
+	return fallback
+}
+
 // ApplyEnvOverrides applies environment variable overrides to the config.
 // Supported environment variables:
 //   - GH_PM_PROJECT_OWNER: overrides project.owner
@@ -276,9 +300,17 @@ func (c *Config) ApplyEnvOverrides() {
 	}
 }
 
-// Save writes the configuration to the JSON config file.
-func (c *Config) Save(path string) error {
-	dir := filepath.Dir(path)
+// Save writes the configuration to ConfigFileName inside dir.
+//
+// It takes a directory, not a file path. The previous signature accepted a full
+// path and silently discarded the basename, so any caller passing a
+// differently-named path had its data written elsewhere without warning (#874).
+func (c *Config) Save(dir string) error {
+	// Changing the parameter from a path to a directory is not compile-enforced
+	// — both are strings — so catch the most likely stale call directly.
+	if filepath.Base(dir) == ConfigFileName || filepath.Base(dir) == LegacyYAMLFileName {
+		return fmt.Errorf("Save expects the directory containing %s, got a file path: %s", ConfigFileName, dir)
+	}
 
 	jsonData, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -298,29 +330,30 @@ func (c *Config) Save(path string) error {
 // the JSON config, it deletes the YAML file, updates the version in the JSON
 // config, and saves. If no YAML file exists, this is a no-op.
 func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) error {
-	const legacyYAMLFile = ".gh-pmu.yml"
 	dir := filepath.Dir(jsonConfigPath)
-	yamlPath := filepath.Join(dir, legacyYAMLFile)
+	yamlPath := filepath.Join(dir, LegacyYAMLFileName)
 
 	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
 		return nil // No YAML file — nothing to do
 	}
 
-	// Delete the legacy YAML config
-	if err := os.Remove(yamlPath); err != nil {
-		return fmt.Errorf("failed to remove legacy config %s: %w", legacyYAMLFile, err)
-	}
-	fmt.Fprintf(w, "Removed legacy config %s\n", legacyYAMLFile)
-
-	// Update version in JSON config
+	// Verify and update the JSON config BEFORE removing the legacy YAML. If the
+	// JSON is corrupt or unparsable, the YAML is the only intact copy of the user's
+	// configuration and must not be destroyed by a migration that then fails.
 	cfg, err := Load(jsonConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config for version update: %w", err)
 	}
 	cfg.Version = currentVersion
-	if err := cfg.Save(jsonConfigPath); err != nil {
+	if err := cfg.Save(dir); err != nil {
 		return fmt.Errorf("failed to save updated config: %w", err)
 	}
+
+	// JSON config verified and saved — now safe to remove the legacy YAML.
+	if err := os.Remove(yamlPath); err != nil {
+		return fmt.Errorf("failed to remove legacy config %s: %w", LegacyYAMLFileName, err)
+	}
+	fmt.Fprintf(w, "Removed legacy config %s\n", LegacyYAMLFileName)
 
 	return nil
 }

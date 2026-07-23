@@ -58,11 +58,14 @@ Use --apply to automatically add discovered issues to the project.`,
   # Add untracked issues to project (with defaults from config)
   gh pmu intake --apply
 
-  # Add issues and set specific fields
-  gh pmu intake --apply status:backlog,priority:p1
+  # Add issues and set specific fields (note: --apply= form is required for values)
+  gh pmu intake --apply=status:backlog,priority:p1
 
   # Output as JSON
   gh pmu intake --json`,
+		// --apply uses NoOptDefVal so `--apply value` treats value as a positional.
+		// NoArgs rejects such stray positionals loudly instead of silently ignoring them.
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runIntake(cmd, opts)
 		},

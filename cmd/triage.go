@@ -330,10 +330,17 @@ func searchIssuesForTriage(client triageClient, cfg *config.Config, query string
 	queryFilters := parseTriageQuery(query)
 
 	var allIssues []api.Issue
+	// Track per-repo outcomes so a total failure is surfaced instead of silently
+	// returning an empty result (which reads as "no issues match").
+	attempted := 0
+	failed := 0
 
 	for _, repoFullName := range repos {
+		attempted++
 		parts := strings.SplitN(repoFullName, "/", 2)
 		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "Warning: skipping malformed repository %q (expected owner/repo)\n", repoFullName)
+			failed++
 			continue
 		}
 		owner, repo := parts[0], parts[1]
@@ -366,6 +373,8 @@ func searchIssuesForTriage(client triageClient, cfg *config.Config, query string
 				// Fall back to old method on Search API error
 				issues, err = client.GetRepositoryIssues(owner, repo, queryFilters.state)
 				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to fetch issues from %s/%s: %v\n", owner, repo, err)
+					failed++
 					continue
 				}
 				// Filter client-side as fallback
@@ -388,6 +397,8 @@ func searchIssuesForTriage(client triageClient, cfg *config.Config, query string
 			// No label filters - use original method
 			issues, err = client.GetRepositoryIssues(owner, repo, queryFilters.state)
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to fetch issues from %s/%s: %v\n", owner, repo, err)
+				failed++
 				continue
 			}
 
@@ -398,6 +409,13 @@ func searchIssuesForTriage(client triageClient, cfg *config.Config, query string
 				}
 			}
 		}
+	}
+
+	// If every targeted repository failed, surface an error rather than reporting
+	// "no issues match" — the caller (and any script) must be able to tell a real
+	// outage from a genuinely empty result.
+	if attempted > 0 && failed == attempted {
+		return nil, fmt.Errorf("failed to query all %d targeted repositories", attempted)
 	}
 
 	return allIssues, nil
@@ -456,7 +474,9 @@ func applyTriageRules(client triageClient, cfg *config.Config, project *api.Proj
 			if err := api.WithRetry(func() error {
 				return client.AddLabelToIssue(issue.Repository.Owner, issue.Repository.Name, issue.ID, label)
 			}, 3); err != nil {
-				// Log but don't fail - label might already exist
+				// Warn but don't fail — the label might already exist, but a genuine
+				// failure (undefined label, permissions, rate limit) must not be silent.
+				fmt.Fprintf(os.Stderr, "Warning: failed to apply label %q to #%d after retries: %v\n", label, issue.Number, err)
 				continue
 			}
 		}

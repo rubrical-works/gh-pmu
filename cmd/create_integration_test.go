@@ -52,13 +52,11 @@ func TestRunCreate_Integration_StatusAndPriority(t *testing.T) {
 	issueNum := testutil.ExtractIssueNumber(t, result.Stdout)
 	defer testutil.DeleteTestIssue(t, issueNum)
 
-	// Verify field values via view --json
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-
-	// Check that status and priority are set
-	testutil.AssertContains(t, viewResult.Stdout, "In progress")
-	testutil.AssertContains(t, viewResult.Stdout, "P0")
+	// Verify field values via view --json=<fields>
+	testutil.AssertIssueFields(t, issueNum, map[string]string{
+		"status":   "In progress",
+		"priority": "P0",
+	})
 }
 
 // TestRunCreate_Integration_Labels tests applying --label flags
@@ -79,12 +77,8 @@ func TestRunCreate_Integration_Labels(t *testing.T) {
 	issueNum := testutil.ExtractIssueNumber(t, result.Stdout)
 	defer testutil.DeleteTestIssue(t, issueNum)
 
-	// Verify label was applied using gh issue view
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-
-	// Assert the label is present in the JSON output
-	testutil.AssertContains(t, viewResult.Stdout, "bug")
+	// Verify label was applied
+	testutil.AssertIssueHasLabel(t, issueNum, "bug")
 }
 
 // TestRunCreate_Integration_ConfigDefaults tests applying defaults from config
@@ -102,13 +96,11 @@ func TestRunCreate_Integration_ConfigDefaults(t *testing.T) {
 	issueNum := testutil.ExtractIssueNumber(t, result.Stdout)
 	defer testutil.DeleteTestIssue(t, issueNum)
 
-	// Verify defaults were applied
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-
 	// Should have default status (Backlog) and priority (P2)
-	testutil.AssertContains(t, viewResult.Stdout, "Backlog")
-	testutil.AssertContains(t, viewResult.Stdout, "P2")
+	testutil.AssertIssueFields(t, issueNum, map[string]string{
+		"status":   "Backlog",
+		"priority": "P2",
+	})
 }
 
 // TestRunCreate_Integration_OverrideDefaults tests overriding config defaults with CLI flags
@@ -131,12 +123,10 @@ func TestRunCreate_Integration_OverrideDefaults(t *testing.T) {
 	defer testutil.DeleteTestIssue(t, issueNum)
 
 	// Verify CLI flags override defaults
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-
-	// Should have overridden values
-	testutil.AssertContains(t, viewResult.Stdout, "In progress")
-	testutil.AssertContains(t, viewResult.Stdout, "P1")
+	testutil.AssertIssueFields(t, issueNum, map[string]string{
+		"status":   "In progress",
+		"priority": "P1",
+	})
 }
 
 // TestRunCreate_Integration_FieldAliases tests field value aliases
@@ -158,11 +148,10 @@ func TestRunCreate_Integration_FieldAliases(t *testing.T) {
 	defer testutil.DeleteTestIssue(t, issueNum)
 
 	// Verify aliases resolved correctly
-	viewResult := testutil.RunCommand(t, "view", fmt.Sprintf("%d", issueNum), "--json")
-	testutil.AssertExitCode(t, viewResult, 0)
-
-	testutil.AssertContains(t, viewResult.Stdout, "In review")
-	testutil.AssertContains(t, viewResult.Stdout, "P1")
+	testutil.AssertIssueFields(t, issueNum, map[string]string{
+		"status":   "In review",
+		"priority": "P1",
+	})
 }
 
 // TestRunCreate_Integration_NoTitle tests error when title is missing

@@ -86,6 +86,10 @@ func TestBoardRendering(t *testing.T) {
 func TestBoardWithFilter(t *testing.T) {
 	cfg := setupTestConfig(t)
 
+	// A branch is required to move the contrast issue to in_progress (IDPF validation).
+	_, branchCleanup := setupTestBranch(t, cfg)
+	defer branchCleanup()
+
 	// Track issues for cleanup
 	var issueNums []int
 
@@ -96,9 +100,18 @@ func TestBoardWithFilter(t *testing.T) {
 		}
 	}()
 
-	// Create an issue in backlog
-	backlogIssue := createTestIssue(t, cfg, "Board Filter Test")
+	// Create an issue in backlog — it must appear under `board --status backlog`.
+	backlogIssue := createTestIssue(t, cfg, "Board Filter Test - Backlog")
 	issueNums = append(issueNums, backlogIssue)
+
+	// Create a contrast issue in a different column (in_progress). It must be ABSENT
+	// from the backlog-filtered board. Without this contrast, an inclusion-only check
+	// passes even if --status is silently ignored and every column is rendered.
+	inProgressIssue := createTestIssue(t, cfg, "Board Filter Test - In Progress")
+	issueNums = append(issueNums, inProgressIssue)
+	assignIssueToBranch(t, cfg, inProgressIssue)
+	moveResult := runPMU(t, cfg.Dir, "move", fmt.Sprintf("%d", inProgressIssue), "--status", "in_progress")
+	assertExitCode(t, moveResult, 0)
 
 	// Run board with status filter - use retry for eventual consistency
 	// GitHub API may not immediately index the new issue in project queries
@@ -108,6 +121,8 @@ func TestBoardWithFilter(t *testing.T) {
 	)
 	assertExitCode(t, result, 0)
 
-	// Verify the issue appears
+	// Verify the backlog issue appears...
 	assertContains(t, result.Stdout, fmt.Sprintf("#%d", backlogIssue))
+	// ...and the in_progress contrast issue does NOT (proves --status actually filters).
+	assertNotContains(t, result.Stdout, fmt.Sprintf("#%d", inProgressIssue))
 }

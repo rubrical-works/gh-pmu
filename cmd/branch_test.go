@@ -30,7 +30,7 @@ func setupBranchTestDir(t *testing.T, cfg *config.Config) func() {
 
 	// Save config to temp directory
 	configPath := filepath.Join(tempDir, ".gh-pmu.json")
-	if err := cfg.Save(configPath); err != nil {
+	if err := cfg.Save(filepath.Dir(configPath)); err != nil {
 		t.Fatalf("Failed to save test config: %v", err)
 	}
 
@@ -80,6 +80,8 @@ type mockBranchClient struct {
 	getSubIssuesCalls            []getSubIssuesCall
 	addLabelCalls                []branchLabelCall
 	removeLabelCalls             []branchLabelCall
+	addSubIssueCalls             []subIssueLinkCall
+	removeSubIssueCalls          []subIssueLinkCall
 
 	// Error injection
 	createIssueErr             error
@@ -99,6 +101,13 @@ type mockBranchClient struct {
 	getSubIssuesErr            error
 	addLabelErr                error
 	removeLabelErr             error
+	addSubIssueErr             error
+	removeSubIssueErr          error
+}
+
+type subIssueLinkCall struct {
+	parentIssueID string
+	childIssueID  string
 }
 
 type branchLabelCall struct {
@@ -276,17 +285,17 @@ func (m *mockBranchClient) GetProjectItemID(projectID, issueID string) (string, 
 	return m.projectItemID, nil
 }
 
-func (m *mockBranchClient) GetProjectItemFieldValue(projectID, itemID, fieldID string) (string, error) {
+func (m *mockBranchClient) GetProjectItemFieldValue(projectID, itemID, fieldID string) (string, bool, error) {
 	if m.getProjectItemFieldErr != nil {
-		return "", m.getProjectItemFieldErr
+		return "", false, m.getProjectItemFieldErr
 	}
 	// Check per-item mapping first
 	if m.projectItemFieldValues != nil {
 		if value, ok := m.projectItemFieldValues[itemID]; ok {
-			return value, nil
+			return value, true, nil
 		}
 	}
-	return m.projectItemFieldValue, nil
+	return m.projectItemFieldValue, m.projectItemFieldValue != "", nil
 }
 
 func (m *mockBranchClient) GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error) {
@@ -435,6 +444,22 @@ func (m *mockBranchClient) RemoveLabelFromIssue(owner, repo, issueID, labelName 
 	return m.removeLabelErr
 }
 
+func (m *mockBranchClient) AddSubIssue(parentIssueID, childIssueID string) error {
+	m.addSubIssueCalls = append(m.addSubIssueCalls, subIssueLinkCall{
+		parentIssueID: parentIssueID,
+		childIssueID:  childIssueID,
+	})
+	return m.addSubIssueErr
+}
+
+func (m *mockBranchClient) RemoveSubIssue(parentIssueID, childIssueID string) error {
+	m.removeSubIssueCalls = append(m.removeSubIssueCalls, subIssueLinkCall{
+		parentIssueID: parentIssueID,
+		childIssueID:  childIssueID,
+	})
+	return m.removeSubIssueErr
+}
+
 // testBranchConfig returns a test configuration for release tests
 func testBranchConfig() *config.Config {
 	return &config.Config{
@@ -519,6 +544,29 @@ func TestRunBranchStartWithDeps_CreatesTrackerIssue(t *testing.T) {
 	// Verify title matches expected pattern
 	if call.title != expectedTitle {
 		t.Errorf("Expected title '%s', got '%s'", expectedTitle, call.title)
+	}
+}
+
+func TestRunBranchStartWithDeps_TrackerFailureIncludesRecoveryGuidance(t *testing.T) {
+	// #871 finding 4: the git branch is created before the tracker/project setup.
+	// A failure afterwards leaves partial state; the error must name the created
+	// branch and give recovery guidance rather than a bare error.
+	mock := setupMockForBranch()
+	mock.createIssueErr = errors.New("tracker create failed")
+	cfg := testBranchConfig()
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, _ := newTestBranchCmd()
+	opts := &branchStartOptions{branchName: "release/v1.2.0"}
+
+	err := runBranchStartWithDeps(cmd, opts, cfg, mock)
+	if err == nil {
+		t.Fatal("expected error when tracker creation fails")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "release/v1.2.0") {
+		t.Errorf("expected error to name the already-created branch for recovery, got: %v", err)
 	}
 }
 
@@ -869,8 +917,8 @@ func TestRunBranchAddWithDeps_NoActiveRelease_ReturnsError(t *testing.T) {
 	}
 
 	errMsg := err.Error()
-	if !strings.Contains(errMsg, "no active release") {
-		t.Errorf("Expected error to mention 'no active branch', got: %s", errMsg)
+	if !strings.Contains(errMsg, "no active branch found") {
+		t.Errorf("Expected error to mention 'no active branch found', got: %s", errMsg)
 	}
 }
 
@@ -2381,6 +2429,102 @@ func TestRunBranchCloseWithDeps_SkipsParkingLotIssues(t *testing.T) {
 	}
 }
 
+// TestRunBranchCloseWithDeps_StatusReadFailureWarnsAndTreatsAsMovable covers the
+// path #888 travelled through undetected. GetProjectItemFieldValue sent invalid
+// GraphQL, so every status read failed; the error was discarded, status was "",
+// nothing ever equalled parkingLotValue, and every issue was silently
+// reclassified as movable. Nothing in the output said so.
+//
+// The classification stays fail-safe (an unreadable status means "movable", not
+// "parked"), but it must be announced. A silent read failure here is the exact
+// shape of the original defect: no error, no warning, wrong answer.
+func TestRunBranchCloseWithDeps_StatusReadFailureWarnsAndTreatsAsMovable(t *testing.T) {
+	mock := setupMockForBranch()
+	mock.openIssues = []api.Issue{
+		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
+	}
+	mock.subIssues = []api.SubIssue{
+		{ID: "ISSUE_1", Number: 41, Title: "Parked feature idea", State: "OPEN", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
+	}
+	mock.projectItemIDs = map[string]string{"ISSUE_1": "ITEM_1"}
+	// The issue really is parked, but the status read fails — as it did against
+	// the live API while the query was malformed.
+	mock.projectItemFieldValues = map[string]string{"ITEM_1": "Parking Lot"}
+	mock.getProjectItemFieldErr = errors.New("failed to get field value: Cannot query field \"name\" on type \"ProjectV2FieldConfiguration\"")
+
+	cfg := testBranchConfig()
+	cfg.Fields["status"] = config.Field{
+		Field:  "Status",
+		Values: map[string]string{"backlog": "Backlog", "parking_lot": "Parking Lot"},
+	}
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, output := newTestBranchCmd()
+	opts := &branchCloseOptions{branchName: "v1.2.0", yes: true}
+
+	if err := runBranchCloseWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("expected the close to proceed despite the status read failure, got: %v", err)
+	}
+
+	out := output.String()
+	if !strings.Contains(out, "Warning") || !strings.Contains(out, "#41") {
+		t.Errorf("expected a warning naming #41 whose status could not be read, got: %s", out)
+	}
+	if !strings.Contains(out, "could not read status") {
+		t.Errorf("expected the warning to say the status was unreadable, got: %s", out)
+	}
+
+	// Fail-safe classification: unreadable status means the issue is moved, not
+	// silently left behind as if it were parked.
+	moved := 0
+	for _, call := range mock.setFieldCalls {
+		if call.fieldID == "Status" && call.value == "Backlog" {
+			moved++
+		}
+	}
+	if moved != 1 {
+		t.Errorf("expected #41 to be moved to backlog when its status is unreadable, got %d moves: %+v", moved, mock.setFieldCalls)
+	}
+	if strings.Contains(out, "Skipping 1 Parking Lot issue") {
+		t.Errorf("an unreadable status must not be reported as a confirmed Parking Lot skip, got: %s", out)
+	}
+}
+
+func TestRunBranchCloseWithDeps_FieldSetFailureWarns(t *testing.T) {
+	// #871 finding 3: SetProjectItemField errors were ignored (`_ =`) while moving
+	// incomplete issues to backlog, yet the issue was reported as moved. A failure
+	// must now emit a stderr warning naming the issue.
+	mock := setupMockForBranch()
+	mock.openIssues = []api.Issue{
+		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
+	}
+	mock.subIssues = []api.SubIssue{
+		{ID: "ISSUE_2", Number: 42, Title: "Incomplete work", State: "OPEN", Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
+	}
+	mock.projectItemIDs = map[string]string{"ISSUE_2": "ITEM_2"}
+	mock.projectItemFieldValues = map[string]string{"ITEM_2": "In Progress"}
+	mock.setFieldErr = errors.New("field update failed")
+
+	cfg := testBranchConfig()
+	cfg.Fields["status"] = config.Field{
+		Field:  "Status",
+		Values: map[string]string{"backlog": "Backlog", "parking_lot": "Parking Lot"},
+	}
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, output := newTestBranchCmd()
+	opts := &branchCloseOptions{branchName: "v1.2.0", yes: true}
+
+	_ = runBranchCloseWithDeps(cmd, opts, cfg, mock)
+
+	out := output.String()
+	if !strings.Contains(out, "Warning") || !strings.Contains(out, "#42") {
+		t.Errorf("expected a stderr warning naming #42's failed field update, got: %s", out)
+	}
+}
+
 func TestRunBranchCloseWithDeps_AllParkingLotNoMoves(t *testing.T) {
 	// ARRANGE: All incomplete issues are in Parking Lot
 	mock := setupMockForBranch()
@@ -2799,6 +2943,218 @@ func TestFindAllActiveBranches(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// #862: branch add/close membership symmetry + multi-active-branch disambiguation
+// =============================================================================
+
+// AC1: branch add links the issue as a sub-issue of the tracker so branch close
+// (which enumerates via GetSubIssues) sees it.
+func TestRunBranchAddWithDeps_LinksSubIssue(t *testing.T) {
+	mock := setupMockForBranch()
+	mock.openIssues = []api.Issue{
+		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
+	}
+	mock.issueByNumber = &api.Issue{ID: "ISSUE_42", Number: 42, Title: "Fix login bug", State: "OPEN"}
+	mock.projectItemID = "ITEM_42"
+
+	cfg := testBranchConfig()
+	cfg.Fields["branch"] = config.Field{Field: "Branch"}
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, _ := newTestBranchCmd()
+	if err := runBranchAddWithDeps(cmd, &branchAddOptions{issueNumber: 42}, cfg, mock); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if len(mock.addSubIssueCalls) != 1 {
+		t.Fatalf("Expected 1 AddSubIssue call, got %d", len(mock.addSubIssueCalls))
+	}
+	call := mock.addSubIssueCalls[0]
+	if call.parentIssueID != "TRACKER_123" || call.childIssueID != "ISSUE_42" {
+		t.Errorf("Expected AddSubIssue(TRACKER_123, ISSUE_42), got (%s, %s)", call.parentIssueID, call.childIssueID)
+	}
+}
+
+// AC2: branch add errors with a disambiguation list when multiple branches are active.
+func TestRunBranchAddWithDeps_MultipleActiveBranches_ReturnsDisambiguation(t *testing.T) {
+	mock := setupMockForBranch()
+	mock.openIssues = []api.Issue{
+		{ID: "T1", Number: 100, Title: "Branch: release/v1.0.0", State: "OPEN"},
+		{ID: "T2", Number: 101, Title: "Branch: patch/v1.0.1", State: "OPEN"},
+	}
+	cfg := testBranchConfig()
+	cfg.Fields["branch"] = config.Field{Field: "Branch"}
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, _ := newTestBranchCmd()
+	err := runBranchAddWithDeps(cmd, &branchAddOptions{issueNumber: 42}, cfg, mock)
+	if err == nil {
+		t.Fatal("Expected error for multiple active branches, got nil")
+	}
+	expected := "multiple active branches. Specify one: release/v1.0.0, patch/v1.0.1"
+	if err.Error() != expected {
+		t.Errorf("Expected '%s', got: %s", expected, err.Error())
+	}
+	// Must not silently pick one and mutate.
+	if len(mock.setFieldCalls) != 0 || len(mock.addSubIssueCalls) != 0 {
+		t.Errorf("Expected no mutations on ambiguous add, got setField=%d addSubIssue=%d",
+			len(mock.setFieldCalls), len(mock.addSubIssueCalls))
+	}
+}
+
+// AC1: branch remove unlinks the sub-issue relationship established by branch add.
+func TestRunBranchRemoveWithDeps_UnlinksSubIssue(t *testing.T) {
+	mock := setupMockForBranch()
+	mock.openIssues = []api.Issue{
+		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
+	}
+	mock.issueByNumber = &api.Issue{ID: "ISSUE_42", Number: 42, Title: "Fix login bug", State: "OPEN"}
+	mock.projectItemID = "ITEM_42"
+	mock.projectItemFieldValue = "v1.2.0" // currently assigned
+
+	cfg := testBranchConfig()
+	cfg.Fields["branch"] = config.Field{Field: "Branch"}
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, _ := newTestBranchCmd()
+	if err := runBranchRemoveWithDeps(cmd, &branchRemoveOptions{issueNumber: 42}, cfg, mock); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if len(mock.removeSubIssueCalls) != 1 {
+		t.Fatalf("Expected 1 RemoveSubIssue call, got %d", len(mock.removeSubIssueCalls))
+	}
+	call := mock.removeSubIssueCalls[0]
+	if call.parentIssueID != "TRACKER_123" || call.childIssueID != "ISSUE_42" {
+		t.Errorf("Expected RemoveSubIssue(TRACKER_123, ISSUE_42), got (%s, %s)", call.parentIssueID, call.childIssueID)
+	}
+}
+
+// AC2: branch remove errors with a disambiguation list when multiple branches are active.
+func TestRunBranchRemoveWithDeps_MultipleActiveBranches_ReturnsDisambiguation(t *testing.T) {
+	mock := setupMockForBranch()
+	mock.openIssues = []api.Issue{
+		{ID: "T1", Number: 100, Title: "Branch: release/v1.0.0", State: "OPEN"},
+		{ID: "T2", Number: 101, Title: "Branch: patch/v1.0.1", State: "OPEN"},
+	}
+	cfg := testBranchConfig()
+	cfg.Fields["branch"] = config.Field{Field: "Branch"}
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	cmd, _ := newTestBranchCmd()
+	err := runBranchRemoveWithDeps(cmd, &branchRemoveOptions{issueNumber: 42}, cfg, mock)
+	if err == nil {
+		t.Fatal("Expected error for multiple active branches, got nil")
+	}
+	expected := "multiple active branches. Specify one: release/v1.0.0, patch/v1.0.1"
+	if err.Error() != expected {
+		t.Errorf("Expected '%s', got: %s", expected, err.Error())
+	}
+}
+
+// AC3: branch current errors with a disambiguation list when the fast-path label
+// query returns multiple active branch trackers.
+func TestRunBranchCurrentWithDeps_MultipleActiveBranches_ReturnsDisambiguation(t *testing.T) {
+	mock := setupMockForBranch()
+	mock.openIssuesByLabels = []api.Issue{
+		{ID: "T1", Number: 100, Title: "Branch: release/v1.0.0", State: "OPEN"},
+		{ID: "T2", Number: 101, Title: "Branch: patch/v1.0.1", State: "OPEN"},
+	}
+	cfg := testBranchConfig()
+	cmd, _ := newTestBranchCmd()
+
+	err := runBranchCurrentWithDeps(cmd, &branchCurrentOptions{}, cfg, mock)
+	if err == nil {
+		t.Fatal("Expected error for multiple active branches, got nil")
+	}
+	expected := "multiple active branches. Specify one: release/v1.0.0, patch/v1.0.1"
+	if err.Error() != expected {
+		t.Errorf("Expected '%s', got: %s", expected, err.Error())
+	}
+}
+
+// AC3: branch current fast path ignores non-tracker issues that happen to carry
+// the active+branch labels, falling back to the title scan.
+func TestRunBranchCurrentWithDeps_FastPathFiltersNonTrackers(t *testing.T) {
+	mock := setupMockForBranch()
+	// Fast-path label query returns an issue that is NOT a branch tracker.
+	mock.openIssuesByLabels = []api.Issue{
+		{ID: "X", Number: 500, Title: "Some mislabeled issue", State: "OPEN"},
+	}
+	// Fallback title scan finds the real tracker.
+	mock.openIssues = []api.Issue{
+		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN", SubIssueCount: 3},
+	}
+	cfg := testBranchConfig()
+	cmd, buf := newTestBranchCmd()
+
+	if err := runBranchCurrentWithDeps(cmd, &branchCurrentOptions{}, cfg, mock); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "v1.2.0") {
+		t.Errorf("Expected fallback to find 'v1.2.0', got: %s", buf.String())
+	}
+}
+
+// AC4: round trip — an issue added via branch add is enumerated (and handled) by
+// branch close, rather than orphaned with a stale Branch field.
+func TestRunBranchAddThenClose_RoundTrip(t *testing.T) {
+	mock := setupMockForBranch()
+	mock.openIssues = []api.Issue{
+		{ID: "TRACKER_123", Number: 100, Title: "Branch: v1.2.0", State: "OPEN"},
+	}
+	mock.issueByNumber = &api.Issue{ID: "ISSUE_42", Number: 42, Title: "Fix login bug", State: "OPEN"}
+	mock.projectItemID = "ITEM_42"
+
+	cfg := testBranchConfig()
+	cfg.Fields["branch"] = config.Field{Field: "Branch"}
+	cleanup := setupBranchTestDir(t, cfg)
+	defer cleanup()
+
+	// ACT 1: add #42 to the branch.
+	addCmd, _ := newTestBranchCmd()
+	if err := runBranchAddWithDeps(addCmd, &branchAddOptions{issueNumber: 42}, cfg, mock); err != nil {
+		t.Fatalf("branch add failed: %v", err)
+	}
+	if len(mock.addSubIssueCalls) != 1 {
+		t.Fatalf("Expected branch add to link #42 as a sub-issue, got %d links", len(mock.addSubIssueCalls))
+	}
+
+	// ARRANGE 2: GitHub now returns #42 as an (incomplete) sub-issue of the tracker.
+	mock.subIssues = []api.SubIssue{
+		{ID: "ISSUE_42", Number: 42, Title: "Fix login bug", State: "OPEN",
+			Repository: api.Repository{Owner: "testowner", Name: "testrepo"}},
+	}
+	mock.setFieldCalls = nil // observe only close's field writes
+
+	// ACT 2: close the branch.
+	closeCmd, _ := newTestBranchCmd()
+	if err := runBranchCloseWithDeps(closeCmd, &branchCloseOptions{branchName: "v1.2.0", yes: true}, cfg, mock); err != nil {
+		t.Fatalf("branch close failed: %v", err)
+	}
+
+	// ASSERT: close handled #42 — Branch cleared and status moved to backlog.
+	var clearedBranch, movedBacklog bool
+	for _, c := range mock.setFieldCalls {
+		if c.fieldID == "Branch" && c.value == "" {
+			clearedBranch = true
+		}
+		if c.fieldID == "Status" && c.value == "Backlog" {
+			movedBacklog = true
+		}
+	}
+	if !clearedBranch {
+		t.Errorf("Expected close to clear Branch field for #42; setFieldCalls=%+v", mock.setFieldCalls)
+	}
+	if !movedBacklog {
+		t.Errorf("Expected close to move #42 to Backlog; setFieldCalls=%+v", mock.setFieldCalls)
+	}
+}
+
 func TestResolveCurrentBranch_NoActiveReleases(t *testing.T) {
 	// ARRANGE
 	mock := setupMockForBranch()
@@ -3121,7 +3477,7 @@ func BenchmarkBranchClose_Optimized(b *testing.B) {
 	// Create temp dir for config (required by branch close)
 	tempDir := b.TempDir()
 	configPath := tempDir + "/.gh-pmu.json"
-	_ = cfg.Save(configPath)
+	_ = cfg.Save(filepath.Dir(configPath))
 	originalDir, _ := os.Getwd()
 	_ = os.Chdir(tempDir)
 	defer func() { _ = os.Chdir(originalDir) }()

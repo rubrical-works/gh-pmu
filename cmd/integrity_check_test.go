@@ -101,6 +101,86 @@ func TestRunIntegrityCheck_StrictMode_ReturnsError(t *testing.T) {
 	}
 }
 
+// #865 Gap 1: strict mode is decided from HEAD-or-local.
+func TestIsStrictModeEither(t *testing.T) {
+	strict := []byte(`{"configIntegrity":"strict"}`)
+	notStrict := []byte(`{"project":{"owner":"x"}}`)
+	cases := []struct {
+		name        string
+		local, head []byte
+		want        bool
+	}{
+		{"local strict, head not", strict, notStrict, true},
+		{"local not, head strict", notStrict, strict, true},
+		{"both strict", strict, strict, true},
+		{"neither strict", notStrict, notStrict, false},
+		{"head nil, local strict", strict, nil, true},
+		{"head nil, local not", notStrict, nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isStrictModeEither(tc.local, tc.head); got != tc.want {
+				t.Errorf("isStrictModeEither = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// #865 Gap 1 (AC1/AC4): removing the strict key locally must not disable
+// enforcement while HEAD still declares strict.
+func TestRunIntegrityCheck_TamperedStrictKeyStillEnforced(t *testing.T) {
+	dir := t.TempDir()
+	committed := []byte(`{"project":{"owner":"original","number":1},"repositories":["test/repo"],"configIntegrity":"strict"}`)
+	configPath := filepath.Join(dir, ".gh-pmu.json")
+	if err := os.WriteFile(configPath, committed, 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "init")
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "init")
+
+	// Tamper: drop the strict key AND drift a value.
+	tampered := []byte(`{"project":{"owner":"changed","number":1},"repositories":["test/repo"]}`)
+	if err := os.WriteFile(configPath, tampered, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runIntegrityCheck(configPath, new(bytes.Buffer)); err == nil {
+		t.Fatal("Expected strict-mode error: HEAD declares strict, so removing the local key must not disable enforcement")
+	}
+}
+
+// #865 Gap 2 (AC2/AC4): the committed baseline is read with a cwd-relative
+// pathspec, so drift is detected when the config lives in a monorepo subdirectory.
+func TestRunIntegrityCheck_MonorepoSubdirectoryBaseline(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init")
+
+	subdir := filepath.Join(root, "packages", "app")
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(subdir, ".gh-pmu.json")
+	committed := []byte(`{"project":{"owner":"original","number":1},"repositories":["test/repo"],"configIntegrity":"strict"}`)
+	if err := os.WriteFile(configPath, committed, 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "packages/app/.gh-pmu.json")
+	runGit(t, root, "commit", "-m", "init")
+
+	// Drift the subdirectory config locally.
+	tampered := []byte(`{"project":{"owner":"changed","number":1},"repositories":["test/repo"],"configIntegrity":"strict"}`)
+	if err := os.WriteFile(configPath, tampered, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// New (cwd-relative) pathspec reads the subdir baseline -> drift -> strict error.
+	// The old repo-root pathspec would fail to find the baseline and silently skip.
+	if err := runIntegrityCheck(configPath, new(bytes.Buffer)); err == nil {
+		t.Fatal("Expected drift detection against the subdirectory's committed baseline")
+	}
+}
+
 func TestRunIntegrityCheck_Throttled_Skips(t *testing.T) {
 	// ARRANGE: Config drifted BUT throttle is active
 	dir := t.TempDir()

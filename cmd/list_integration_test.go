@@ -38,9 +38,11 @@ func TestRunList_Integration_FilterByStatus(t *testing.T) {
 	// Should contain Backlog issues
 	testutil.AssertContains(t, result.Stdout, "Backlog")
 
-	// Should NOT contain "In progress" status in output (unless in title)
-	// Seed Issue 1 is Backlog, Seed Issue 2 is In progress
+	// Seed Issue 1 is Backlog and must appear...
 	testutil.AssertContains(t, result.Stdout, "Seed Issue 1")
+	// ...Seed Issue 2 is In progress and must NOT appear. Without this exclusion a
+	// silently-ignored --status would still pass the inclusion-only check.
+	testutil.AssertNotContains(t, result.Stdout, "Seed Issue 2")
 }
 
 // TestRunList_Integration_FilterByStatusInProgress tests filtering by in_progress status
@@ -54,6 +56,9 @@ func TestRunList_Integration_FilterByStatusInProgress(t *testing.T) {
 	// Should contain "In progress" issues
 	// Seed Issue 2 and Seed Issue 4 are "In progress"
 	testutil.AssertContains(t, result.Stdout, "In progress")
+
+	// Seed Issue 1 is Backlog and must NOT appear under the in_progress filter.
+	testutil.AssertNotContains(t, result.Stdout, "Seed Issue 1")
 }
 
 // TestRunList_Integration_FilterByPriority tests filtering by --priority flag
@@ -65,9 +70,11 @@ func TestRunList_Integration_FilterByPriority(t *testing.T) {
 
 	testutil.AssertExitCode(t, result, 0)
 
-	// Seed Issue 1 is P0
+	// Seed Issue 1 is P0 and must appear...
 	testutil.AssertContains(t, result.Stdout, "Seed Issue 1")
 	testutil.AssertContains(t, result.Stdout, "P0")
+	// ...Seed Issue 2 is P1 and must NOT appear under the P0 filter.
+	testutil.AssertNotContains(t, result.Stdout, "Seed Issue 2")
 }
 
 // TestRunList_Integration_FilterByPriorityP1 tests filtering by P1 priority
@@ -80,6 +87,9 @@ func TestRunList_Integration_FilterByPriorityP1(t *testing.T) {
 
 	// Seed Issues 2, 4, 5 are P1
 	testutil.AssertContains(t, result.Stdout, "P1")
+
+	// Seed Issue 1 is P0 and must NOT appear under the P1 filter.
+	testutil.AssertNotContains(t, result.Stdout, "Seed Issue 1")
 }
 
 // TestRunList_Integration_FilterByPriorityP2 tests filtering by P2 priority
@@ -92,6 +102,9 @@ func TestRunList_Integration_FilterByPriorityP2(t *testing.T) {
 
 	// Seed Issues 3, 6 are P2
 	testutil.AssertContains(t, result.Stdout, "P2")
+
+	// Seed Issue 1 is P0 and must NOT appear under the P2 filter.
+	testutil.AssertNotContains(t, result.Stdout, "Seed Issue 1")
 }
 
 // TestRunList_Integration_JSONOutput tests --json output format
@@ -170,11 +183,13 @@ func TestRunList_Integration_HasSubIssues(t *testing.T) {
 
 	testutil.AssertExitCode(t, result, 0)
 
-	// Seed Issue 4 has sub-issue #5
+	// Seed Issue 4 has sub-issue #5 and must appear...
 	testutil.AssertContains(t, result.Stdout, "Seed Issue 4")
 
-	// Should NOT contain issues without sub-issues
-	// Note: This is a soft check - other issues might have sub-issues too
+	// ...Seed Issue 1 is a plain backlog issue with no sub-issues. It is a member of
+	// the unfiltered project list, so its absence here confirms --has-sub-issues
+	// actually excludes issues that have none (rather than being a no-op filter).
+	testutil.AssertNotContains(t, result.Stdout, "Seed Issue 1")
 }
 
 // TestRunList_Integration_CombinedFilters tests combining multiple filters
@@ -189,6 +204,10 @@ func TestRunList_Integration_CombinedFilters(t *testing.T) {
 	// Seed Issues 2 and 4 are both In progress + P1
 	testutil.AssertContains(t, result.Stdout, "In progress")
 	testutil.AssertContains(t, result.Stdout, "P1")
+
+	// Seed Issue 1 (Backlog + P0) matches neither filter and must NOT appear —
+	// a no-op combined filter would leak it.
+	testutil.AssertNotContains(t, result.Stdout, "Seed Issue 1")
 }
 
 // TestRunList_Integration_Limit tests --limit flag
