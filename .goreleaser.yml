@@ -43,7 +43,7 @@ changelog:
 
 release:
   github:
-    owner: rubrical-works
+    owner: rubrical-worker
     name: gh-pmu
   prerelease: auto
   name_template: "gh-pmu {{.Version}}"
