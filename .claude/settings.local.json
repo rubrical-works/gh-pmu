@@ -21,31 +21,17 @@
       "Bash(gh release:*)"
     ],
     "deny": [
-      "Bash^(rm -rf /:*^)",
-      "Bash^(rm -rf /*:*^)",
-      "Bash^(sudo:*^)",
-      "Bash^(git push --force:*^)",
-      "Bash^(git push -f:*^)",
-      "Bash^(git reset --hard:*^)",
-      "Bash^(git clean -fd:*^)",
-      "Bash^(git filter-branch:*^)",
-      "Bash^(git rebase -i:*^)",
-      "Bash^(git add -i:*^)"
+      "Bash(rm -rf /:*)",
+      "Bash(rm -rf /*:*)",
+      "Bash(sudo:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd:*)",
+      "Bash(git filter-branch:*)",
+      "Bash(git rebase -i:*)",
+      "Bash(git add -i:*)"
     ],
     "ask": []
-  },
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/workflow-trigger.js",
-            "timeout": 5
-          }
-        ]
-      }
-    ]
-  },
-  "spinnerTipsEnabled": true
+  }
 }
