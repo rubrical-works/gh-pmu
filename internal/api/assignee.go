@@ -1,6 +1,9 @@
 package api
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // AssigneeSelf is the sentinel callers pass to mean "whoever is authenticated",
 // matching the gh CLI's own convention. It is not a login: GitHub's
@@ -48,4 +51,47 @@ func (c *Client) ResolveAssignee(value string) (string, error) {
 	}
 	c.assigneeCache[value] = resolved
 	return resolved, nil
+}
+
+// ResolveAssignees resolves a whole --assignee set, returning the logins in the
+// order supplied. Any unresolvable value fails the batch: a command that cannot
+// honour every assignee it was given should not proceed with a subset, because
+// the result would look successful while quietly differing from what was asked.
+//
+// Nothing is resolved for an empty set — omitting --assignee means "leave
+// unassigned", which is not a failure.
+func (c *Client) ResolveAssignees(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	resolved := make([]string, 0, len(values))
+	var failed []string
+	for _, v := range values {
+		login, err := c.ResolveAssignee(v)
+		if err != nil {
+			failed = append(failed, v)
+			continue
+		}
+		resolved = append(resolved, login)
+	}
+
+	if err := assigneeBatchError(len(failed), len(values), failed); err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
+// assigneeBatchError phrases a batch resolution failure, mirroring
+// subRemoveBatchError: "all N" when nothing resolved, "N of M" otherwise, so the
+// message never implies partial success where there was none. Both cases exit 1
+// — the wording is what distinguishes them.
+func assigneeBatchError(failCount, total int, failed []string) error {
+	if failCount == 0 {
+		return nil
+	}
+	if failCount == total {
+		return fmt.Errorf("all %d assignees could not be resolved: %s", total, strings.Join(failed, ", "))
+	}
+	return fmt.Errorf("%d of %d assignees could not be resolved: %s", failCount, total, strings.Join(failed, ", "))
 }

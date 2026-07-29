@@ -126,6 +126,70 @@ func TestResolveAssignee_ViewerLookupFailurePropagates(t *testing.T) {
 	}
 }
 
+func TestResolveAssignees_AllValidResolveInOrder(t *testing.T) {
+	mock := newAssigneeResolverMock("rubrical-worker", "octocat", "hubot")
+	client := NewClientWithGraphQL(mock)
+
+	got, err := client.ResolveAssignees([]string{"octocat", AssigneeSelf, "hubot"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"octocat", "rubrical-worker", "hubot"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("expected %v, got %v", want, got)
+	}
+}
+
+func TestResolveAssignees_PartialFailureNamesTheOffenders(t *testing.T) {
+	// AC5: partial and total failures share exit 1, so the message is the only
+	// thing telling them apart — it has to name which value broke.
+	mock := newAssigneeResolverMock("rubrical-worker", "octocat", "hubot")
+	client := NewClientWithGraphQL(mock)
+
+	_, err := client.ResolveAssignees([]string{"octocat", "ghost", "hubot"})
+	if err == nil {
+		t.Fatal("expected an error when one of three assignees is unresolvable")
+	}
+	if !strings.Contains(err.Error(), "1 of 3") {
+		t.Errorf("expected a partial-failure count, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "ghost") {
+		t.Errorf("expected the failing login to be named, got: %v", err)
+	}
+}
+
+func TestResolveAssignees_TotalFailureReportsAll(t *testing.T) {
+	// AC5: mirrors subRemoveBatchError — "all N" rather than "N of N", so the
+	// message does not imply some succeeded.
+	mock := newAssigneeResolverMock("rubrical-worker", "octocat")
+	client := NewClientWithGraphQL(mock)
+
+	_, err := client.ResolveAssignees([]string{"ghost", "phantom"})
+	if err == nil {
+		t.Fatal("expected an error when every assignee is unresolvable")
+	}
+	if !strings.Contains(err.Error(), "all 2") {
+		t.Errorf("expected a total-failure message, got: %v", err)
+	}
+}
+
+func TestResolveAssignees_EmptyInputIsNotAnError(t *testing.T) {
+	// Omitting --assignee is not a failure; it means "leave unassigned".
+	mock := newAssigneeResolverMock("rubrical-worker")
+	client := NewClientWithGraphQL(mock)
+
+	got, err := client.ResolveAssignees(nil)
+	if err != nil {
+		t.Fatalf("unexpected error for empty input: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no assignees, got %v", got)
+	}
+	if len(mock.calls) != 0 {
+		t.Errorf("empty input must issue no queries, got %v", mock.calls)
+	}
+}
+
 func TestResolveAssignee_MemoizesPerDistinctValue(t *testing.T) {
 	// AC8: a command may pass the same assignee several times (batch create,
 	// from-file merge). One lookup per distinct value, not per occurrence.
