@@ -124,6 +124,11 @@ gh pmu list --repo owner/other-repo
 | `--priority` | Filter by project priority field |
 | `--has-sub-issues` | Show only parent issues |
 
+**Flags matching `gh issue list`:**
+| Flag | Purpose |
+|------|---------|
+| `--assignee` / `-a` | Filter by assignee login; `@me` resolves to your authenticated login (see [Assignee Resolution](#assignee-resolution)) |
+
 **Output:**
 ```
 #   Title                          Status        Priority
@@ -212,6 +217,7 @@ gh pmu create --title "Security fix" --label bug --label security
 | `--body-file` / `-F` | Read body text from file |
 | `--body-stdin` | Read body text from standard input |
 | `--template` / `-T` | Use issue template from `.github/ISSUE_TEMPLATE/` |
+| `--assignee` / `-a` | Assign users (repeatable); `@me` resolves to your authenticated login (see [Assignee Resolution](#assignee-resolution)) |
 
 **Output:**
 ```
@@ -489,6 +495,16 @@ gh pmu sub create --parent 10 --title "Task" --inherit-assignees
 | `--inherit-milestone` | Copy milestone from parent (default: true) |
 | `--inherit-assignees` | Copy assignees from parent (default: false) |
 
+**Flags matching `gh issue create`:**
+| Flag | Purpose |
+|------|---------|
+| `--assignee` / `-a` | Assign users (repeatable); `@me` resolves to your authenticated login (see [Assignee Resolution](#assignee-resolution)) |
+
+Explicit `--assignee` values are merged with any inherited from the parent via
+`--inherit-assignees`, explicit first, deduplicated. Inheritance is skipped for
+cross-repository sub-issues, since account membership does not carry across
+repositories.
+
 ### sub list
 
 List sub-issues of a parent.
@@ -540,7 +556,14 @@ gh pmu intake --dry-run
 
 # Add to project with defaults
 gh pmu intake --apply
+
+# Only issues assigned to you
+gh pmu intake --assignee @me --dry-run
 ```
+
+`--assignee` is repeatable and matches issues carrying **any** of the supplied
+logins. `@me` resolves to your authenticated login — see
+[Assignee Resolution](#assignee-resolution).
 
 ### triage
 
@@ -601,7 +624,14 @@ gh issue list --json number,title | gh pmu filter --status in_progress --json
 
 # From another repository
 gh issue list -R owner/repo --json number,title | gh pmu filter --priority p0
+
+# Filter to your own issues
+gh issue list --json number,title,assignees | gh pmu filter --assignee @me
 ```
+
+`--assignee` matches against the `assignees` field of the piped JSON, so include
+it in the `gh issue list --json` field list. `@me` resolves to your authenticated
+login — see [Assignee Resolution](#assignee-resolution).
 
 ### history
 
@@ -857,6 +887,57 @@ These flags work with most commands:
 | `--help` | Show command help |
 | `--no-cache-fallback` | Disable cached-metadata fallback when GitHub's `ProjectV2.fields` resolver returns 5xx — propagate the error unchanged (fail-loud, for CI/strict automation). See the [Resilience](../README.md#resilience) section. |
 | `--refresh-cached-fields` | When the cache-fallback engages, refresh each cached field via per-name `ProjectV2.field(name:)` queries. Partial failures retain the cached value. |
+
+## Assignee Resolution
+
+`--assignee` / `-a` is accepted by `create`, `sub create`, `list`, `filter`, and
+`intake`, and by `assignees:` entries in a `create --from-file` payload. Every one
+of them resolves the value the same way:
+
+| Value | Behavior |
+|-------|----------|
+| `@me` | Resolved to your authenticated GitHub login — the value `gh api user --jq .login` returns. |
+| Any other value | Used as given, once confirmed to name a real GitHub account. |
+| Unresolvable value | The command fails with exit 1 and creates nothing. |
+
+```bash
+# Assign to yourself without knowing your login
+gh pmu create --title "Fix login redirect" --assignee @me
+
+# Filter to your own issues
+gh pmu list --assignee @me
+
+# Explicit logins work as before
+gh pmu create --title "Handoff" --assignee octocat
+```
+
+**Your git identity is not your GitHub identity.** `@me` resolves through the
+GitHub API, not `git config user.name`. If the two differ — a common case — only
+`@me` or your actual GitHub login will work.
+
+**Unresolvable assignees abort the command.** A typo'd, deleted, or renamed
+account fails the whole invocation rather than being skipped, because resolution
+runs before the issue is created:
+
+```
+$ gh pmu create --title "Test" --assignee ghost
+Error: assignee "ghost" could not be resolved: ... Could not resolve to a User
+with the login of 'ghost'.
+$ echo $?
+1
+```
+
+Nothing is created when this happens, so there is no partially-configured issue
+to clean up. When several assignees are supplied, the whole set fails together
+and the message distinguishes partial from total:
+`1 of 3 assignees could not be resolved: ghost` versus
+`all 3 assignees could not be resolved`.
+
+GitHub does **not** redirect renamed accounts in this lookup, so a login that
+worked before an account rename will fail afterward.
+
+Repeated mentions of the same value cost one lookup per invocation, not one per
+occurrence.
 
 ## See Also
 
