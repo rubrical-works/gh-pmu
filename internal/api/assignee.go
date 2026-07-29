@@ -3,12 +3,21 @@ package api
 import (
 	"fmt"
 	"strings"
+
+	graphql "github.com/cli/shurcooL-graphql"
 )
 
 // AssigneeSelf is the sentinel callers pass to mean "whoever is authenticated",
 // matching the gh CLI's own convention. It is not a login: GitHub's
 // user(login:) resolver returns NOT_FOUND for it.
 const AssigneeSelf = "@me"
+
+// resolvedAssignee is one memoized resolution: the login a value resolves to and
+// that account's node id.
+type resolvedAssignee struct {
+	login string
+	id    string
+}
 
 // ResolveAssignee turns one --assignee value into a usable GitHub login.
 //
@@ -25,32 +34,53 @@ const AssigneeSelf = "@me"
 // occurrence. Only successes are cached; a failure aborts the command, so there
 // is no second attempt to serve from cache.
 func (c *Client) ResolveAssignee(value string) (string, error) {
+	login, _, err := c.resolveAssignee(value)
+	return login, err
+}
+
+// resolveAssignee resolves a value to both its login and its account node id.
+//
+// The id is carried alongside the login because the assignment paths need it for
+// createIssue, and fetching it separately would mean a second lookup for a value
+// the validation step already resolved. @me costs two queries the first time —
+// viewer{login} does not return an id — but the resolved login is cached under
+// its own key as well, so `--assignee @me --assignee <that same login>` still
+// totals two, not three.
+func (c *Client) resolveAssignee(value string) (login, id string, err error) {
 	if cached, ok := c.assigneeCache[value]; ok {
-		return cached, nil
+		return cached.login, cached.id, nil
 	}
 
-	var resolved string
 	if value == AssigneeSelf {
-		login, err := c.GetAuthenticatedUser()
+		self, err := c.GetAuthenticatedUser()
 		if err != nil {
-			return "", fmt.Errorf("cannot resolve %s: %w", AssigneeSelf, err)
+			return "", "", fmt.Errorf("cannot resolve %s: %w", AssigneeSelf, err)
 		}
-		if login == "" {
-			return "", fmt.Errorf("cannot resolve %s: authenticated user has no login", AssigneeSelf)
+		if self == "" {
+			return "", "", fmt.Errorf("cannot resolve %s: authenticated user has no login", AssigneeSelf)
 		}
-		resolved = login
-	} else {
-		if _, err := c.getUserID(value); err != nil {
-			return "", fmt.Errorf("assignee %q could not be resolved: %w", value, err)
+		// Recurses once: self is a real login, so this takes the branch below.
+		resolvedLogin, resolvedID, err := c.resolveAssignee(self)
+		if err != nil {
+			return "", "", fmt.Errorf("cannot resolve %s: %w", AssigneeSelf, err)
 		}
-		resolved = value
+		c.cacheAssignee(value, resolvedLogin, resolvedID)
+		return resolvedLogin, resolvedID, nil
 	}
 
-	if c.assigneeCache == nil {
-		c.assigneeCache = make(map[string]string)
+	userID, err := c.getUserID(value)
+	if err != nil {
+		return "", "", fmt.Errorf("assignee %q could not be resolved: %w", value, err)
 	}
-	c.assigneeCache[value] = resolved
-	return resolved, nil
+	c.cacheAssignee(value, value, userID)
+	return value, userID, nil
+}
+
+func (c *Client) cacheAssignee(key, login, id string) {
+	if c.assigneeCache == nil {
+		c.assigneeCache = make(map[string]resolvedAssignee)
+	}
+	c.assigneeCache[key] = resolvedAssignee{login: login, id: id}
 }
 
 // ResolveAssignees resolves a whole --assignee set, returning the logins in the
@@ -80,6 +110,31 @@ func (c *Client) ResolveAssignees(values []string) ([]string, error) {
 		return nil, err
 	}
 	return resolved, nil
+}
+
+// resolveAssigneeIDs resolves a --assignee set to the account node ids the
+// createIssue mutation expects. Same all-or-nothing contract as
+// ResolveAssignees: the ids are only returned if every value resolved.
+func (c *Client) resolveAssigneeIDs(values []string) ([]graphql.ID, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]graphql.ID, 0, len(values))
+	var failed []string
+	for _, v := range values {
+		_, id, err := c.resolveAssignee(v)
+		if err != nil {
+			failed = append(failed, v)
+			continue
+		}
+		ids = append(ids, graphql.ID(id))
+	}
+
+	if err := assigneeBatchError(len(failed), len(values), failed); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // assigneeBatchError phrases a batch resolution failure, mirroring

@@ -17,18 +17,35 @@ type assigneeResolverMock struct {
 	viewerErr   error
 	knownUsers  map[string]string
 	calls       map[string]int
+	userIDArgs  []string
 }
 
+// newAssigneeResolverMock registers viewerLogin as a known user alongside the
+// named ones: the authenticated account is a real account, and the resolver
+// looks up its node id after viewer{login} hands back the name.
 func newAssigneeResolverMock(viewerLogin string, knownUsers ...string) *assigneeResolverMock {
-	known := make(map[string]string, len(knownUsers))
+	known := make(map[string]string, len(knownUsers)+1)
 	for i, u := range knownUsers {
 		known[u] = "U_kw" + string(rune('A'+i))
+	}
+	if viewerLogin != "" {
+		known[viewerLogin] = "U_kwSELF"
 	}
 	return &assigneeResolverMock{
 		viewerLogin: viewerLogin,
 		knownUsers:  known,
 		calls:       make(map[string]int),
 	}
+}
+
+// userIDCalledWith reports whether a GetUserID query was issued for a login.
+func (m *assigneeResolverMock) userIDCalledWith(login string) bool {
+	for _, a := range m.userIDArgs {
+		if a == login {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *assigneeResolverMock) Query(name string, query interface{}, variables map[string]interface{}) error {
@@ -42,7 +59,9 @@ func (m *assigneeResolverMock) Query(name string, query interface{}, variables m
 		reflect.ValueOf(query).Elem().FieldByName("Viewer").FieldByName("Login").SetString(m.viewerLogin)
 		return nil
 	case "GetUserID":
-		id, ok := m.knownUsers[fmt.Sprintf("%v", variables["login"])]
+		arg := fmt.Sprintf("%v", variables["login"])
+		m.userIDArgs = append(m.userIDArgs, arg)
+		id, ok := m.knownUsers[arg]
 		if !ok {
 			// Mirrors GitHub: a missing user comes back as a null node, which
 			// getUserID turns into `user %q not found`.
@@ -72,8 +91,14 @@ func TestResolveAssignee_AtMeResolvesToAuthenticatedLogin(t *testing.T) {
 	if got != "rubrical-worker" {
 		t.Errorf("expected @me to resolve to %q, got %q", "rubrical-worker", got)
 	}
-	if mock.calls["GetUserID"] != 0 {
-		t.Errorf("@me must not be validated as a literal login; GetUserID called %d time(s)", mock.calls["GetUserID"])
+	// The sentinel itself must never reach user(login:) — that lookup is what
+	// returns NOT_FOUND today. Looking up the login it resolves to is expected:
+	// viewer{login} yields no node id, and the assignment paths need one.
+	if mock.userIDCalledWith(AssigneeSelf) {
+		t.Error("@me was passed to user(login:) as a literal login")
+	}
+	if !mock.userIDCalledWith("rubrical-worker") {
+		t.Error("expected the resolved login to be looked up for its node id")
 	}
 }
 
@@ -205,8 +230,11 @@ func TestResolveAssignee_MemoizesPerDistinctValue(t *testing.T) {
 		}
 	}
 
-	if mock.calls["GetUserID"] != 1 {
-		t.Errorf("expected 1 GetUserID call for 3 resolutions of the same login, got %d", mock.calls["GetUserID"])
+	// Two distinct logins get an id lookup each — octocat, and the account @me
+	// resolves to. Nine calls collapse to three queries; a fourth would mean the
+	// cache is not holding.
+	if mock.calls["GetUserID"] != 2 {
+		t.Errorf("expected 2 GetUserID calls across 6 resolutions, got %d (args: %v)", mock.calls["GetUserID"], mock.userIDArgs)
 	}
 	if mock.calls["GetAuthenticatedUser"] != 1 {
 		t.Errorf("expected 1 viewer lookup for 3 resolutions of @me, got %d", mock.calls["GetAuthenticatedUser"])

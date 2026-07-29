@@ -91,7 +91,7 @@ type Client struct {
 
 	// assigneeCache memoizes ResolveAssignee results for the life of the client,
 	// which is one CLI invocation. Lazily created.
-	assigneeCache map[string]string
+	assigneeCache map[string]resolvedAssignee
 }
 
 // ClientOptions configures the API client
