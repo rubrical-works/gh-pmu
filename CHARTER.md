@@ -1,7 +1,7 @@
 # Project Charter: GitHub Praxis Management Utility
 
 **Status:** Active
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-07-23
 
 ## Vision
 
@@ -9,7 +9,7 @@ A GitHub CLI extension that streamlines project workflows by unifying issue trac
 
 ## Current Focus
 
-v1.4.x - Stability, security hardening, and documentation improvements
+v1.5.x - Stabilize the correctness and error-surfacing work shipped in v1.5.0 (2026-07-23)
 
 ## Tech Stack
 
@@ -33,6 +33,9 @@ v1.4.x - Stability, security hardening, and documentation improvements
 - Status transition validation
 - E2E test infrastructure
 - Resilience to upstream GraphQL schema rollouts (cached-metadata fallback for ProjectV2 field resolver via `.gh-pmu.json`)
+- Complete pagination for user-facing fetches (labels, comments, projects, project field values)
+- Fail-loud error propagation across the cmd and API layers, with partial-failure exit codes
+- Offline validation of GraphQL operations against a vendored GitHub schema
 
 ---
 *See Inception/ for full specifications*

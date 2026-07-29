@@ -15,8 +15,7 @@
   },
   "fields": {
     "branch": {
-      "field": "Branch",
-      "values": null
+      "field": "Branch"
     },
     "priority": {
       "field": "Priority",
@@ -48,11 +47,12 @@
       }
     }
   },
+  "release": {},
   "acceptance": {
     "accepted": true,
     "user": "sbeals",
-    "date": "2026-05-05",
-    "version": "1.4.9"
+    "date": "2026-07-23",
+    "version": "1.5.0"
   },
   "metadata": {
     "project": {

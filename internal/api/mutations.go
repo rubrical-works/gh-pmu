@@ -1056,20 +1056,18 @@ func (c *Client) CreateIssueWithOptions(owner, repo, title, body string, labels,
 		return nil, err
 	}
 
-	// Get assignee IDs
-	var assigneeIDs []graphql.ID
-	if len(assignees) > 0 {
-		for _, login := range assignees {
-			userID, err := c.getUserID(login)
-			if err != nil {
-				// Warn per skipped assignee (the milestone branch below also warns)
-				// so a transient lookup failure isn't silently indistinguishable
-				// from "user not found".
-				fmt.Fprintf(os.Stderr, "Warning: skipping assignee %q: %v\n", login, err)
-				continue
-			}
-			assigneeIDs = append(assigneeIDs, graphql.ID(userID))
-		}
+	// Resolve assignees to node ids. @me becomes the authenticated login here;
+	// every other value is validated before it is used.
+	//
+	// #872 finding 4 made a failed lookup warn and continue so a transient
+	// failure was not silently indistinguishable from "user not found". That
+	// fixed visibility but left a silent wrong result: creation reported success
+	// and returned an issue missing its assignee. #895 reverses it. This runs
+	// before the createIssue mutation, so aborting here creates nothing — there
+	// is no partial state, which serves #872's concern better than a warning did.
+	assigneeIDs, err := c.resolveAssigneeIDs(assignees)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get milestone ID

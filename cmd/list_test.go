@@ -14,6 +14,7 @@ import (
 
 // mockListClient implements listClient for testing
 type mockListClient struct {
+	fakeAssigneeResolver
 	project               *api.Project
 	projectItems          []api.ProjectItem
 	openIssuesByLabel     []api.Issue
@@ -2557,6 +2558,65 @@ func TestRunListWithDeps_SearchApiPath_UsesSearchRepositoryIssues(t *testing.T) 
 	}
 	// The fact that it succeeded means it used the search API path
 	// because projectItems is empty but searchResults has data
+}
+
+func TestRunListWithDeps_AtMeResolvedBeforeSearchQualifier(t *testing.T) {
+	// #895 AC10: the search path already handled @me, because GitHub resolves the
+	// "assignee:@me" qualifier server-side. Resolving first must not regress that
+	// — the qualifier now carries the login, which selects the same issues.
+	mock := newMockListClient()
+	mock.viewerLogin = "rubrical-worker"
+	mock.searchResults = []api.Issue{}
+
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-org", Number: 1},
+		Repositories: []string{"test-org/repo"},
+	}
+	cmd := newListCommand()
+	opts := &listOptions{assignee: "@me"}
+
+	if err := runListWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mock.searchCalls) == 0 {
+		t.Fatal("expected the search path to be used when a repository filter is configured")
+	}
+	if got := mock.searchCalls[0].Assignee; got != "rubrical-worker" {
+		t.Errorf("expected the resolved login in the search qualifier, got %q", got)
+	}
+}
+
+func TestRunListWithDeps_AtMeResolvedForClientSideFilter(t *testing.T) {
+	// The counterpart: with no repository filter there is no search API, and the
+	// fallback compares logins literally. This is the path where @me silently
+	// matched nothing before #895.
+	mock := newMockListClient()
+	mock.viewerLogin = "rubrical-worker"
+	mock.projectItems = []api.ProjectItem{
+		{ID: "item-1", Issue: &api.Issue{ID: "i1", Number: 1, Title: "Mine",
+			Assignees: []api.Actor{{Login: "rubrical-worker"}}}},
+		{ID: "item-2", Issue: &api.Issue{ID: "i2", Number: 2, Title: "Theirs",
+			Assignees: []api.Actor{{Login: "octocat"}}}},
+	}
+
+	cfg := &config.Config{Project: config.Project{Owner: "test-org", Number: 1}}
+	cmd := newListCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	opts := &listOptions{assignee: "@me"}
+
+	if err := runListWithDeps(cmd, opts, cfg, mock); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Mine") {
+		t.Errorf("expected the issue assigned to the authenticated user, got: %q", out)
+	}
+	if strings.Contains(out, "Theirs") {
+		t.Errorf("expected another user's issue to be filtered out, got: %q", out)
+	}
 }
 
 func TestRunListWithDeps_SearchApiPath_WithClosedState(t *testing.T) {

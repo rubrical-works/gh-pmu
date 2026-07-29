@@ -88,6 +88,10 @@ type Client struct {
 	gql    GraphQLClient
 	rawGQL RawGraphQLDoer
 	opts   ClientOptions
+
+	// assigneeCache memoizes ResolveAssignee results for the life of the client,
+	// which is one CLI invocation. Lazily created.
+	assigneeCache map[string]resolvedAssignee
 }
 
 // ClientOptions configures the API client

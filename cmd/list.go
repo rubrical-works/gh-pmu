@@ -16,6 +16,7 @@ import (
 // listClient defines the interface for API methods used by list functions.
 // This allows for easier testing with mock implementations.
 type listClient interface {
+	assigneeResolver
 	GetProject(owner string, number int) (*api.Project, error)
 	GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error)
 	GetOpenIssuesByLabel(owner, repo, label string) ([]api.Issue, error)
@@ -114,6 +115,18 @@ func runList(cmd *cobra.Command, opts *listOptions) error {
 
 // runListWithDeps is the testable implementation of runList
 func runListWithDeps(cmd *cobra.Command, opts *listOptions, cfg *config.Config, client listClient) error {
+	// Resolve --assignee before either consumer sees it. The search path passes
+	// it to GitHub as an "assignee:" qualifier and the fallback compares it
+	// literally against issue logins, so an unresolved @me worked in one and
+	// silently matched nothing in the other.
+	if opts.assignee != "" {
+		resolved, err := client.ResolveAssignee(opts.assignee)
+		if err != nil {
+			return err
+		}
+		opts.assignee = resolved
+	}
+
 	// Validate state filter
 	if opts.state != "" {
 		stateLower := strings.ToLower(opts.state)

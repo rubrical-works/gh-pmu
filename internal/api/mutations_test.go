@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -35,9 +33,15 @@ func TestResolveLabelIDs_LookupErrorPropagates(t *testing.T) {
 	}
 }
 
-func TestCreateIssueWithOptions_AssigneeLookupFailureWarns(t *testing.T) {
-	// #872 finding 4: an assignee whose lookup fails must be warned about (with the
-	// reason), not silently dropped; issue creation still proceeds.
+func TestCreateIssueWithOptions_AssigneeLookupFailureAborts(t *testing.T) {
+	// Reverses #872 finding 4 (#895). That finding made a failed assignee lookup
+	// warn with its reason rather than drop silently, and let creation proceed.
+	// Visibility improved, but the outcome stayed wrong in a way exit code 0 hid:
+	// the caller got a successfully-created issue missing the assignee it asked
+	// for. Resolution happens before the createIssue mutation, so failing here
+	// creates nothing — no partial state to reconcile, which addresses #872's
+	// underlying concern more completely than the warning did.
+	var mutateCalled bool
 	mock := &mockGraphQLClient{
 		queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
 			if name == "GetRepositoryID" {
@@ -51,27 +55,22 @@ func TestCreateIssueWithOptions_AssigneeLookupFailureWarns(t *testing.T) {
 			return nil
 		},
 		mutateFunc: func(name string, mutation interface{}, variables map[string]interface{}) error {
+			mutateCalled = true
 			return nil
 		},
 	}
 	client := NewClientWithGraphQL(mock)
 
-	oldErr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
 	_, err := client.CreateIssueWithOptions("owner", "repo", "title", "body", nil, []string{"ghost"}, "")
 
-	_ = w.Close()
-	os.Stderr = oldErr
-	var buf strings.Builder
-	_, _ = io.Copy(&buf, r)
-
-	if err != nil {
-		t.Fatalf("issue creation should still succeed when an assignee is skipped, got: %v", err)
+	if err == nil {
+		t.Fatal("expected creation to abort when an assignee cannot be resolved, got nil error")
 	}
-	if !strings.Contains(buf.String(), "ghost") {
-		t.Errorf("expected a stderr warning naming the skipped assignee, got: %q", buf.String())
+	if !strings.Contains(err.Error(), "ghost") {
+		t.Errorf("error must name the unresolvable assignee, got: %v", err)
+	}
+	if mutateCalled {
+		t.Error("createIssue must not be sent when an assignee cannot be resolved")
 	}
 }
 

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-07-28
+
+Released as a patch rather than the minor `recommend-version.js` suggested. The
+new `@me` support is technically additive, but the v1.5.x line is scoped to
+stabilizing v1.5.0's correctness and error-surfacing work, and that is what this
+is: a flag that silently produced wrong results now produces right ones.
+
+### Added
+- `--assignee @me` resolves to the authenticated GitHub login on every command that accepts the flag — `create`, `sub create`, `list`, `filter`, and `intake` — plus `assignees:` entries in `create --from-file` payloads. Previously `@me` was passed through verbatim to `user(login:)`, which returns `NOT_FOUND` for it (#895)
+
+### Fixed
+- An unresolvable `--assignee` now fails the command instead of warning and continuing. Resolution runs before the `createIssue` mutation, so nothing is created — previously a typo'd or renamed login produced a successfully-created but unassigned issue with exit code 0 (#895)
+- `@me` behaved inconsistently across `list` code paths: correct under the Search API, which resolves the `assignee:@me` qualifier server-side, but silently matching nothing under the client-side fallback. Both paths now resolve before matching, and the Search path returns the same results as before (#895)
+- `sub create` echoed raw assignee values in its confirmation, printing `Assignees: @@me` while assigning the authenticated account (#895)
+
+### Changed
+- **Breaking (unexercised):** an invalid explicit `--assignee` login aborts with exit 1 where it previously warned and proceeded. This reverses #872 finding 4 — see `Construction/Design-Decisions/2026-07-28-assignee-resolution-failure-aborts.md`. No known caller supplies an explicit login; `@me` is the only value this project has passed, and it now resolves rather than failing (#895)
+- Partial and total assignee-resolution failures share exit 1 and are distinguished by message, following the `subRemoveBatchError` precedent — `"1 of 3 assignees could not be resolved: ghost"` versus `"all 3 assignees could not be resolved"` (#895)
+
 ## [1.5.0] - 2026-07-23
 
 ### Added

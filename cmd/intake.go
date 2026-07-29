@@ -15,6 +15,7 @@ import (
 // intakeClient defines the interface for API methods used by intake functions.
 // This allows for easier testing with mock implementations.
 type intakeClient interface {
+	assigneeResolver
 	GetProject(owner string, number int) (*api.Project, error)
 	GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error)
 	SearchRepositoryIssues(owner, repo string, filters api.SearchFilters, limit int) ([]api.Issue, error)
@@ -171,9 +172,14 @@ func runIntakeWithDeps(cmd *cobra.Command, opts *intakeOptions, cfg *config.Conf
 
 	// Note: Label filtering is now done server-side via SearchFilters.Labels
 
-	// Apply assignee filter if specified
+	// Apply assignee filter if specified. Resolve first — filterIntakeByAssignee
+	// compares logins literally, so @me would match nothing.
 	if len(opts.assignee) > 0 {
-		untrackedIssues = filterIntakeByAssignee(untrackedIssues, opts.assignee)
+		resolved, err := client.ResolveAssignees(opts.assignee)
+		if err != nil {
+			return err
+		}
+		untrackedIssues = filterIntakeByAssignee(untrackedIssues, resolved)
 	}
 
 	// Handle output

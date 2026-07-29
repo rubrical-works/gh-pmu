@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -377,6 +378,42 @@ func TestLabelMerging_PassesAssigneesAndMilestone(t *testing.T) {
 	}
 	if client.lastMilestone != "v1.0.0" {
 		t.Errorf("Expected milestone 'v1.0.0', got %q", client.lastMilestone)
+	}
+}
+
+func TestCreateFromFile_MergesAssigneesForResolution(t *testing.T) {
+	// #895 AC11: assignees named in a --from-file payload must reach the same
+	// resolution path as flag-supplied ones. They are concatenated before the
+	// create call, so both sets land in one slice that CreateIssueWithOptions
+	// resolves — file entries first, flags after.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "issue.yml")
+	body := "title: From File\nbody: filled in\nassignees:\n  - hubot\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	client := newMockCreateClient()
+	cfg := &config.Config{
+		Project:      config.Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"owner/repo"},
+	}
+	opts := &createOptions{
+		fromFile:  path,
+		assignees: []string{"@me"},
+	}
+
+	cmd := NewRootCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+
+	if err := runCreateFromFileWithDeps(cmd, opts, cfg, client, "owner", "repo"); err != nil {
+		t.Fatalf("runCreateFromFileWithDeps failed: %v", err)
+	}
+
+	want := []string{"hubot", "@me"}
+	if !reflect.DeepEqual(client.lastAssignees, want) {
+		t.Errorf("expected %v to reach the resolver, got %v", want, client.lastAssignees)
 	}
 }
 

@@ -359,6 +359,14 @@ func runSubCreate(cmd *cobra.Command, opts *subCreateOptions) error {
 	assignees := resolveInheritedAssignees(opts.assignees, parentIssue.Assignees, opts.inheritAssign, isCrossRepo)
 	milestone := resolveInheritedMilestone(opts.milestone, parentIssue.Milestone, opts.inheritMilestone, isCrossRepo)
 
+	// Resolve before creating so the confirmation below reports the account that
+	// was actually assigned rather than echoing the sentinel back as "@@me".
+	// CreateIssueWithOptions resolves again, served from the client's cache.
+	assignees, resolveErr := client.ResolveAssignees(assignees)
+	if resolveErr != nil {
+		return resolveErr
+	}
+
 	// Create the new issue in target repository with extended options
 	newIssue, err := client.CreateIssueWithOptions(targetOwner, targetRepo, opts.title, opts.body, labels, assignees, milestone)
 	if err != nil {
