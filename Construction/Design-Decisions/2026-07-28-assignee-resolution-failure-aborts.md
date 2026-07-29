@@ -45,8 +45,11 @@ merely a change of taste.
 ## Consequences
 
 - An invalid login that previously warned and let creation proceed now fails the
-  command with exit 1. This is a user-visible behavior change and warrants a
-  release note in the next v1.5.x tag.
+  command with exit 1. Technically a user-visible behavior change, but an
+  unexercised one: `@me` is the only value this project has ever passed to
+  `--assignee`, and `@me` now resolves rather than failing. No caller is known to
+  supply an explicit login, so the new abort path affects nothing in practice. A
+  release note is optional rather than required.
 - Batch resolution is all-or-nothing: a command that cannot honour every assignee
   it was given creates nothing, rather than proceeding with a subset that looks
   successful while differing from what was asked.
