@@ -126,6 +126,12 @@ func namedOperationInvocations() []func(c *Client) {
 		func(c *Client) { _ = c.AddSubIssue("I_parent", "I_child") },
 		func(c *Client) { _ = c.RemoveSubIssue("I_parent", "I_child") },
 		func(c *Client) { _, _ = c.GetOwnerID("owner") },
+		// getUserID sends an operation named "GetUserID" too, identical in shape to
+		// GetOwnerID's user fallback. The docs map is keyed by operation name, so
+		// GetOwnerID alone already satisfies TestNamedOperations_CoverageIsComplete
+		// for that name — coverage that holds only while the two documents stay
+		// identical. Driving getUserID directly makes the dependency explicit (#895).
+		func(c *Client) { _, _ = c.getUserID("octocat") },
 		func(c *Client) { _ = c.AddLabelToIssue("owner", "repo", "I_kw1", "bug") },
 		func(c *Client) { _ = c.RemoveLabelFromIssue("owner", "repo", "I_kw1", "bug") },
 		func(c *Client) { _, _ = c.getLabelID("owner", "repo", "bug") },
