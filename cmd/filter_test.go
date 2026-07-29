@@ -15,6 +15,7 @@ import (
 
 // mockFilterClient implements filterClient for testing
 type mockFilterClient struct {
+	fakeAssigneeResolver
 	project      *api.Project
 	projectItems []api.ProjectItem
 

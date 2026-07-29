@@ -15,6 +15,7 @@ import (
 // filterClient defines the interface for API methods used by filter functions.
 // This allows for easier testing with mock implementations.
 type filterClient interface {
+	assigneeResolver
 	GetProject(owner string, number int) (*api.Project, error)
 	GetProjectItems(projectID string, filter *api.ProjectItemsFilter) ([]api.ProjectItem, error)
 	GetProjectItemsByIssues(projectID string, refs []api.IssueRef) ([]api.ProjectItem, error)
@@ -124,6 +125,16 @@ func runFilter(cmd *cobra.Command, opts *filterOptions) error {
 
 // runFilterWithDeps is the testable implementation of runFilter
 func runFilterWithDeps(cmd *cobra.Command, opts *filterOptions, cfg *config.Config, client filterClient, stdin *os.File) error {
+	// Resolve --assignee before matching: hasAssignee compares logins literally,
+	// so @me would never match anything.
+	if opts.assignee != "" {
+		resolved, err := client.ResolveAssignee(opts.assignee)
+		if err != nil {
+			return err
+		}
+		opts.assignee = resolved
+	}
+
 	// Get project
 	project, err := client.GetProject(cfg.Project.Owner, cfg.Project.Number)
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 
 // mockIntakeClient implements intakeClient for testing
 type mockIntakeClient struct {
+	fakeAssigneeResolver
 	project          *api.Project
 	projectItems     []api.ProjectItem
 	repositoryIssues []api.Issue
