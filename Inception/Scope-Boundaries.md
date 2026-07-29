@@ -1,6 +1,6 @@
 # Scope Boundaries: gh-pmu
 
-**Last Updated:** 2026-03-27
+**Last Updated:** 2026-07-23
 
 ---
 
@@ -17,6 +17,9 @@
 - [x] **Config Integrity**: Checksum-based config drift detection
 - [x] **Status Validation**: Transition rules for workflow enforcement
 - [x] **Terms Gate**: Acceptance gate for CLI usage
+- [x] **Complete Pagination**: Labels, comments, projects, and project field values fetch without silent truncation
+- [x] **Fail-Loud Errors**: cmd and API layers propagate failures with partial-failure exit codes
+- [x] **Schema Resilience**: Cached-metadata fallback when the ProjectV2 fields resolver is unavailable
 
 ### Capabilities
 
@@ -32,6 +35,10 @@
 | Status transition validation | P2 | Done |
 | Field value aliases | P2 | Done |
 | Cross-repository sub-issues | P2 | Done |
+| Complete pagination for user-facing fetches | P0 | Done |
+| Fail-loud error propagation | P0 | Done |
+| Cached-metadata fallback for field resolver | P1 | Done |
+| Offline GraphQL validation against vendored schema | P2 | Done |
 
 ---
 
