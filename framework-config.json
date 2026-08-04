@@ -1,6 +1,6 @@
 {
   "processFramework": "IDPF-Agile",
-  "domainSpecialist": "API-Integration-Specialist",
+  "domainSpecialist": "Desktop-Application-Developer",
   "reviewMode": "solo",
   "projectSkills": [
     "anti-pattern-analysis",
@@ -20,7 +20,7 @@
     "test-scaffold",
     "test-writing-patterns"
   ],
-  "frameworkVersion": "0.93.0",
-  "frameworkPath": "C:/ProgramData/praxis-hub/framework_root_0.93.0",
+  "frameworkVersion": "0.94.0",
+  "frameworkPath": "C:/ProgramData/praxis-hub/framework_root_0.94.0",
   "$schema": "framework-config.schema.json"
 }

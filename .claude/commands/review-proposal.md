@@ -1,5 +1,5 @@
 ---
-version: "v0.93.0"
+version: "v0.94.0"
 description: Review a proposal with tracked history (project)
 argument-hint: "#issue [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -61,6 +61,12 @@ After evaluating `path-analysis-present`, if ⚠️ or ❌ (section missing):
    - "Run /paths now (Recommended)" — invoke `/paths #N`, wait, re-read proposal, re-evaluate. Now present: ✅. Still missing: ⚠️.
    - "Continue without" — record ⚠️ and resume
 3. If already ✅: no prompt, continue normally.
+
+**Step 2a-iv: Prior-Art Sweep When Marker Absent (#2517)**
+Trigger: `prior-art-checked` ❌ (absent, or `PARTIAL` — incomplete sweep, treated as absent, re-swept). Covers `proposal`-labelled issues redirected here. Delegate, do not re-derive: `node -e "console.log(JSON.stringify(require('./.claude/scripts/shared/lib/prior-art-marker.js').decideSweep({body:BODY,createdAt:CREATED_AT,reviewSweep:REVIEW_SWEEP})))"` → `{sweep, status, reason}`; report the criterion with that `status`.
+`pass` = complete marker, no sweep/write. `fail` = absent/`PARTIAL`, sweep. `skip` ⊘ = `reviewSweep` false in `framework-config.json`, no sweep/write — report ⊘, **not** ❌, which downgrades every review in an opted-out project. `not-applicable` = predates the feature (pinned cutoff).
+**Sweeping:** run the #2514 procedure reading `.claude/metadata/prior-art-sweep.json` (surfaces, excludes, terms, dispositions, formats) — not restated here. **Output:** findings in the review; write `**Prior Art:**` via `insertPriorArtSection` into both `Proposal/[Name].md` and the tracking issue body.
+**Ordering is load-bearing.** Write **here, before Step 3** updates `**Reviews:** N`; a write during or after Step 3 races it — both read-modify-write the same content, later wins, loser vanishes silently. **Recommendation:** prior art duplicating the proposal's scope is blocking — `Needs revision`+. **Missing config:** `prior-art-sweep.json` unreadable → report criterion, warn, skip sweep; do not fail the review.
 
 **Step 2b: Ask Subjective Criteria**
 Load subjective criteria from `proposal-review-criteria.json`. **Scope Context Display:** extract scope section and present inline before asking. Handle missing scope gracefully (not an error). Use `AskUserQuestion` with each criterion's `question`/`header`/`options`. Partial reviews valid — record skipped as "⊘ Skipped". **Solo mode:** skip entirely.

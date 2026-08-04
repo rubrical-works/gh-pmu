@@ -1,5 +1,5 @@
 ---
-version: "v0.93.0"
+version: "v0.94.0"
 description: Start working on issues with validation and auto-task extraction (project)
 argument-hint: "#issue [#issue...] [--assign] [--nonstop] [--wait] | all in <status>"
 copyright: "Rubrical Works (c) 2026"

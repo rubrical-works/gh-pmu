@@ -1,5 +1,5 @@
 ---
-version: "v0.93.0"
+version: "v0.94.0"
 description: Create a proposal document and tracking issue (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -22,6 +22,7 @@ Creates a proposal document (`Proposal/[Name].md`) and a tracking issue with the
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `<title>` | No | Proposal title (e.g., `Dark Mode Support`) |
+| `--prior-art` | No | Run prior-art sweep before composing proposal. Absent = current behavior, no sweep. |
 
 If no title provided, prompt the user. **Alias:** `idea:` is identical to `proposal:`.
 
@@ -39,6 +40,8 @@ If no title provided, prompt the user. **Alias:** `idea:` is identical to `propo
 ### Step 1: Parse Arguments
 
 Extract `<title>` from arguments. **If empty:** ask for title. **If special characters** (backticks, quotes): escape for shell; on Windows use temp file approach.
+
+**`--prior-art` token:** recognize anywhere in argument text, **remove it from the title**, set sweep flag. Absent → no sweep. Strip **before** name conversion, or the token lands in the filename (`Dark-Mode-Support---Prior-Art.md`). Required for direct slash-command invocation (no hook runs there); on the trigger-word path `workflow-trigger.js` already strips flag-shaped tokens by **shape**, not allowlist membership (#2515). A `--` that is not flag-shaped (bare separator, `---` rule, `--` in prose) is preserved verbatim.
 
 **Name conversion:** Replace spaces with hyphens, Title-Case each word. Example: `dark mode support` → `Dark-Mode-Support`.
 
@@ -94,6 +97,36 @@ AskUserQuestion({
 });
 ```
 
+### Step 3a: Prior-Art Sweep (`--prior-art` only)
+
+**Trigger:** sweep flag from Step 1. Absent the flag, skip this step entirely.
+
+Runs **before** the proposal document is composed, so findings change what gets written rather than annotating a document already wrong.
+
+**Distinct from and additional to Step 2.** Step 2 only tests whether `Proposal/[Name].md` exists — a filename check. It does not look at the codebase, other proposals' contents, or issue history, so it cannot detect a capability that already ships under a different name.
+
+**Re-read `.claude/metadata/prior-art-sweep.json` from disk at use** (rule `01-anti-hallucination.md`). Surfaces, excludes, stopwords, disposition signals and body formats live only there — not restated here.
+
+1. **Resolve surfaces:** `node -e "console.log(JSON.stringify(require('./.claude/scripts/shared/lib/prior-art-surfaces.js').resolveSurfaces(require('./.claude/metadata/prior-art-sweep.json'), process.cwd())))"`. Missing surface → skipped, not fatal. **Zero resolved is a failed sweep** — go to Error Handling, emit `PARTIAL`, do **not** report a clean result.
+2. **Derive terms** per `termDerivation`: feature nouns, **and** terms from the files this change would touch. The second axis is not optional — prior work often shares no vocabulary with the request.
+3. **Search** resolved surfaces honoring `excludes`; search issue history per `searchSurfaces.issueHistory`, including closed.
+4. **Apply `questions`** to what the search returned.
+5. **Classify** against `dispositions`; take that disposition's `action`.
+
+| Verdict | Action |
+|---|---|
+| `already-shipped` | **STOP.** Create neither the document nor the tracking issue. Report conflicting issue numbers and file paths. |
+| `found-but-warranted` | Continue. Record `**Prior Art:**` — what exists, how this differs. |
+| `none-found` | Continue. Record `noneFoundFormat` line including terms searched. |
+
+**Both artifacts carry the section.** Write `**Prior Art:**` into `Proposal/[Name].md` (Step 4) **and** the tracking issue body (Step 5) — a reader of either must see what was searched without opening the other.
+
+**Emit the section on every `--prior-art` invocation, including a nil result.** Presence records the sweep ran; absence means none ran.
+
+Use exact `bodyFormat` strings (`heading`, `noneFoundFormat`, `foundEntryFormat`, `partialFormat`) — never paraphrase, so consumers test the marker without parsing prose. `PARTIAL` is treated as equivalent to an absent marker and triggers re-sweep.
+
+**`reviewSweep` does not apply here.** It gates *automated* review-time sweeps (`framework-config.json`, absent = on). An explicit `--prior-art` always sweeps.
+
 <!-- USER-EXTENSION-START: pre-create -->
 <!-- USER-EXTENSION-END: pre-create -->
 
@@ -115,6 +148,8 @@ Ensure `Proposal/` directory exists. Create `Proposal/[Name].md`:
 ## Problem Statement
 
 [Problem description or "To be documented"]
+
+[Sweep ran (Step 3a): **Prior Art:** section here, using bodyFormat strings]
 
 ## Proposed Solution
 
@@ -159,6 +194,8 @@ Build issue body:
 
 **Critical:** Body MUST include `**File:** Proposal/[Name].md` — required for `/create-prd` integration.
 
+**Sweep ran (Step 3a):** include the `**Prior Art:**` section here too, after `### Summary`. Both artifacts carry it.
+
 ```bash
 gh pmu create --title "Proposal: {title}" --label proposal --status backlog --priority p2 --assignee @me -F .tmp-body.md
 rm .tmp-body.md
@@ -195,15 +232,7 @@ For modifications: `docs: update proposal — [Title] (Refs #$ISSUE_NUM)`
 
 ### Step 7: Report and STOP
 
-```
-Created:
-  Document: Proposal/[Name].md
-  Issue: #$ISSUE_NUM — Proposal: {title}
-  Status: Backlog
-  Label: proposal
-
-Say "/review-proposal #$ISSUE_NUM" or "/create-prd #$ISSUE_NUM", if ready
-```
+Report the document path `Proposal/[Name].md`, the created issue number and title, Status `Backlog`, Label `proposal`, then offer `/review-proposal` or `/create-prd` with the issue number.
 
 <!-- USER-EXTENSION-START: post-create -->
 <!-- USER-EXTENSION-END: post-create -->
@@ -220,5 +249,8 @@ Say "/review-proposal #$ISSUE_NUM" or "/create-prd #$ISSUE_NUM", if ready
 | `Proposal/` directory missing | Create it silently |
 | `gh pmu create` fails | "Failed to create issue: {error}" → STOP |
 | Special characters in title | Escape for shell safety |
+| Sweep: issue history unavailable (`gh` error) | Warn, emit `partialFormat` naming what ran and what failed, continue. Never claim a clean sweep. |
+| Sweep: **zero `searchSurfaces` resolved** | Warn, emit `partialFormat`, continue. A sweep that searched nothing is failed, not empty — never emit `noneFoundFormat` here. |
+| Sweep: `prior-art-sweep.json` missing/unreadable | Warn, skip sweep, emit no `**Prior Art:**` section. Absence correctly reads as "no sweep ran". |
 
 **End of /proposal Command**

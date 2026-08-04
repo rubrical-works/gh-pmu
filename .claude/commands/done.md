@@ -1,5 +1,5 @@
 ---
-version: "v0.93.0"
+version: "v0.94.0"
 description: Complete issues with criteria verification and status transitions (project)
 argument-hint: "[#issue... | --all] [--yes|-y] (optional)"
 copyright: "Rubrical Works (c) 2026"
@@ -73,21 +73,23 @@ Epic #$ISSUE: $TITLE — Done
 <!-- USER-EXTENSION-START: pre-done -->
 <!-- USER-EXTENSION-END: pre-done -->
 
-<!-- USER-EXTENSION-START: post-done -->
-<!-- USER-EXTENSION-END: post-done -->
-
 ### Step 1b: Post Work Summary Comment
 After each issue moves to done, post a summary comment IF commits referencing the issue exist. `git log --all --oneline --grep="Refs #$ISSUE\|Fixes #$ISSUE\|Closes #$ISSUE"`. No commits → skip (no-op close). Otherwise: get latest SHA + `git diff --name-only $FIRST_COMMIT~1..$LATEST_COMMIT`, construct repo URL from `.gh-pmu.json` `repositories[0]`, post comment via `-F` containing `**Work completed:**` heading, a `Files changed:` bulleted list of backticked paths, and a `Commit: https://github.com/{owner}/{repo}/commit/{sha}` URL line (multiple commits → link latest). **Non-blocking:** comment failure → log warning, continue.
 
 ### Step 2: Push (Batch-Aware)
 Single issue OR last in batch: `git push` → report `Pushed.` Not last → skip → `"Push deferred (N remaining)"`. **No-commit detection:** `git log @{u}..HEAD --oneline` empty → `"Nothing to push"`, skip to Step 3.
 
+**Only execute after push (Step 2 actually pushed).** If push was deferred (not last in batch) or skipped (nothing to push), skip this extension — same contract as Step 3. Unguarded, a batch fires it once per issue with nothing pushed.
+
+<!-- USER-EXTENSION-START: post-push -->
+<!-- USER-EXTENSION-END: post-push -->
+
 ### Step 3: Background CI Monitoring (Batch-Aware)
 **Only after push (Step 2 actually pushed).** Deferred/skipped → skip CI monitoring for this issue.
 
 `sha=$(git rev-parse HEAD)`. Check `context.ci.hasPushWorkflows`: `false` → skip, report `"CI skipped (no push-triggered workflows)"`. **Pre-check paths-ignore:** `shouldSkipMonitoring(changedFiles, pathsIgnore)` is synchronous, returns `boolean`. `changedFiles` via `git diff --name-only HEAD~1`; `pathsIgnore` from workflow YAML. All match → skip, `"CI skipped (paths-ignore)"`. Otherwise spawn background (`run_in_background: true`):
 ```bash
-node ./.claude/scripts/shared/ci-watch.js --sha $SHA --timeout 300
+node ./.claude/scripts/shared/ci-watch.js --sha $SHA --timeout 600
 ```
 Report `"CI monitoring started in background."`
 
@@ -96,11 +98,14 @@ Report `"CI monitoring started in background."`
 |---|---|
 | 0 | `"CI passed for #$ISSUE (duration)"` |
 | 1 | `"CI FAILED. Failed step: \"step-name\". Run: gh run view <id> --log-failed"` |
-| 2 | `"CI still running after 5m. Check: gh run list --commit $SHA"` |
+| 2 | `"CI still running after 10m. Check: gh run list --commit $SHA"` |
 | 3 | `"No CI run triggered (paths-ignore likely)"` |
 | 4 | `"CI cancelled (superseded by newer push)"` |
 
 Multiple workflows → report per-workflow from `workflows[]`.
+
+<!-- USER-EXTENSION-START: post-done -->
+<!-- USER-EXTENSION-END: post-done -->
 
 ### Step 4: Cleanup
 **MUST DO:** Clear task list.
