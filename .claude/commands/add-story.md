@@ -1,5 +1,5 @@
 ---
-version: "v0.94.0"
+version: "v0.95.0"
 description: Add story to epic with charter compliance (project)
 argument-hint: "[epic-number] (e.g., 42 or #42)"
 copyright: "Rubrical Works (c) 2026"
@@ -96,8 +96,9 @@ gh pmu create --repo {repository} \
   --body "{story_body}" \
   --status backlog \
   --priority {priority} \
-  --assignee @me
+  --assignee {assignee}
 ```
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
 **Story Body Template:**
 > **⚠️ ATOMIC TEMPLATE — All sections below are REQUIRED.**
 > Every story MUST include ALL sections. No section may be omitted.

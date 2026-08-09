@@ -1,5 +1,5 @@
 ---
-version: "v0.94.0"
+version: "v0.95.0"
 description: Create a proposal document and tracking issue (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -197,9 +197,10 @@ Build issue body:
 **Sweep ran (Step 3a):** include the `**Prior Art:**` section here too, after `### Summary`. Both artifacts carry it.
 
 ```bash
-gh pmu create --title "Proposal: {title}" --label proposal --status backlog --priority p2 --assignee @me -F .tmp-body.md
+gh pmu create --title "Proposal: {title}" --label proposal --status backlog --priority p2 --assignee {assignee} -F .tmp-body.md
 rm .tmp-body.md
 ```
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
 
 **Note:** Always use `-F .tmp-body.md` (never inline `--body`).
 

@@ -1,5 +1,5 @@
 ---
-version: "v0.94.0"
+version: "v0.95.0"
 description: Create an enhancement issue with standard template (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -90,10 +90,11 @@ Populate from user input where possible. Use "To be documented" only where insuf
 **Sweep ran (Step 2b):** insert `**Prior Art:**` after `**Description:**`, using `bodyFormat` strings.
 Create:
 ```bash
-gh pmu create --title "[Enhancement]: {title}" --label enhancement --status backlog --priority p2 --assignee @me -F .tmp-body.md
+gh pmu create --title "[Enhancement]: {title}" --label enhancement --status backlog --priority p2 --assignee {assignee} -F .tmp-body.md
 rm .tmp-body.md
 ```
 **Note:** Always `-F .tmp-body.md` (never inline `--body`).
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
 ### Step 4: Report and STOP
 Report the created issue number and title, Status `Backlog`, Label `enhancement`, then the follow-on sequence: `/review-issue`, `/assign-branch`, `work` with the issue number.
 

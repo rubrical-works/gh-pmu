@@ -1,5 +1,5 @@
 ---
-version: "v0.94.0"
+version: "v0.95.0"
 description: Complete issues with criteria verification and status transitions (project)
 argument-hint: "[#issue... | --all] [--yes|-y] (optional)"
 copyright: "Rubrical Works (c) 2026"
@@ -87,7 +87,11 @@ Single issue OR last in batch: `git push` → report `Pushed.` Not last → skip
 ### Step 3: Background CI Monitoring (Batch-Aware)
 **Only after push (Step 2 actually pushed).** Deferred/skipped → skip CI monitoring for this issue.
 
-`sha=$(git rev-parse HEAD)`. Check `context.ci.hasPushWorkflows`: `false` → skip, report `"CI skipped (no push-triggered workflows)"`. **Pre-check paths-ignore:** `shouldSkipMonitoring(changedFiles, pathsIgnore)` is synchronous, returns `boolean`. `changedFiles` via `git diff --name-only HEAD~1`; `pathsIgnore` from workflow YAML. All match → skip, `"CI skipped (paths-ignore)"`. Otherwise spawn background (`run_in_background: true`):
+`sha=$(git rev-parse HEAD)`. Check `context.ci.hasPushWorkflows`: `false` → skip, report `"CI skipped (no push-triggered workflows)"`. **Pre-check paths-ignore:** `shouldSkipMonitoring(changedFiles, pathsIgnore)` is synchronous, returns `boolean`. `pathsIgnore` from workflow YAML; `changedFiles` from the **whole pushed range** — what GitHub evaluates `paths-ignore` against: `git diff --name-only "@{u}@{1}..@{u}"`. `@{u}` is the remote-tracking ref Step 2's push advanced, `@{u}@{1}` its previous value. Derive it here; do NOT carry a SHA from Step 2, whose post-compaction contract carries no variables. All match → skip, `"CI skipped (paths-ignore)"`.
+**Fail open whenever that range cannot be resolved** — skip the pre-check, arm the monitor, report the degradation. Guard the general condition, not a list; known causes: a branch's first push, no configured upstream, reflog unavailable (`core.logAllRefUpdates` disabled). **No `HEAD~1` fallback** — it reinstates the defect exactly where it would fire. Unnecessary monitor is harmless; a missed failure is not.
+**Why not the tip commit:** `/work` commits per AC and defers push to `/done`, so even a single-issue `/done` pushes several commits and `HEAD~1` sees only the last. A docs-only tip → skip reported, no monitor armed, real CI failure never surfaced.
+**Known limitation (weighed, accepted):** the reflog describes the most recent push *to this working tree*. Two things move the ref between Step 2 and Step 3: an interposed `git fetch`, and a push by **any other process sharing the same `.git`** (second agent session, terminal, editor integration). Pinning `git rev-parse @{u}` pre-push is concurrency-safe but reintroduces cross-step state compaction does not carry. Reflog = compaction-proof, concurrency-fragile; pinned SHA = the reverse. One session per working tree is the normal case, compaction is the recurring failure — hence the reflog.
+Otherwise spawn background (`run_in_background: true`):
 ```bash
 node ./.claude/scripts/shared/ci-watch.js --sha $SHA --timeout 600
 ```

@@ -1,5 +1,5 @@
 ---
-version: "v0.94.0"
+version: "v0.95.0"
 description: Split story into smaller stories (project)
 argument-hint: "<story-number> (e.g., 123)"
 copyright: "Rubrical Works (c) 2026"
@@ -115,8 +115,9 @@ gh pmu create --repo {repository} \
   --body "{story_body}" \
   --status backlog \
   --priority {priority} \
-  --assignee @me
+  --assignee {assignee}
 ```
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
 **Body template:**
 ```markdown
 ## Story: {Title}

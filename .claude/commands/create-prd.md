@@ -1,5 +1,5 @@
 ---
-version: "v0.94.0"
+version: "v0.95.0"
 description: Transform proposal into Agile PRD
 argument-hint: "<issue-number> | extract [<directory>]"
 copyright: "Rubrical Works (c) 2026"
@@ -218,8 +218,9 @@ Create PRD at `PRD/{name}/PRD-{name}.md`. Load template `{frameworkPath}/Templat
 **Derivation:** parse each story's ACs; generate 2-3 test cases per AC (valid, invalid, edge); identify cross-story/cross-epic integration points; extract E2E scenarios from user journeys.
 
 ### Phase 6.6: Create Test Plan Approval Issue
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag. Applies to both `gh pmu create` calls below.
 ```bash
-gh pmu create --label test-plan --label approval-required --assignee @me \
+gh pmu create --label test-plan --label approval-required --assignee {assignee} \
   --title "Approve Test Plan: {Name}" \
   --body "## Test Plan Review
 
@@ -267,7 +268,7 @@ gh pmu move $issue_num --status done
 
 **Step 3: Create PRD tracking issue**
 ```bash
-gh pmu create --label prd --assignee @me \
+gh pmu create --label prd --assignee {assignee} \
   --title "PRD: {Name}" \
   --body "## PRD Document
 
@@ -381,6 +382,5 @@ fi
 - [ ] Out of scope explicitly stated
 - [ ] Open questions flagged
 - [ ] PRD is Create-Backlog compatible
-
 
 **End of /create-prd Command**

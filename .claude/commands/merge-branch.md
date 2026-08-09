@@ -1,5 +1,5 @@
 ---
-version: "v0.94.0"
+version: "v0.95.0"
 description: Merge branch to main with gated checks (project)
 argument-hint: "[--skip-gates] [--dry-run]"
 copyright: "Rubrical Works (c) 2026"
@@ -102,6 +102,21 @@ node .claude/scripts/framework/wait-for-ci.js
 ```
 <!-- USER-EXTENSION-END: post-pr-create -->
 
+### 2.2a: Mergeability Gate
+Ask GitHub whether the PR *can* merge before asking a human to review it. A conflicting branch otherwise surfaces at 2.5, after a reviewer approved a PR that could never merge.
+```bash
+gh pr view --json mergeable,mergeStateStatus
+```
+**Exempt from `--skip-gates`.** That flag waives **policy** gates (approval, tests); mergeability is a correctness precondition — an unmergeable PR cannot merge no matter who approves it. Run on every path. Solo repos reach a merge only via `--skip-gates` (Gate 2.4 cannot be self-approved), so the exemption protects the users with no second reviewer.
+| `mergeable` | Action |
+|---|---|
+| `MERGEABLE` | Report `✅ PR is mergeable — no conflicts with main`, continue to 2.3 |
+| `CONFLICTING` | Report affected files, **STOP** — no approval ask, no merge attempt |
+| `UNKNOWN` | Poll (below) |
+**On `CONFLICTING`:** run `gh pr diff --name-only`. GitHub exposes no per-file conflict list, so this is the PR's changed-file set, not a conflict set — report it as where to look. User resolves: rebase onto `main` or merge `main` in, push, re-run.
+**On `UNKNOWN`:** re-query at most **5** times, **2** seconds apart (~10s worst case). GitHub computes mergeability asynchronously, so a just-created PR very often returns `UNKNOWN`; treating that as failure makes the gate flaky on the fast path it protects. Still `UNKNOWN` after the final attempt → emit `⚠️ Mergeability unknown after 5 attempts — proceeding` and **continue**. Never block.
+Read-only: no local merge, no `git fetch`, no working-tree change. `mergeable` reflects the merge GitHub would perform. Local dry-run merge was rejected (#2141); #2524 measured it at 197/351 pairings (56% false positives).
+
 ### 2.3: Wait for Approval
 **ASK USER:** Review and approve the PR.
 ```bash
@@ -123,8 +138,8 @@ git pull origin main
 ### 2.6: Workstream Detection (Post-Merge)
 After merge, check workstream plan:
 1. **Read from disk:** `loadWorkstreamsMetadata('.workstreams.json')`. Not found → skip.
-2. **Check:** `postMergeWorkstreamCheck(metadata, mergedBranch)`. `isWorkstream: false` → skip.
-3. **Update:** write `updatedMetadata` to `.workstreams.json` (status `"merged"`)
+2. **Check:** `postMergeWorkstreamCheck(metadata, mergedBranch)`. `isWorkstream: false` → skip. Returns report data only (`activeSiblings`, `allMerged`, `sharedModules`) — nothing in `plan-workstreams.js` writes `.workstreams.json`.
+3. **Persist:** `updateStatus(mergedBranch, 'merged', '.')` from `.claude/scripts/shared/lib/workstream-utils.js`. Do **NOT** write `.workstreams.json` with the Write tool — `updateStatus()` writes atomically (temp + rename) and enforces valid-transition rules; a direct write does neither and can tear the file, breaking `/merge-branch` and `/destroy-branch` for every stream. It re-reads from disk, so step 1's contract holds.
 4. **Commit:** `git add .workstreams.json && git commit -m "Update workstream metadata: $BRANCH merged"`
 5. **Sibling warning:** `activeSiblings` non-empty → `formatSiblingWarning(activeSiblings, sharedModules)`, display
 6. **All merged:** `allMerged: true` → "All workstreams merged. Consider removing `.workstreams.json`."
@@ -156,6 +171,16 @@ git branch -d $BRANCH
 - ✅ Tracker closed (if applicable)
 - ✅ Branch deleted
 ---
+---
+## Error Handling
+| Condition | Cause | Resolution |
+|---|---|---|
+| `CONFLICTING` at 2.2a | Branch conflicts with `main`. **STOP** — no approval requested, no merge attempted. | Rebase onto `main` or merge `main` in, resolve, push, re-run `/merge-branch`. PR stays open; re-running re-queries it. |
+| `UNKNOWN` after 5 attempts at 2.2a | GitHub had not computed mergeability within ~10s. **Not a failure** — warn and continue. | None. A real conflict still fails loudly at 2.5; the gate is an early warning, not the only guard. |
+| `gh pr view` fails at 2.2a | Network failure, missing auth, or no PR for the current branch. | Report the `gh` error verbatim. Check `gh auth status` or confirm 2.2 created the PR, then re-run. |
+| Not approved at Gate 2.4 | No approving review on the PR. | Obtain a review, or re-run with `--skip-gates` if project policy allows self-merge. `--skip-gates` does **not** bypass 2.2a. |
+| `gh pr merge` fails at 2.5 | Branch protection, a required check, or a conflict introduced after 2.2a. | Report the `gh` error verbatim and STOP. Do not retry with `--admin` or force-merge. |
+
 ## Comparison: /merge-branch vs /prepare-release
 | Feature | /merge-branch | /prepare-release |
 |---------|---------------|------------------|

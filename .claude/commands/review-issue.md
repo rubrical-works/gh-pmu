@@ -1,5 +1,5 @@
 ---
-version: "v0.94.0"
+version: "v0.95.0"
 description: Review issues with type-specific criteria (project)
 argument-hint: "#issue [#issue...] [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -83,6 +83,9 @@ Delegate the decision; do not re-derive it:
 ```bash
 node -e "console.log(JSON.stringify(require('./.claude/scripts/shared/lib/prior-art-marker.js').decideSweep({body:BODY,createdAt:CREATED_AT,reviewSweep:REVIEW_SWEEP})))"
 ```
+**Arguments — substitute from the named source; never leave a literal placeholder.** `BODY` ← `context.issue.body`; `CREATED_AT` ← **`context.issue.createdAt`** (ISO 8601, added #2539); `REVIEW_SWEEP` ← `framework-config.json` `reviewSweep` (absent = on).
+**`createdAt` decides whether the criterion means anything.** `isExemptFromSweep` treats an absent/unparseable value as exempt — the safe direction, but it makes `decideSweep` return `not-applicable` for *every* unmarked issue. Before #2539 the preamble emitted no such field, so that is exactly what happened. Never substitute a hand-entered date.
+**A `CREATED_AT_UNAVAILABLE` preamble warning** → say so in the criterion rather than reporting a bare `not-applicable`: the timestamp could not be established, so the sweep was not skipped on the merits.
 Returns `{sweep, status, reason}`. Report the criterion with that `status`; act on `sweep`.
 | status | Action |
 |---|---|
@@ -116,11 +119,7 @@ node ./.claude/scripts/shared/review-finalize.js $ISSUE -F .tmp-$ISSUE-findings.
 ```
 Finalize handles: body metadata (`**Reviews:** N` increment), structured comment posting, label assignment (`reviewed`/`pending`), epic sub-issue label propagation. Clean up temp file. Report summary from output.
 
-For non-`--with` runs, append:
-```
-Tip: Use --with security,performance to add domain-specific review criteria.
-Available: security, accessibility, performance, chaos, contract, qa, seo, privacy (or --with all)
-```
+For non-`--with` runs, append: `Tip: Use --with security,performance to add domain-specific review criteria. Available: security, accessibility, performance, chaos, contract, qa, seo, privacy (or --with all)`
 **Extensions Applied** in review comment lists only domains producing findings (omit empty). At least one domain section must appear when `--with` used; if none produce findings, fall back to standard review with warning.
 
 <!-- USER-EXTENSION-START: post-review -->

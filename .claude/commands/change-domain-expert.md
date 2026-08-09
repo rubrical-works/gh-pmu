@@ -1,5 +1,5 @@
 ---
-version: "v0.94.0"
+version: "v0.95.0"
 description: Change domain specialist for this project
 argument-hint: "[specialist-name] (optional)"
 copyright: "Rubrical Works (c) 2026"
@@ -9,7 +9,7 @@ copyright: "Rubrical Works (c) 2026"
 Change the active domain specialist and load it into the session.
 **Prerequisites:** Framework v0.17.0+; `framework-config.json` in project root.
 ## Selection and Loading
-`framework-manifest.json` `domainSpecialists` = every specialist that ships (selectable). `loadableSpecialists` = the subset safe to **inject**; outside it means **announce-only** — selectable and recorded as active role, content never loaded. Announce-only is the designed state for reference-catalog-format specialists; injecting them caused measured verbosity contamination (#2492).
+`framework-manifest.json` `domainSpecialists` is an array of objects; every entry is selectable. `name` = identifier and file basename when loadable. `loadable` = `true` when a file exists to inject; `false` means **announce-only** — selectable and recorded as the active role, but no file exists so nothing loads. `description` = one-line remit, shown in the menu; it is what separates near-neighbours like `Data-Engineer` from `Database-Engineer`. `announceReason` (only when `loadable: false`) = `model-builtin` (base model covers it unprompted, no file warranted) or `pending-evaluation` (never assessed; #2536 decides). `loadable: false` and "no file on disk" are the same set (#2533) — the flag is not a quality gate on an existing file. Derive announce-only from `loadable` alone and do NOT print `announceReason` prose in the menu.
 Resolution and validation are **not** reimplemented here — this command and the startup hook both call `.claude/scripts/shared/lib/specialist-resolver.js`, so a mid-session selection gets the same allowlist and input validation as one read at startup.
 **No documentation artifact to update.** The active role is *rendered* from config by `startup-hook.js`, not stored. Earlier versions rewrote a `**Domain Specialist:**` line in `CLAUDE.md` and `.claude/rules/03-startup.md`; neither line exists, so both steps were no-ops. Step 4 is the whole persistence mechanism — do NOT add steps editing prose files to match.
 ## Workflow
@@ -22,11 +22,12 @@ const frameworkPath = config.frameworkPath;
 ```
 Writes the **top-level** `domainSpecialist`, NOT nested `projectType.domainSpecialist` — the nested key no consumer read (silent drift, fixed #2292).
 ### Step 2: Select New Specialist
-Argument given → use it. Otherwise list selectable specialists from the manifest and **ASK USER** to choose by number or name, marking each not in `loadableSpecialists` as *(announce-only)* so the user knows it will not load content.
+Argument given → use it. Otherwise list selectable specialists from the manifest and **ASK USER** to choose by number or name, showing each entry's `description` and marking every `loadable: false` entry as *(announce-only)* so the user knows it will not load content.
 ```javascript
 const manifest = require('./framework-manifest.json');
-const selectable = manifest.domainSpecialists;
-const loadable = new Set(manifest.loadableSpecialists || []);
+const selectable = manifest.domainSpecialists; // [{ name, loadable, description, announceReason? }]
+const menu = selectable.map((s, i) =>
+  `${i + 1}. ${s.name}${s.loadable ? '' : ' (announce-only)'} — ${s.description}`);
 ```
 Do NOT hardcode a specialist list here — it drifts as specialists are added, dropped, or rewritten.
 ### Step 3: Resolve and Validate
@@ -68,6 +69,6 @@ Report previous and new specialist, appending "(announce-only)" when applicable.
 ```
 /change-domain-expert                    → lists specialists (announce-only marked), prompts
 /change-domain-expert Security-Engineer  → switches and loads its content
-/change-domain-expert UX-Designer        → switches; announce-only, no content loaded
+/change-domain-expert Full-Stack-Developer → switches; announce-only (model-builtin), no content loaded
 ```
 **End of Change Domain Expert**
