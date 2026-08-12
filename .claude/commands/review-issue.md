@@ -1,5 +1,5 @@
 ---
-version: "v0.95.0"
+version: "v0.96.0"
 description: Review issues with type-specific criteria (project)
 argument-hint: "#issue [#issue...] [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -83,15 +83,15 @@ Delegate the decision; do not re-derive it:
 ```bash
 node -e "console.log(JSON.stringify(require('./.claude/scripts/shared/lib/prior-art-marker.js').decideSweep({body:BODY,createdAt:CREATED_AT,reviewSweep:REVIEW_SWEEP})))"
 ```
-**Arguments — substitute from the named source; never leave a literal placeholder.** `BODY` ← `context.issue.body`; `CREATED_AT` ← **`context.issue.createdAt`** (ISO 8601, added #2539); `REVIEW_SWEEP` ← `framework-config.json` `reviewSweep` (absent = on).
-**`createdAt` decides whether the criterion means anything.** `isExemptFromSweep` treats an absent/unparseable value as exempt — the safe direction, but it makes `decideSweep` return `not-applicable` for *every* unmarked issue. Before #2539 the preamble emitted no such field, so that is exactly what happened. Never substitute a hand-entered date.
-**A `CREATED_AT_UNAVAILABLE` preamble warning** → say so in the criterion rather than reporting a bare `not-applicable`: the timestamp could not be established, so the sweep was not skipped on the merits.
+**Arguments — substitute from the named source; never leave a literal placeholder.** `BODY` ← `context.issue.body`; `CREATED_AT` ← **`context.issue.createdAt`** (ISO 8601, added #2539); `REVIEW_SWEEP` ← returned `mode` from **materializing an absent `reviewSweep` first (#2564)**: `node -e "console.log(JSON.stringify(require('./.claude/scripts/shared/lib/framework-config.js').ensureReviewSweep(process.cwd())))"` → `{written, mode}` — second writer alongside Praxis Hub Manager (install/upgrade) so pre-existing projects converge without reinstall; writes through the validating writer, never raw `fs`, and leaves a legacy boolean alone since migration is read-time.
+**`createdAt` decides whether the criterion means anything.** `isExemptFromSweep` treats an absent/unparseable value as exempt — the safe direction, but it makes `decideSweep` return `not-applicable` for *every* unmarked issue. Before #2539 the preamble emitted no such field, so that is exactly what happened. Never substitute a hand-entered date. On a `CREATED_AT_UNAVAILABLE` preamble warning, say so in the criterion rather than reporting a bare `not-applicable`: the timestamp could not be established, so the sweep was not skipped on the merits.
 Returns `{sweep, status, reason}`. Report the criterion with that `status`; act on `sweep`.
 | status | Action |
 |---|---|
 | `pass` | Complete marker present — no sweep, no write |
 | `fail` | Marker absent or `PARTIAL` — run the sweep |
-| `skip` ⊘ | `reviewSweep` false in `framework-config.json` — no sweep, no write. Report ⊘, **not** ❌, which would downgrade every review in a project that opted out |
+| `recommend` ⚠️ | mode `recommend` (default), no complete marker — **no sweep, no write**. Report ⚠️ with the `formatSweepAdvisory()` text naming the runnable command. **Not** ❌: `--prior-art` is opt-in and rarely passed, so most issues carry no marker and ❌ would downgrade nearly every review for a sweep never meant to run automatically. Does not affect the recommendation |
+| `skip` ⊘ | mode `flag-only` or `off` — no sweep, no write. Report ⊘, **not** ❌, which would downgrade every review in a project that opted out |
 | `not-applicable` | Predates the feature (pinned cutoff) — no sweep; absence is meaningless for what could not be swept |
 **Sweeping:** run the #2514 procedure, reading `.claude/metadata/prior-art-sweep.json` for surfaces, excludes, term derivation, dispositions and body formats — none restated here.
 **Output:** findings in the review; write `**Prior Art:**` into the body via `insertPriorArtSection` from the same helper.

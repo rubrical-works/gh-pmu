@@ -1,5 +1,5 @@
 ---
-version: "v0.95.0"
+version: "v0.96.0"
 description: Create a proposal document and tracking issue (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -125,7 +125,12 @@ Runs **before** the proposal document is composed, so findings change what gets 
 
 Use exact `bodyFormat` strings (`heading`, `noneFoundFormat`, `foundEntryFormat`, `partialFormat`) — never paraphrase, so consumers test the marker without parsing prose. `PARTIAL` is treated as equivalent to an absent marker and triggers re-sweep.
 
-**`reviewSweep` does not apply here.** It gates *automated* review-time sweeps (`framework-config.json`, absent = on). An explicit `--prior-art` always sweeps.
+**`reviewSweep` gates this path too, in one mode (#2564).** Four values (`framework-config.json`, absent = `recommend`): `full`, `recommend`, `flag-only`, `off`. First three honor `--prior-art`; only `off` refuses. Delegate, do not re-derive:
+```bash
+node -e "console.log(JSON.stringify(require('./.claude/scripts/shared/lib/prior-art-marker.js').decideFlagSweep({reviewSweep:REVIEW_SWEEP})))"
+```
+`REVIEW_SWEEP` ← `framework-config.json` `reviewSweep` (absent = `recommend`) → `{sweep, refused, mode, message}`. `sweep:true` → run the sweep step as written. `refused:true` → **do not sweep**; report `message` verbatim, emit **no** `**Prior Art:**` section (absence reads as "no sweep ran"), continue creating the proposal. Never a silent no-op — the user typed a flag and must learn why nothing happened and what to change.
+Mode `off` deliberately overrides a typed flag. Earlier revisions of this spec, its sibling, and the schema all promised `--prior-art` swept regardless; #2564 inverts that on purpose, and the refusal message is what keeps the inversion honest.
 
 <!-- USER-EXTENSION-START: pre-create -->
 <!-- USER-EXTENSION-END: pre-create -->
