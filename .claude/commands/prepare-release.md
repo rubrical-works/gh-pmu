@@ -1,5 +1,5 @@
 ---
-version: "v0.96.0"
+version: "v0.96.1"
 description: Prepare release with PR, merge to main, and tag
 argument-hint: "[version] [--skip-coverage] [--dry-run] [--help]"
 copyright: "Rubrical Works (c) 2026"
@@ -339,10 +339,10 @@ ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null
 
 **If workflow files exist:**
 ```bash
-node .claude/scripts/shared/wait-for-ci.js
+node .claude/scripts/shared/wait-for-ci.js --branch $(git branch --show-current) --timeout 900
 ```
+**`--branch` is not optional (#2464).** Bare, the gate passes a null filter and `selectRun()` returns the newest run **repo-wide** — an unrelated run can supply the verdict. **`--timeout 900`** states the budget explicitly rather than relying on adaptive extension of the 300s default (#2257). Both match the pre-merge gate.
 **If CI fails, STOP and report.**
-
 ### Step 4.8: Update Release Notes
 
 ```bash
