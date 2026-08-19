@@ -13,6 +13,13 @@ permissions:
   contents: read
   security-events: write
 
+# Cancel superseded runs on the same ref. Scoped to pull_request events only:
+# a push to main or a tag build must run to completion, since ci.yml's release
+# job publishes from it and a cancelled release is worse than a duplicated one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gosec:
     name: Security Scan
