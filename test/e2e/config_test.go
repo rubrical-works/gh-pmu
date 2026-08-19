@@ -172,18 +172,13 @@ func TestConfigVerify_ResolvedViewDoesNotReportDrift(t *testing.T) {
 	// ACT: plain verify, with the resolved view now differing from HEAD
 	result := runPMU(t, cfg.Dir, "config", "verify")
 
-	// ASSERT: the resolved view is invisible to the drift check.
-	//
-	// Deliberately not asserting "No drift detected" outright. Config.Release
-	// is a non-pointer struct tagged omitempty, which encoding/json does not
-	// omit, so every Save adds a "release": {} key to a config that lacked one.
-	// That is unrelated to project.view and is tracked by #902, which drops the
-	// dead release block entirely; this fixture is what trips over it. What #901
-	// promises — and what is checked here — is that project.view itself never
-	// appears in a drift report. Tighten this to "No drift detected" once #902
-	// lands.
+	// ASSERT: the resolved view is invisible to the drift check, and nothing
+	// else drifts either. Save writes only keys the config actually sets since
+	// the dead release block was removed (#902), so a resolved view is the only
+	// difference from HEAD — and it is excluded from the comparison.
 	assertExitCode(t, result, 0)
 	assertNotContains(t, result.Stdout, "project.view")
+	assertContains(t, result.Stdout, "No drift detected")
 }
 
 // initGitRepo initializes a git repository in the given directory
