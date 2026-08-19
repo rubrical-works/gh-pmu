@@ -100,6 +100,7 @@ func namedOperationInvocations() []func(c *Client) {
 		// queries.go
 		func(c *Client) { _, _ = c.getUserProject("owner", 1) },
 		func(c *Client) { _, _ = c.getOrgProject("owner", 1) },
+		func(c *Client) { _, _, _ = c.getProjectViewsPage("owner", 1, &cursor) },
 		func(c *Client) { _, _ = c.fetchProjectFieldByName("PVT_kw1", "Status") },
 		func(c *Client) { _, _, _ = c.getProjectFieldsPage("PVT_kw1", &cursor) },
 		func(c *Client) { _, _ = c.GetIssue("owner", "repo", 1) },

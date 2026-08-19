@@ -27,6 +27,17 @@ var (
 	// should detect this with IsFieldResolverUnavailable and fall back to
 	// cached metadata rather than retrying.
 	ErrFieldResolverUnavailable = errors.New("ProjectV2 field resolver unavailable")
+
+	// ErrOwnerNotFound and ErrProjectNotFound keep two failures apart that a
+	// joined error cannot distinguish: a login that resolves to no user or
+	// organization, and an owner that exists but has no board at that number.
+	// Collapsed, a typo in the owner reads as a missing project and sends the
+	// user to fix the wrong argument — the misattribution fixed in #861.
+	//
+	// Neither covers "the board exists but has no Backlog view": that is not a
+	// failure at all, and is reported as a false found flag (#901).
+	ErrOwnerNotFound   = errors.New("project owner not found")
+	ErrProjectNotFound = errors.New("project not found")
 )
 
 // APIError wraps GitHub API errors with additional context

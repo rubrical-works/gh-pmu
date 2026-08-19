@@ -234,6 +234,378 @@ func TestGetProject_BothFail(t *testing.T) {
 }
 
 // ============================================================================
+// ResolveBacklogViewNumber Tests (#901)
+// ============================================================================
+
+// viewsMockClient populates the GetProjectViews query struct by reflection,
+// one canned page per call, mirroring queryMockClient's approach.
+type viewsMockClient struct {
+	// pages is consumed one entry per Query call, so a two-entry slice
+	// exercises the cursor loop.
+	pages     []viewsPage
+	callCount int
+	cursors   []interface{}
+	ownerNull bool
+	projNull  bool
+	err       error
+}
+
+type viewsPage struct {
+	views       []ProjectView
+	hasNextPage bool
+	endCursor   string
+}
+
+func (m *viewsMockClient) Query(name string, query interface{}, variables map[string]interface{}) error {
+	m.callCount++
+	m.cursors = append(m.cursors, variables["cursor"])
+	if m.err != nil {
+		return m.err
+	}
+
+	root := reflect.ValueOf(query).Elem().FieldByName("RepositoryOwner")
+	if m.ownerNull {
+		return nil // owner absent leaves __typename empty
+	}
+	root.FieldByName("TypeName").SetString("Organization")
+
+	proj := root.FieldByName("ProjectV2Owner").FieldByName("ProjectV2")
+	if m.projNull {
+		return nil // project absent leaves ID empty
+	}
+	proj.FieldByName("ID").SetString("PVT_kwDOTest")
+
+	idx := m.callCount - 1
+	if idx >= len(m.pages) {
+		return fmt.Errorf("unexpected extra page request (call %d)", m.callCount)
+	}
+	page := m.pages[idx]
+
+	views := proj.FieldByName("Views")
+	nodes := views.FieldByName("Nodes")
+	slice := reflect.MakeSlice(nodes.Type(), len(page.views), len(page.views))
+	for i, v := range page.views {
+		n := slice.Index(i)
+		n.FieldByName("ID").SetString(v.ID)
+		n.FieldByName("Number").SetInt(int64(v.Number))
+		n.FieldByName("Name").SetString(v.Name)
+		n.FieldByName("Layout").SetString(v.Layout)
+	}
+	nodes.Set(slice)
+
+	pi := views.FieldByName("PageInfo")
+	pi.FieldByName("HasNextPage").SetBool(page.hasNextPage)
+	pi.FieldByName("EndCursor").SetString(page.endCursor)
+	return nil
+}
+
+func (m *viewsMockClient) Mutate(name string, mutation interface{}, variables map[string]interface{}) error {
+	return nil
+}
+
+func TestResolveBacklogViewNumber_PicksFirstBoardLayoutBacklog(t *testing.T) {
+	// A TABLE_LAYOUT "Backlog" sits at an earlier position than the board.
+	// Position order alone would pick the wrong view — layout must filter first.
+	mock := &viewsMockClient{pages: []viewsPage{{views: []ProjectView{
+		{ID: "v1", Number: 1, Name: "Backlog", Layout: "TABLE_LAYOUT"},
+		{ID: "v2", Number: 4, Name: "Roadmap", Layout: "ROADMAP_LAYOUT"},
+		{ID: "v3", Number: 2, Name: "Backlog", Layout: "BOARD_LAYOUT"},
+		{ID: "v4", Number: 3, Name: "Backlog", Layout: "BOARD_LAYOUT"},
+	}}}}
+
+	number, found, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatal("Expected a Backlog board view to be found")
+	}
+	// Deliberately not 1: proves no default and no sort by number.
+	if number != 2 {
+		t.Errorf("Expected view number 2 (first BOARD_LAYOUT Backlog in position order), got %d", number)
+	}
+}
+
+func TestResolveBacklogViewNumber_NameMatchingTrimsAndFolds(t *testing.T) {
+	tests := []struct {
+		name      string
+		viewName  string
+		wantFound bool
+	}{
+		{name: "exact", viewName: "Backlog", wantFound: true},
+		{name: "leading and trailing space", viewName: "  Backlog  ", wantFound: true},
+		{name: "uppercase", viewName: "BACKLOG", wantFound: true},
+		{name: "lowercase", viewName: "backlog", wantFound: true},
+		{name: "tab padded", viewName: "\tBacklog\t", wantFound: true},
+		// Equality, not prefix or substring — a differently-named board is not the Backlog.
+		{name: "prefix is not a match", viewName: "Backlog Archive", wantFound: false},
+		{name: "suffix is not a match", viewName: "Old Backlog", wantFound: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &viewsMockClient{pages: []viewsPage{{views: []ProjectView{
+				{ID: "v1", Number: 7, Name: tt.viewName, Layout: "BOARD_LAYOUT"},
+			}}}}
+
+			number, found, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if found != tt.wantFound {
+				t.Errorf("View named %q: found = %v, want %v", tt.viewName, found, tt.wantFound)
+			}
+			if !tt.wantFound && number != 0 {
+				t.Errorf("Expected view number 0 when not found, got %d", number)
+			}
+		})
+	}
+}
+
+func TestResolveBacklogViewNumber_NoBacklogViewIsNotAnError(t *testing.T) {
+	// There is no createProjectV2View mutation, so a missing Backlog view is
+	// reported and never repaired. It must not read as a failure, and must not
+	// fall back to 1.
+	mock := &viewsMockClient{pages: []viewsPage{{views: []ProjectView{
+		{ID: "v1", Number: 1, Name: "Board", Layout: "BOARD_LAYOUT"},
+		{ID: "v2", Number: 2, Name: "Backlog", Layout: "TABLE_LAYOUT"},
+	}}}}
+
+	number, found, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+
+	if err != nil {
+		t.Fatalf("Expected no error for a board without a Backlog view, got: %v", err)
+	}
+	if found {
+		t.Error("Expected found = false when no BOARD_LAYOUT Backlog view exists")
+	}
+	if number != 0 {
+		t.Errorf("Expected view number 0, got %d — must not default to 1", number)
+	}
+}
+
+func TestResolveBacklogViewNumber_EmptyViewList(t *testing.T) {
+	mock := &viewsMockClient{pages: []viewsPage{{views: nil}}}
+
+	number, found, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+
+	if err != nil {
+		t.Fatalf("Expected no error for an empty view list, got: %v", err)
+	}
+	if found || number != 0 {
+		t.Errorf("Expected (0, false) for an empty view list, got (%d, %v)", number, found)
+	}
+}
+
+func TestResolveBacklogViewNumber_FindsMatchOnSecondPage(t *testing.T) {
+	// The match lives past the first page boundary; stopping at page 1 would
+	// silently report "no Backlog view" for a board that has one.
+	mock := &viewsMockClient{pages: []viewsPage{
+		{
+			views:       []ProjectView{{ID: "v1", Number: 1, Name: "Table", Layout: "TABLE_LAYOUT"}},
+			hasNextPage: true,
+			endCursor:   "CURSOR_PAGE_2",
+		},
+		{
+			views: []ProjectView{{ID: "v2", Number: 9, Name: "Backlog", Layout: "BOARD_LAYOUT"}},
+		},
+	}}
+
+	number, found, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !found || number != 9 {
+		t.Errorf("Expected (9, true) from the second page, got (%d, %v)", number, found)
+	}
+	if mock.callCount != 2 {
+		t.Errorf("Expected 2 page requests, got %d", mock.callCount)
+	}
+	// First request must send a null cursor, second the previous page's endCursor.
+	if mock.cursors[0] != (*graphql.String)(nil) {
+		t.Errorf("Expected a null cursor on the first request, got %#v", mock.cursors[0])
+	}
+	if got, want := mock.cursors[1], graphql.String("CURSOR_PAGE_2"); got != want {
+		t.Errorf("Expected cursor %q on the second request, got %#v", want, got)
+	}
+}
+
+func TestResolveBacklogViewNumber_StopsPagingOnceMatched(t *testing.T) {
+	// A match on page 1 must not trigger a second round-trip even when the
+	// connection reports more pages.
+	mock := &viewsMockClient{pages: []viewsPage{
+		{
+			views:       []ProjectView{{ID: "v1", Number: 3, Name: "Backlog", Layout: "BOARD_LAYOUT"}},
+			hasNextPage: true,
+			endCursor:   "CURSOR_PAGE_2",
+		},
+	}}
+
+	number, found, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !found || number != 3 {
+		t.Errorf("Expected (3, true), got (%d, %v)", number, found)
+	}
+	if mock.callCount != 1 {
+		t.Errorf("Expected paging to stop after the match, got %d requests", mock.callCount)
+	}
+}
+
+func TestResolveBacklogViewNumber_UnknownLayoutDoesNotMatch(t *testing.T) {
+	// ProjectV2ViewLayout is a closed 3-value enum today. If GitHub rolls out a
+	// fourth, the comparison must simply not match rather than panic or select it.
+	mock := &viewsMockClient{pages: []viewsPage{{views: []ProjectView{
+		{ID: "v1", Number: 1, Name: "Backlog", Layout: "TIMELINE_LAYOUT"},
+		{ID: "v2", Number: 2, Name: "Backlog", Layout: ""},
+	}}}}
+
+	number, found, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if found || number != 0 {
+		t.Errorf("Expected an unknown layout not to match, got (%d, %v)", number, found)
+	}
+}
+
+func TestResolveBacklogViewNumber_DistinctNotFoundOutcomes(t *testing.T) {
+	// Collapsing these makes a typo'd owner look like a missing view. Each must
+	// stay separable by the caller.
+	t.Run("missing owner", func(t *testing.T) {
+		mock := &viewsMockClient{ownerNull: true}
+		_, _, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("nosuchlogin", 11)
+		if !errors.Is(err, ErrOwnerNotFound) {
+			t.Fatalf("Expected ErrOwnerNotFound, got: %v", err)
+		}
+		if errors.Is(err, ErrProjectNotFound) {
+			t.Error("Missing owner must not also report as a missing project")
+		}
+	})
+
+	t.Run("missing project", func(t *testing.T) {
+		mock := &viewsMockClient{projNull: true}
+		_, _, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 9999)
+		if !errors.Is(err, ErrProjectNotFound) {
+			t.Fatalf("Expected ErrProjectNotFound, got: %v", err)
+		}
+		if errors.Is(err, ErrOwnerNotFound) {
+			t.Error("Missing project must not also report as a missing owner")
+		}
+	})
+
+	t.Run("missing backlog view is not an error", func(t *testing.T) {
+		mock := &viewsMockClient{pages: []viewsPage{{views: []ProjectView{
+			{ID: "v1", Number: 1, Name: "Board", Layout: "BOARD_LAYOUT"},
+		}}}}
+		_, found, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
+		if found {
+			t.Error("Expected found = false")
+		}
+	})
+}
+
+func TestResolveBacklogViewNumber_ScopeErrorIsDistinctFromMissingOwner(t *testing.T) {
+	// A token without read:project gets a permission error, not a null owner.
+	// Reporting it as "no such owner" sends the user chasing a typo.
+	mock := &viewsMockClient{err: errors.New(
+		"Your token has not been granted the required scopes to execute this query. " +
+			"The 'id' field requires one of the following scopes: ['read:project']")}
+
+	_, _, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+
+	if err == nil {
+		t.Fatal("Expected an error for a token missing read:project")
+	}
+	if errors.Is(err, ErrOwnerNotFound) || errors.Is(err, ErrProjectNotFound) {
+		t.Errorf("Scope failure must not collapse into a not-found outcome, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "read:project") {
+		t.Errorf("Expected the scope requirement to survive into the message, got: %v", err)
+	}
+}
+
+func TestResolveBacklogViewNumber_TransportErrorPropagates(t *testing.T) {
+	// A response carrying errors[] alongside data must not be read as an empty
+	// view list — that would report "no Backlog view" for a transient failure.
+	mock := &viewsMockClient{err: errors.New("502 Bad Gateway")}
+
+	number, found, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber("owner", 11)
+
+	if err == nil {
+		t.Fatal("Expected the transport error to propagate")
+	}
+	if found || number != 0 {
+		t.Errorf("Expected (0, false) alongside the error, got (%d, %v)", number, found)
+	}
+	if !strings.Contains(err.Error(), "502") {
+		t.Errorf("Expected the underlying error to survive, got: %v", err)
+	}
+}
+
+func TestResolveBacklogViewNumber_SendsOwnerAndNumberAsVariables(t *testing.T) {
+	// Owner and number are user-controlled and must travel as GraphQL variables,
+	// never interpolated into the document text (#832, #835).
+	mock := &viewsMockClient{pages: []viewsPage{{views: []ProjectView{
+		{ID: "v1", Number: 1, Name: "Backlog", Layout: "BOARD_LAYOUT"},
+	}}}}
+
+	var captured map[string]interface{}
+	var opName string
+	wrapper := &queryMockClient{queryFunc: func(name string, query interface{}, variables map[string]interface{}) error {
+		captured = variables
+		opName = name
+		return mock.Query(name, query, variables)
+	}}
+
+	if _, _, err := NewClientWithGraphQL(wrapper).ResolveBacklogViewNumber("rubrical-worker", 11); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if opName != "GetProjectViews" {
+		t.Errorf("Expected operation name GetProjectViews, got %q", opName)
+	}
+	if got, want := captured["owner"], graphql.String("rubrical-worker"); got != want {
+		t.Errorf("Expected owner passed as a variable %q, got %#v", want, got)
+	}
+	if got, want := captured["number"], graphql.Int(11); got != want {
+		t.Errorf("Expected number passed as a variable %v, got %#v", want, got)
+	}
+}
+
+func TestResolveBacklogViewNumber_RejectsMalformedOwnerBeforeSending(t *testing.T) {
+	// Owners carrying GraphQL syntax are refused by validateOwner before a
+	// document is built, so nothing reaches the wire at all. That is a stronger
+	// guarantee than parameterisation alone, and worth pinning: dropping the
+	// guard would still pass the variables test above.
+	for _, owner := range []string{`weird"owner`, "owner) { __schema", "", "own er"} {
+		t.Run(owner, func(t *testing.T) {
+			mock := &viewsMockClient{}
+
+			_, _, err := NewClientWithGraphQL(mock).ResolveBacklogViewNumber(owner, 11)
+
+			if err == nil {
+				t.Fatalf("Expected owner %q to be rejected", owner)
+			}
+			if mock.callCount != 0 {
+				t.Errorf("Expected no request to be sent for owner %q, got %d", owner, mock.callCount)
+			}
+			if errors.Is(err, ErrOwnerNotFound) {
+				t.Error("A malformed owner is a caller error, not a not-found outcome")
+			}
+		})
+	}
+}
+// ============================================================================
 // GetRepositoryIssues State Mapping Tests
 // ============================================================================
 
