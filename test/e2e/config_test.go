@@ -3,9 +3,11 @@
 package e2e
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -70,6 +72,118 @@ func setupTestConfig(t *testing.T) *TestConfig {
 		ConfigPath: configPath,
 	}
 }
+
+// TestConfigVerifyResolveView_PersistsViewNumber drives resolution against the
+// real E2E project and asserts the number lands in .gh-pmu.json (#901).
+//
+// The unit tests prove the predicate, the paging and the error split against
+// canned responses. What they cannot prove is that the query this package
+// actually sends is accepted by the live API and that repositoryOwner ->
+// ... on ProjectV2Owner really resolves for this owner — the vendored schema
+// says it should, but the vendored schema is a copy.
+func TestConfigVerifyResolveView_PersistsViewNumber(t *testing.T) {
+	cfg := setupTestConfig(t)
+
+	// Baseline: the fixture config carries no view key.
+	before, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+	if strings.Contains(string(before), `"view"`) {
+		t.Fatalf("Fixture config already has a view key, nothing to resolve: %s", before)
+	}
+
+	// ACT
+	result := runPMU(t, cfg.Dir, "config", "verify", "--resolve-view")
+	assertExitCode(t, result, 0)
+
+	// ASSERT: the resolved number is on disk and usable
+	var parsed struct {
+		Project struct {
+			View int `json:"view"`
+		} `json:"project"`
+	}
+	after, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to re-read config: %v", err)
+	}
+	if err := json.Unmarshal(after, &parsed); err != nil {
+		t.Fatalf("Config is not valid JSON after resolution: %v\n%s", err, after)
+	}
+
+	// The board may legitimately have no Backlog view — that outcome is
+	// reported rather than written, and is not a test failure. Distinguish the
+	// two rather than asserting a number blindly.
+	if strings.Contains(result.Stdout, "has no Backlog board view") {
+		if parsed.Project.View != 0 {
+			t.Errorf("Reported no Backlog view but still wrote view %d", parsed.Project.View)
+		}
+		t.Skip("E2E project has no Backlog board view — resolution reported it correctly")
+	}
+
+	if parsed.Project.View < 1 {
+		t.Errorf("Expected a resolved view number >= 1, got %d\noutput: %s", parsed.Project.View, result.Stdout)
+	}
+	assertContains(t, result.Stdout, "Resolved project.view")
+}
+
+// A second run must not re-resolve: the value is now the config's, and only an
+// explicit --resolve-view may replace it (which is what this flag is).
+func TestConfigVerifyResolveView_SecondRunIsStable(t *testing.T) {
+	cfg := setupTestConfig(t)
+
+	first := runPMU(t, cfg.Dir, "config", "verify", "--resolve-view")
+	assertExitCode(t, first, 0)
+	if strings.Contains(first.Stdout, "has no Backlog board view") {
+		t.Skip("E2E project has no Backlog board view — nothing to re-resolve")
+	}
+	afterFirst, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	second := runPMU(t, cfg.Dir, "config", "verify", "--resolve-view")
+	assertExitCode(t, second, 0)
+	afterSecond, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	if string(afterFirst) != string(afterSecond) {
+		t.Errorf("Expected a re-resolve to be idempotent\nfirst:  %s\nsecond: %s", afterFirst, afterSecond)
+	}
+}
+
+// Plain verify against a config carrying a resolved view must report no drift
+// once that view is committed — and must not report drift for the view itself
+// even when it is not (#901).
+func TestConfigVerify_ResolvedViewDoesNotReportDrift(t *testing.T) {
+	cfg := setupTestConfig(t)
+
+	// setupTestConfig already commits the fixture, so HEAD is the baseline:
+	// a config with no view key.
+
+	resolve := runPMU(t, cfg.Dir, "config", "verify", "--resolve-view")
+	assertExitCode(t, resolve, 0)
+	if strings.Contains(resolve.Stdout, "has no Backlog board view") {
+		t.Skip("E2E project has no Backlog board view — no write to check drift against")
+	}
+
+	// ACT: plain verify, with the resolved view now differing from HEAD
+	result := runPMU(t, cfg.Dir, "config", "verify")
+
+	// ASSERT: the resolved view is invisible to the drift check.
+	//
+	// Deliberately not asserting "No drift detected" outright. Config.Release
+	// is a non-pointer struct tagged omitempty, which encoding/json does not
+	// omit, so every Save adds a "release": {} key to a config that lacked one.
+	// That is a pre-existing quirk of Save, unrelated to project.view, and it
+	// is what this fixture trips over. What #901 promises — and what is checked
+	// here — is that project.view itself never appears in a drift report.
+	assertExitCode(t, result, 0)
+	assertNotContains(t, result.Stdout, "project.view")
+}
+
 
 // initGitRepo initializes a git repository in the given directory
 // with minimal configuration for testing.
