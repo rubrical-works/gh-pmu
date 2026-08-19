@@ -105,5 +105,9 @@ state that is not on disk.
 - `verify` keeps working offline and unauthenticated in its default form.
 - `driftExcludedKeys` is a small, load-bearing list. Each future entry trades
   drift visibility for quiet, and should be justified the way this one was.
-- A separate pre-existing defect surfaced during E2E work and was left alone —
-  see `Construction/Tech-Debt/2026-08-19-config-save-emits-empty-release-key.md`.
+- A separate pre-existing defect surfaced during E2E work and was left alone:
+  `Config.Release` is a non-pointer struct tagged `omitempty`, which
+  `encoding/json` does not omit, so every `Save` adds a `"release": {}` key to a
+  config that lacked one. Tracked by #902, which removes the dead `release`
+  block outright rather than just fixing the tag. #902 notes the file overlap
+  with this issue and expects #901 to land first.

@@ -177,9 +177,11 @@ func TestConfigVerify_ResolvedViewDoesNotReportDrift(t *testing.T) {
 	// Deliberately not asserting "No drift detected" outright. Config.Release
 	// is a non-pointer struct tagged omitempty, which encoding/json does not
 	// omit, so every Save adds a "release": {} key to a config that lacked one.
-	// That is a pre-existing quirk of Save, unrelated to project.view, and it
-	// is what this fixture trips over. What #901 promises — and what is checked
-	// here — is that project.view itself never appears in a drift report.
+	// That is unrelated to project.view and is tracked by #902, which drops the
+	// dead release block entirely; this fixture is what trips over it. What #901
+	// promises — and what is checked here — is that project.view itself never
+	// appears in a drift report. Tighten this to "No drift detected" once #902
+	// lands.
 	assertExitCode(t, result, 0)
 	assertNotContains(t, result.Stdout, "project.view")
 }
