@@ -54,6 +54,44 @@ func TestLoad_MinimalConfig_ReturnsRequiredFields(t *testing.T) {
 	}
 }
 
+// TestLoad_PopulatedReleaseBlock_IsIgnored guards the removal of the release
+// config section (#902). A config written by an older gh-pmu still carries a
+// populated release block; loading one must stay silent rather than erroring on
+// a key the struct no longer declares. This is a regression guard against a
+// future strict decoder, not a test of the removal itself — Load uses plain
+// json.Unmarshal, which already ignores unknown keys.
+func TestLoad_PopulatedReleaseBlock_IsIgnored(t *testing.T) {
+	// ARRANGE: a config in the pre-#902 shape, with release fully populated
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ConfigFileName)
+	legacy := `{
+  "project": {"name": "gh-pmu", "number": 11, "owner": "rubrical-worker"},
+  "repositories": ["rubrical-worker/gh-pmu"],
+  "release": {
+    "tracks": {"stable": {"prefix": "v", "default": true}},
+    "artifacts": {"directory": "Releases", "release_notes": true},
+    "coverage": {"enabled": true, "threshold": 80}
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(legacy), 0600); err != nil {
+		t.Fatalf("Failed to write legacy config: %v", err)
+	}
+
+	// ACT
+	cfg, err := Load(configPath)
+
+	// ASSERT: the unknown release key is ignored, not an error
+	if err != nil {
+		t.Fatalf("Expected a populated release block to load cleanly, got: %v", err)
+	}
+	if cfg.Project.Owner != "rubrical-worker" {
+		t.Errorf("Expected owner rubrical-worker, got %q", cfg.Project.Owner)
+	}
+	if cfg.Project.Number != 11 {
+		t.Errorf("Expected project number 11, got %d", cfg.Project.Number)
+	}
+}
+
 func TestLoad_MissingFile_ReturnsError(t *testing.T) {
 	// ARRANGE: Path to non-existent file
 	configPath := filepath.Join("..", "..", "testdata", "config", "does-not-exist.yml")
