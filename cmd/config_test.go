@@ -2,10 +2,15 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/rubrical-works/gh-pmu/internal/config"
+	"github.com/rubrical-works/gh-pmu/internal/integrity"
 )
 
 func TestConfigVerify_NoConfig_ReturnsError(t *testing.T) {
@@ -164,6 +169,271 @@ func runGit(t *testing.T, dir string, args ...string) {
 
 func containsStr(s, substr string) bool {
 	return bytes.Contains([]byte(s), []byte(substr))
+}
+
+// ============================================================================
+// project.view resolve-and-persist Tests (#901)
+// ============================================================================
+
+// stubViewResolver stands in for the API client so these tests need neither
+// network nor auth.
+type stubViewResolver struct {
+	number int
+	found  bool
+	err    error
+	calls  int
+}
+
+func (s *stubViewResolver) ResolveBacklogViewNumber(owner string, number int) (int, bool, error) {
+	s.calls++
+	return s.number, s.found, s.err
+}
+
+// writeViewTestConfig writes a config and returns its path.
+func writeViewTestConfig(t *testing.T, dir, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, ".gh-pmu.json")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestResolveAndPersistView_ResolvesWhenAbsent(t *testing.T) {
+	// ARRANGE
+	dir := t.TempDir()
+	path := writeViewTestConfig(t, dir, `{"project":{"owner":"o","number":11},"repositories":["o/r"]}`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := &stubViewResolver{number: 2, found: true}
+	buf := new(bytes.Buffer)
+
+	// ACT
+	if err := resolveAndPersistView(cfg, path, resolver, buf, false); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// ASSERT: written to disk, not just to the in-memory struct
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Project.View != 2 {
+		t.Errorf("Expected project.view 2 persisted, got %d", reloaded.Project.View)
+	}
+	if resolver.calls != 1 {
+		t.Errorf("Expected exactly 1 resolve call, got %d", resolver.calls)
+	}
+}
+
+func TestResolveAndPersistView_UpdatesChecksumAfterWrite(t *testing.T) {
+	// ARRANGE
+	dir := t.TempDir()
+	path := writeViewTestConfig(t, dir, `{"project":{"owner":"o","number":11},"repositories":["o/r"]}`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ACT
+	if err := resolveAndPersistView(cfg, path, &stubViewResolver{number: 2, found: true}, new(bytes.Buffer), false); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// ASSERT: the stored checksum describes the file as it now stands
+	stored, err := integrity.LoadChecksum(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := integrity.ComputeChecksum(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != current {
+		t.Errorf("Expected the stored checksum to match the written file\n stored: %s\ncurrent: %s", stored, current)
+	}
+}
+
+func TestResolveAndPersistView_HandEditedValueIsAuthoritative(t *testing.T) {
+	// A value already in the config is the user's, not ours. A plain run must
+	// neither call the API nor overwrite it.
+	dir := t.TempDir()
+	path := writeViewTestConfig(t, dir, `{"project":{"owner":"o","number":11,"view":7},"repositories":["o/r"]}`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := &stubViewResolver{number: 2, found: true}
+
+	// ACT
+	if err := resolveAndPersistView(cfg, path, resolver, new(bytes.Buffer), false); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// ASSERT
+	if resolver.calls != 0 {
+		t.Errorf("Expected no API call when view is already set, got %d", resolver.calls)
+	}
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Project.View != 7 {
+		t.Errorf("Expected the hand-edited view 7 to survive, got %d", reloaded.Project.View)
+	}
+}
+
+func TestResolveAndPersistView_ForceReResolvesExistingValue(t *testing.T) {
+	// The explicit opt-in is the one path that may replace an existing value.
+	dir := t.TempDir()
+	path := writeViewTestConfig(t, dir, `{"project":{"owner":"o","number":11,"view":7},"repositories":["o/r"]}`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := &stubViewResolver{number: 2, found: true}
+
+	// ACT
+	if err := resolveAndPersistView(cfg, path, resolver, new(bytes.Buffer), true); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// ASSERT
+	if resolver.calls != 1 {
+		t.Errorf("Expected 1 resolve call when forced, got %d", resolver.calls)
+	}
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Project.View != 2 {
+		t.Errorf("Expected the forced re-resolve to write 2, got %d", reloaded.Project.View)
+	}
+}
+
+func TestResolveAndPersistView_OfflineWarnsAndContinues(t *testing.T) {
+	// A resolve failure must not turn config verify into a command that
+	// requires network and auth. Warn, leave view unset, carry on.
+	dir := t.TempDir()
+	path := writeViewTestConfig(t, dir, `{"project":{"owner":"o","number":11},"repositories":["o/r"]}`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := new(bytes.Buffer)
+
+	// ACT
+	err = resolveAndPersistView(cfg, path, &stubViewResolver{err: errors.New("dial tcp: no such host")}, buf, false)
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected a resolve failure to be non-fatal, got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "could not resolve") {
+		t.Errorf("Expected a warning on the writer, got: %q", buf.String())
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("Expected the config to be left untouched on resolve failure\nbefore: %s\n after: %s", before, after)
+	}
+}
+
+func TestResolveAndPersistView_NoBacklogViewIsReportedNotWritten(t *testing.T) {
+	// There is no createProjectV2View mutation, so this is reported and never
+	// repaired — and never defaulted to 1.
+	dir := t.TempDir()
+	path := writeViewTestConfig(t, dir, `{"project":{"owner":"o","number":11},"repositories":["o/r"]}`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := new(bytes.Buffer)
+
+	// ACT
+	if err := resolveAndPersistView(cfg, path, &stubViewResolver{found: false}, buf, false); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// ASSERT
+	if !strings.Contains(buf.String(), "no Backlog") {
+		t.Errorf("Expected the missing view to be reported, got: %q", buf.String())
+	}
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Project.View != 0 {
+		t.Errorf("Expected view to stay unset, got %d — must not default to 1", reloaded.Project.View)
+	}
+}
+
+func TestResolveAndPersistView_SaveFailureIsFailLoud(t *testing.T) {
+	// ARRANGE: a config directory that does not exist, so Save cannot write
+	dir := t.TempDir()
+	path := writeViewTestConfig(t, dir, `{"project":{"owner":"o","number":11},"repositories":["o/r"]}`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(dir, "gone", ".gh-pmu.json")
+
+	// ACT
+	err = resolveAndPersistView(cfg, missing, &stubViewResolver{number: 2, found: true}, new(bytes.Buffer), false)
+
+	// ASSERT: reported, not swallowed
+	if err == nil {
+		t.Fatal("Expected a save failure to be reported")
+	}
+	// And no checksum was recorded for a file that was never written.
+	if stored, _ := integrity.LoadChecksum(filepath.Join(dir, "gone")); stored != "" {
+		t.Errorf("Expected no checksum after a failed save, got %q", stored)
+	}
+}
+
+// Plain `config verify` must not resolve or write. Its name promises a
+// read-only check, and resolution would make a command that needs neither
+// network nor auth depend on both (#901).
+func TestConfigVerify_WithoutResolveViewFlag_DoesNotWrite(t *testing.T) {
+	// ARRANGE
+	dir := t.TempDir()
+	original := `{"project":{"owner":"o","number":11},"repositories":["o/r"]}`
+	configPath := writeViewTestConfig(t, dir, original)
+
+	runGit(t, dir, "init")
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "init")
+
+	cmd := NewRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"config", "verify", "--dir", dir})
+
+	// ACT
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// ASSERT: byte-identical, and no view key appeared
+	after, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != original {
+		t.Errorf("Expected verify to leave the config untouched\nbefore: %s\n after: %s", original, after)
+	}
+	if strings.Contains(buf.String(), "Resolved project.view") {
+		t.Errorf("Expected no resolution without the flag, got: %s", buf.String())
+	}
 }
 
 func TestConfigVerify_CriticalFieldChange_SingleField(t *testing.T) {
