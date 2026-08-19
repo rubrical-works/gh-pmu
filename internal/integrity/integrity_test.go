@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -264,6 +265,168 @@ func TestUpdateChecksumForConfig_CreatesChecksumFile(t *testing.T) {
 	computed, _ := ComputeChecksum(configPath)
 	if stored != computed {
 		t.Errorf("Stored checksum %q doesn't match computed %q", stored, computed)
+	}
+}
+
+// ============================================================================
+// project.view Drift Exclusion Tests (#901)
+// ============================================================================
+
+// project.view is written by gh pmu itself when it resolves the Backlog board
+// view, so it drifts from HEAD the moment resolution runs. Reporting that as
+// config drift blames the user for the tool's own write — and under strict mode
+// it blocks every subsequent command until .gh-pmu.json is committed.
+//
+// The stored checksum cannot fix this: runIntegrityCheck compares the local
+// file against the git HEAD blob and never reads the checksum file at all.
+// Excluding the key from the comparison is what actually works.
+
+func TestCompareContent_ViewOnlyDifference_ReportsNoDrift(t *testing.T) {
+	committed := []byte(`{"project":{"owner":"o","number":11},"repositories":["o/r"]}`)
+	local := []byte(`{"project":{"owner":"o","number":11,"view":2},"repositories":["o/r"]}`)
+
+	result, err := CompareContent(local, committed)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Drifted {
+		t.Errorf("Expected no drift when only project.view was added, got changes: %v", result.Changes)
+	}
+}
+
+func TestCompareContent_ViewValueChanged_ReportsNoDrift(t *testing.T) {
+	// Re-resolution can legitimately change the number, e.g. after the Backlog
+	// board is recreated. Still the tool's own write.
+	committed := []byte(`{"project":{"owner":"o","number":11,"view":1},"repositories":["o/r"]}`)
+	local := []byte(`{"project":{"owner":"o","number":11,"view":3},"repositories":["o/r"]}`)
+
+	result, err := CompareContent(local, committed)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Drifted {
+		t.Errorf("Expected no drift when only project.view changed, got changes: %v", result.Changes)
+	}
+}
+
+func TestCompareContent_ViewRemoved_ReportsNoDrift(t *testing.T) {
+	committed := []byte(`{"project":{"owner":"o","number":11,"view":2},"repositories":["o/r"]}`)
+	local := []byte(`{"project":{"owner":"o","number":11},"repositories":["o/r"]}`)
+
+	result, err := CompareContent(local, committed)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Drifted {
+		t.Errorf("Expected no drift when only project.view was removed, got changes: %v", result.Changes)
+	}
+}
+
+func TestCompareContent_ExclusionIsScopedToViewAlone(t *testing.T) {
+	// The exclusion must not weaken the project.* alerting added by #792. Each
+	// of these still has to report drift, including when project.view moved in
+	// the same edit.
+	tests := []struct {
+		name      string
+		committed string
+		local     string
+		wantKey   string
+	}{
+		{
+			name:      "owner changed alongside view",
+			committed: `{"project":{"owner":"o","number":11,"view":1},"repositories":["o/r"]}`,
+			local:     `{"project":{"owner":"attacker","number":11,"view":2},"repositories":["o/r"]}`,
+			wantKey:   "project.owner",
+		},
+		{
+			name:      "number changed alongside view",
+			committed: `{"project":{"owner":"o","number":11,"view":1},"repositories":["o/r"]}`,
+			local:     `{"project":{"owner":"o","number":99,"view":2},"repositories":["o/r"]}`,
+			wantKey:   "project.number",
+		},
+		{
+			name:      "name changed alongside view",
+			committed: `{"project":{"owner":"o","number":11,"name":"Board","view":1},"repositories":["o/r"]}`,
+			local:     `{"project":{"owner":"o","number":11,"name":"Other","view":2},"repositories":["o/r"]}`,
+			wantKey:   "project.name",
+		},
+		{
+			name:      "repositories changed alongside view",
+			committed: `{"project":{"owner":"o","number":11,"view":1},"repositories":["o/r"]}`,
+			local:     `{"project":{"owner":"o","number":11,"view":2},"repositories":["o/other"]}`,
+			wantKey:   "repositories",
+		},
+		{
+			name:      "a top-level key named view is not the excluded one",
+			committed: `{"project":{"owner":"o","number":11},"repositories":["o/r"]}`,
+			local:     `{"project":{"owner":"o","number":11},"repositories":["o/r"],"view":5}`,
+			wantKey:   "view",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := CompareContent([]byte(tt.local), []byte(tt.committed))
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if !result.Drifted {
+				t.Fatalf("Expected drift to be reported for %s", tt.wantKey)
+			}
+			joined := strings.Join(result.Changes, " | ")
+			if !strings.Contains(joined, tt.wantKey) {
+				t.Errorf("Expected %s in changes, got: %s", tt.wantKey, joined)
+			}
+			if strings.Contains(joined, "project.view") {
+				t.Errorf("project.view should never appear in the drift report, got: %s", joined)
+			}
+		})
+	}
+}
+
+func TestCompareContent_IdenticalContent_StillNoDrift(t *testing.T) {
+	// The exclusion must not disturb the identical-bytes fast path.
+	same := []byte(`{"project":{"owner":"o","number":11,"view":2},"repositories":["o/r"]}`)
+
+	result, err := CompareContent(same, same)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.Drifted {
+		t.Errorf("Expected no drift for identical content, got: %v", result.Changes)
+	}
+}
+
+func TestCompareContent_WhitespaceOnlyDifference_StillReportsDrift(t *testing.T) {
+	// Formatting-only drift was already reported before the exclusion existed,
+	// and must keep being reported — the exclusion is for project.view, not for
+	// "no keys changed".
+	committed := []byte(`{"project":{"owner":"o","number":11},"repositories":["o/r"]}`)
+	local := []byte("{\n  \"project\": {\n    \"owner\": \"o\",\n    \"number\": 11\n  },\n  \"repositories\": [\"o/r\"]\n}")
+
+	result, err := CompareContent(local, committed)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !result.Drifted {
+		t.Error("Expected formatting-only difference to still report drift")
+	}
+}
+
+func TestCompareContent_NoCommittedVersion_StillReportsDrift(t *testing.T) {
+	result, err := CompareContent([]byte(`{"project":{"view":2}}`), nil)
+
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !result.Drifted {
+		t.Error("Expected drift when there is no committed baseline")
 	}
 }
 

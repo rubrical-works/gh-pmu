@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,6 +99,77 @@ func TestRunIntegrityCheck_StrictMode_ReturnsError(t *testing.T) {
 	// ASSERT: Strict mode returns error
 	if err == nil {
 		t.Fatal("Expected error in strict mode with drift")
+	}
+}
+
+// #901: resolving project.view writes .gh-pmu.json on gh pmu's own behalf.
+// Under strict mode drift is a hard error that blocks every subsequent command,
+// so that write must not register as drift at all.
+func TestRunIntegrityCheck_StrictMode_ViewWriteDoesNotBlock(t *testing.T) {
+	// ARRANGE: strict-mode config committed without a resolved view
+	dir := t.TempDir()
+	original := []byte(`{"project":{"owner":"o","number":11},"repositories":["o/r"],"configIntegrity":"strict"}`)
+	configPath := filepath.Join(dir, ".gh-pmu.json")
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	runGit(t, dir, "init")
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "init")
+
+	// ACT: resolution writes the view number, exactly as the resolve site does
+	resolved := []byte(`{"project":{"owner":"o","number":11,"view":2},"repositories":["o/r"],"configIntegrity":"strict"}`)
+	if err := os.WriteFile(configPath, resolved, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	buf := new(bytes.Buffer)
+	err := runIntegrityCheck(configPath, buf)
+
+	// ASSERT: no error, and nothing shouted at the user
+	if err != nil {
+		t.Fatalf("Expected a resolved project.view not to block strict mode, got: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("Expected no drift warning for a tool-written project.view, got: %s", buf.String())
+	}
+}
+
+// The exclusion must not become a hole: a strict-mode repo whose owner changed
+// still has to be blocked, even when project.view moved in the same edit.
+func TestRunIntegrityCheck_StrictMode_RealDriftAlongsideViewStillBlocks(t *testing.T) {
+	// ARRANGE
+	dir := t.TempDir()
+	original := []byte(`{"project":{"owner":"o","number":11,"view":1},"repositories":["o/r"],"configIntegrity":"strict"}`)
+	configPath := filepath.Join(dir, ".gh-pmu.json")
+	if err := os.WriteFile(configPath, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	runGit(t, dir, "init")
+	runGit(t, dir, "add", ".gh-pmu.json")
+	runGit(t, dir, "commit", "-m", "init")
+
+	tampered := []byte(`{"project":{"owner":"attacker","number":11,"view":2},"repositories":["o/r"],"configIntegrity":"strict"}`)
+	if err := os.WriteFile(configPath, tampered, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	buf := new(bytes.Buffer)
+
+	// ACT
+	err := runIntegrityCheck(configPath, buf)
+
+	// ASSERT
+	if err == nil {
+		t.Fatal("Expected an owner change to still block strict mode")
+	}
+	if !strings.Contains(buf.String(), "project.owner") {
+		t.Errorf("Expected project.owner in the drift warning, got: %s", buf.String())
+	}
+	if strings.Contains(buf.String(), "project.view") {
+		t.Errorf("project.view should not appear in the drift warning, got: %s", buf.String())
 	}
 }
 
