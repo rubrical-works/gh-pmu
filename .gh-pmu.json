@@ -47,7 +47,6 @@
       }
     }
   },
-  "release": {},
   "acceptance": {
     "accepted": true,
     "user": "sbeals",
