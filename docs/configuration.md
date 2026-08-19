@@ -131,29 +131,10 @@ gh pmu triage untracked --apply
 
 ### Branch Configuration
 
-Configure branch workflow artifacts:
-
-```yaml
-release:
-  # Artifact generation settings
-  artifacts:
-    directory: Releases           # Base directory (default: "Releases")
-    release_notes: true           # Generate release-notes.md
-    changelog: true               # Generate changelog.md
-
-  # Coverage gate settings (for /prepare-release workflow)
-  coverage:
-    enabled: true              # Enable coverage gate (default: true)
-    threshold: 80              # Minimum patch coverage % (default: 80)
-    skip_patterns:             # Patterns to exclude from analysis
-      - "*_test.go"
-      - "mock_*.go"
-```
-
-**Notes:**
-- `gh pmu init` auto-creates Branch field and labels if missing
-- Coverage gate runs during `/prepare-release` to catch test coverage gaps
-- Set `enabled: false` to disable the coverage gate
+Branch workflow artifacts are not configured here. `gh pmu init` auto-creates
+the Branch field and its labels if they are missing, and release artifact and
+coverage-gate behavior belongs to the `/prepare-release` workflow rather than
+to `.gh-pmu.json`.
 
 ### Validation (IDPF Framework)
 
