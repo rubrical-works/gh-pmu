@@ -184,7 +184,6 @@ func TestConfigVerify_ResolvedViewDoesNotReportDrift(t *testing.T) {
 	assertNotContains(t, result.Stdout, "project.view")
 }
 
-
 // initGitRepo initializes a git repository in the given directory
 // with minimal configuration for testing.
 func initGitRepo(t *testing.T, dir string) {

@@ -605,6 +605,7 @@ func TestResolveBacklogViewNumber_RejectsMalformedOwnerBeforeSending(t *testing.
 		})
 	}
 }
+
 // ============================================================================
 // GetRepositoryIssues State Mapping Tests
 // ============================================================================
