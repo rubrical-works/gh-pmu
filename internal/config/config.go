@@ -32,6 +32,12 @@ type Project struct {
 	Name   string `yaml:"name,omitempty" json:"name,omitempty"`
 	Number int    `yaml:"number" json:"number"`
 	Owner  string `yaml:"owner" json:"owner"`
+	// View is the number of the project's first Backlog view with a BOARD_LAYOUT
+	// layout, resolved from the API and cached here (#901). omitempty keeps configs
+	// that predate resolution byte-identical. Zero means unresolved, never view 1:
+	// view numbers are creation ordinals starting at 1 and are never backfilled, so
+	// org-owned boards routinely start at 2.
+	View int `yaml:"view,omitempty" json:"view,omitempty"`
 }
 
 // Defaults contains default values for new issues
@@ -198,6 +204,16 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// HasResolvedView reports whether project.view holds a usable view number.
+//
+// GitHub view numbers are creation ordinals starting at 1, so zero means the
+// field was absent (omitempty) and anything below zero means the config was
+// hand-edited into an invalid state. Both are treated as unresolved rather than
+// as a value, which keeps a bogus {projectUrl}/views/0 URL from being built (#901).
+func (c *Config) HasResolvedView() bool {
+	return c.Project.View >= 1
 }
 
 // ResolveFieldValue maps an alias to its actual GitHub field value.

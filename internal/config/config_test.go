@@ -763,6 +763,119 @@ func TestConfig_Save_WithVersion_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfig_Save_WithoutView_OmitsKey(t *testing.T) {
+	// ARRANGE: config that never had a view resolved
+	testDir := t.TempDir()
+
+	cfg := &Config{
+		Project:      Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"test-owner/test-repo"},
+	}
+
+	// ACT
+	if err := cfg.Save(testDir); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// ASSERT: omitempty keeps the key out entirely — existing configs stay byte-identical
+	raw, err := os.ReadFile(filepath.Join(testDir, ConfigFileName))
+	if err != nil {
+		t.Fatalf("Failed to read saved config: %v", err)
+	}
+	if strings.Contains(string(raw), "\"view\"") {
+		t.Errorf("Expected no 'view' key when View is unset, got: %s", raw)
+	}
+}
+
+func TestConfig_Save_WithView_RoundTrip(t *testing.T) {
+	// ARRANGE: view resolved to a number that is deliberately not 1
+	testDir := t.TempDir()
+	configPath := filepath.Join(testDir, ConfigFileName)
+
+	cfg := &Config{
+		Project:      Project{Owner: "test-owner", Number: 1, View: 2},
+		Repositories: []string{"test-owner/test-repo"},
+	}
+
+	// ACT
+	if err := cfg.Save(testDir); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	loadedCfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load saved config: %v", err)
+	}
+
+	// ASSERT
+	if loadedCfg.Project.View != 2 {
+		t.Errorf("Expected project.view 2 through round-trip, got %d", loadedCfg.Project.View)
+	}
+}
+
+func TestConfig_Load_WithoutView_LeavesViewUnset(t *testing.T) {
+	// ARRANGE: an existing config with no view key
+	testDir := t.TempDir()
+	configPath := filepath.Join(testDir, ConfigFileName)
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
+	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// ACT
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// ASSERT: absent means unresolved, which is the zero value
+	if cfg.Project.View != 0 {
+		t.Errorf("Expected View 0 when key absent, got %d", cfg.Project.View)
+	}
+}
+
+func TestConfig_HasResolvedView(t *testing.T) {
+	// A view number is a GitHub creation ordinal and is always >= 1, so anything
+	// at or below zero is "not resolved" rather than a usable value. Guarding here
+	// keeps a bogus {projectUrl}/views/0 URL from ever being built (#901).
+	tests := []struct {
+		name string
+		view int
+		want bool
+	}{
+		{name: "unset", view: 0, want: false},
+		{name: "negative", view: -1, want: false},
+		{name: "first view", view: 1, want: true},
+		{name: "org board starting at 2", view: 2, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Project: Project{Owner: "o", Number: 1, View: tt.view}}
+			if got := cfg.HasResolvedView(); got != tt.want {
+				t.Errorf("HasResolvedView() with view %d = %v, want %v", tt.view, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_Load_NonIntegerView_ReturnsError(t *testing.T) {
+	// ARRANGE: a hand-edited config where view is a string
+	testDir := t.TempDir()
+	configPath := filepath.Join(testDir, ConfigFileName)
+	configContent := `{"project":{"owner":"o","number":1,"view":"two"},"repositories":["o/r"]}`
+	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// ACT
+	_, err := Load(configPath)
+
+	// ASSERT: a malformed view is reported, not silently coerced to 0
+	if err == nil {
+		t.Fatal("Expected an error for a non-integer view, got nil")
+	}
+}
+
 func TestConfig_Load_WithoutVersion_BackwardCompatible(t *testing.T) {
 	// ARRANGE: Config JSON without version field (existing configs)
 	testDir := t.TempDir()
