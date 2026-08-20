@@ -226,7 +226,7 @@ type backlogViewResolver interface {
 //
 // This is the single explicit resolve site, deliberately not a side effect of
 // config.LoadFromDirectory. The config is read up to four times per invocation
-// (runYAMLMigration, checkAcceptance, runIntegrityCheck, then the subcommand's
+// (refreshConfigVersion, checkAcceptance, runIntegrityCheck, then the subcommand's
 // own load), so a hook on load would fire a network call and a file write
 // several times for one command.
 //
