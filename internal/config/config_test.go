@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -1766,122 +1767,118 @@ func TestEnsureGitignore_AppendsToExistingFile(t *testing.T) {
 	}
 }
 
-func TestMigrateYAML_BothFilesExist_DeletesYAMLAndUpdatesVersion(t *testing.T) {
-	// ARRANGE: Directory with both .gh-pmu.json and .gh-pmu.yml
+func TestRefreshVersion_StaleVersion_RewritesToCurrent(t *testing.T) {
+	// ARRANGE: config stamped by an older binary
 	testDir := t.TempDir()
 	jsonPath := filepath.Join(testDir, ConfigFileName)
-	yamlPath := filepath.Join(testDir, ".gh-pmu.yml")
-
 	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
 	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
 		t.Fatalf("Failed to write JSON config: %v", err)
 	}
-	yamlContent := "version: 1.1.0\nproject:\n  owner: test-owner\n  number: 1\nrepositories:\n  - test-owner/test-repo\n"
-	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
-		t.Fatalf("Failed to write YAML config: %v", err)
-	}
 
-	var buf strings.Builder
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
 
-	// ACT: Run migration
-	err := MigrateYAML(jsonPath, "1.4.0", &buf)
-
-	// ASSERT: No error
+	// ASSERT
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
-
-	// ASSERT: YAML file deleted
-	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
-		t.Error("Expected .gh-pmu.yml to be deleted, but it still exists")
+	if !wrote {
+		t.Error("Expected RefreshVersion to report a write for a stale version")
 	}
 
-	// ASSERT: Console message printed
-	output := buf.String()
-	if !strings.Contains(output, ".gh-pmu.yml") {
-		t.Errorf("Expected console message mentioning %s, got: %q", ".gh-pmu.yml", output)
-	}
-
-	// ASSERT: Version updated in JSON
 	cfg, err := Load(jsonPath)
 	if err != nil {
-		t.Fatalf("Failed to load config after migration: %v", err)
+		t.Fatalf("Failed to reload config: %v", err)
 	}
-	if cfg.Version != "1.4.0" {
-		t.Errorf("Expected version '1.4.0', got '%s'", cfg.Version)
-	}
-
-	// ASSERT: JSON file still valid and has original data
-	if cfg.Project.Owner != "test-owner" {
-		t.Errorf("Expected owner 'test-owner', got '%s'", cfg.Project.Owner)
+	if cfg.Version != "1.5.3" {
+		t.Errorf("Expected version to be rewritten to '1.5.3', got '%s'", cfg.Version)
 	}
 }
 
-func TestMigrateYAML_CorruptJSON_PreservesYAML(t *testing.T) {
-	// #869 finding 2: MigrateYAML must verify the JSON config is loadable BEFORE
-	// removing the legacy YAML. A corrupt JSON must not destroy the user's only
-	// intact copy of their configuration.
+func TestRefreshVersion_CurrentVersion_NoWriteBytesUnchanged(t *testing.T) {
+	// ARRANGE: config already stamped at the running version
 	testDir := t.TempDir()
 	jsonPath := filepath.Join(testDir, ConfigFileName)
-	yamlPath := filepath.Join(testDir, ".gh-pmu.yml")
-
-	// Corrupt/unparsable JSON.
-	if err := os.WriteFile(jsonPath, []byte("{not valid json"), 0644); err != nil {
+	jsonContent := `{"version":"1.5.3","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
 		t.Fatalf("Failed to write JSON config: %v", err)
 	}
-	yamlContent := "version: 1.1.0\nproject:\n  owner: test-owner\n  number: 1\nrepositories:\n  - test-owner/test-repo\n"
-	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
-		t.Fatalf("Failed to write YAML config: %v", err)
+	before, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
 	}
 
-	var buf strings.Builder
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
 
-	// ACT: migration should fail because the JSON is unparsable.
-	err := MigrateYAML(jsonPath, "1.4.0", &buf)
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if wrote {
+		t.Error("Expected RefreshVersion to report no write when the version already matches")
+	}
+
+	// Byte comparison, not mtime: filesystem timestamp granularity makes mtime flaky.
+	after, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to re-read config: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("Expected config bytes to be unchanged.\nBefore: %s\nAfter:  %s", before, after)
+	}
+}
+
+func TestRefreshVersion_PreservesOtherFields(t *testing.T) {
+	// ARRANGE: a stale config carrying fields the refresh must not disturb
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":7},"repositories":["test-owner/test-repo"],"framework":"IDPF-Agile","acceptance":{"accepted":true,"user":"tester","date":"2026-01-01","version":"1.1.0"}}`
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("Failed to write JSON config: %v", err)
+	}
+
+	// ACT
+	if _, err := RefreshVersion(testDir, "1.5.3"); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// ASSERT: only the top-level version moved
+	cfg, err := Load(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to reload config: %v", err)
+	}
+	if cfg.Project.Number != 7 || cfg.Project.Owner != "test-owner" {
+		t.Errorf("Expected project fields preserved, got owner=%q number=%d", cfg.Project.Owner, cfg.Project.Number)
+	}
+	if cfg.Framework != "IDPF-Agile" {
+		t.Errorf("Expected framework preserved, got %q", cfg.Framework)
+	}
+	if cfg.Acceptance == nil || cfg.Acceptance.Version != "1.1.0" {
+		t.Error("Expected acceptance.version to be left untouched by the top-level version refresh")
+	}
+}
+
+func TestRefreshVersion_NoConfig_ReturnsErrorWithoutWriting(t *testing.T) {
+	// ARRANGE: an uninitialized directory
+	testDir := t.TempDir()
+
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
+
+	// ASSERT
 	if err == nil {
-		t.Fatal("expected error migrating with corrupt JSON, got nil")
+		t.Error("Expected an error when no config file exists")
 	}
-
-	// ASSERT: the legacy YAML must still exist — it was the only intact copy.
-	if _, statErr := os.Stat(yamlPath); os.IsNotExist(statErr) {
-		t.Error("expected .gh-pmu.yml to be preserved when JSON is corrupt, but it was deleted")
+	if wrote {
+		t.Error("Expected no write to be reported when no config file exists")
 	}
-}
-
-func TestMigrateYAML_OnlyJSONExists_NoOp(t *testing.T) {
-	// ARRANGE: Directory with only .gh-pmu.json
-	testDir := t.TempDir()
-	jsonPath := filepath.Join(testDir, ConfigFileName)
-
-	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
-	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
-		t.Fatalf("Failed to write JSON config: %v", err)
-	}
-
-	var buf strings.Builder
-
-	// ACT: Run migration
-	err := MigrateYAML(jsonPath, "1.4.0", &buf)
-
-	// ASSERT: No error, no output
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-	if buf.Len() != 0 {
-		t.Errorf("Expected no output for no-op migration, got: %q", buf.String())
-	}
-
-	// ASSERT: Version NOT updated (migration didn't trigger)
-	cfg, err := Load(jsonPath)
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
-	if cfg.Version != "1.1.0" {
-		t.Errorf("Expected version to remain '1.1.0', got '%s'", cfg.Version)
+	if _, statErr := os.Stat(filepath.Join(testDir, ConfigFileName)); !os.IsNotExist(statErr) {
+		t.Error("Expected RefreshVersion not to create a config file")
 	}
 }
-
-func TestMigrateYAML_SaveNoLongerWritesYAML(t *testing.T) {
+func TestSave_DoesNotWriteYAMLCompanion(t *testing.T) {
 	// ARRANGE: Save a config and verify no YAML companion is created
 	testDir := t.TempDir()
 	jsonPath := filepath.Join(testDir, ConfigFileName)

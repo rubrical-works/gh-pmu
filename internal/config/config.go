@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -98,10 +97,6 @@ type OptionMetadata struct {
 
 // ConfigFileName is the configuration file name
 const ConfigFileName = ".gh-pmu.json"
-
-// LegacyYAMLFileName is the pre-JSON configuration file name, retained for the
-// one-time MigrateYAML path and for rejecting stale Save call sites.
-const LegacyYAMLFileName = ".gh-pmu.yml"
 
 // Load reads and parses a configuration file from the given path.
 // Detects format (YAML or JSON) based on file extension.
@@ -323,7 +318,7 @@ func (c *Config) ApplyEnvOverrides() {
 func (c *Config) Save(dir string) error {
 	// Changing the parameter from a path to a directory is not compile-enforced
 	// — both are strings — so catch the most likely stale call directly.
-	if filepath.Base(dir) == ConfigFileName || filepath.Base(dir) == LegacyYAMLFileName {
+	if filepath.Base(dir) == ConfigFileName {
 		return fmt.Errorf("Save expects the directory containing %s, got a file path: %s", ConfigFileName, dir)
 	}
 
@@ -341,36 +336,36 @@ func (c *Config) Save(dir string) error {
 	return nil
 }
 
-// MigrateYAML performs a one-time migration: if .gh-pmu.yml exists alongside
-// the JSON config, it deletes the YAML file, updates the version in the JSON
-// config, and saves. If no YAML file exists, this is a no-op.
-func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) error {
-	dir := filepath.Dir(jsonConfigPath)
-	yamlPath := filepath.Join(dir, LegacyYAMLFileName)
+// RefreshVersion stamps the running version into the config in dir, recording
+// which gh pmu version last wrote the file.
+//
+// The comparison runs on every call; the write does not. When the stored version
+// already equals currentVersion the file is left untouched and false is returned.
+// That matters because Save rewrites the whole document: an unconditional save
+// would bump the file's mtime on every command and re-normalize line endings each
+// time (Save writes LF; Windows checkouts normalize to CRLF), producing
+// working-tree churn no user asked for.
+//
+// Only the top-level version field moves. acceptance.version is a separate field
+// with its own re-acceptance gating and is not touched here.
+func RefreshVersion(dir string, currentVersion string) (bool, error) {
+	configPath := filepath.Join(dir, ConfigFileName)
 
-	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
-		return nil // No YAML file — nothing to do
-	}
-
-	// Verify and update the JSON config BEFORE removing the legacy YAML. If the
-	// JSON is corrupt or unparsable, the YAML is the only intact copy of the user's
-	// configuration and must not be destroyed by a migration that then fails.
-	cfg, err := Load(jsonConfigPath)
+	cfg, err := Load(configPath)
 	if err != nil {
-		return fmt.Errorf("failed to load config for version update: %w", err)
+		return false, fmt.Errorf("failed to load config for version refresh: %w", err)
 	}
+
+	if cfg.Version == currentVersion {
+		return false, nil
+	}
+
 	cfg.Version = currentVersion
 	if err := cfg.Save(dir); err != nil {
-		return fmt.Errorf("failed to save updated config: %w", err)
+		return false, fmt.Errorf("failed to save refreshed config: %w", err)
 	}
 
-	// JSON config verified and saved — now safe to remove the legacy YAML.
-	if err := os.Remove(yamlPath); err != nil {
-		return fmt.Errorf("failed to remove legacy config %s: %w", LegacyYAMLFileName, err)
-	}
-	fmt.Fprintf(w, "Removed legacy config %s\n", LegacyYAMLFileName)
-
-	return nil
+	return true, nil
 }
 
 // IsIDPF returns true if the config uses IDPF framework validation.

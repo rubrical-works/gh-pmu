@@ -41,11 +41,9 @@ func TestSave_RejectsAConfigFilePath(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &Config{Version: "1.4.10"}
 
-	for _, name := range []string{ConfigFileName, LegacyYAMLFileName} {
-		err := cfg.Save(filepath.Join(dir, name))
-		if err == nil {
-			t.Errorf("Expected Save to reject a %s file path", name)
-		}
+	err := cfg.Save(filepath.Join(dir, ConfigFileName))
+	if err == nil {
+		t.Errorf("Expected Save to reject a %s file path", ConfigFileName)
 	}
 }
 

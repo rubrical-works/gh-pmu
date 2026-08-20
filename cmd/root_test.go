@@ -2,9 +2,103 @@ package cmd
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rubrical-works/gh-pmu/internal/config"
 )
+
+func TestRefreshConfigVersionInDir_StaleVersion_Rewrites(t *testing.T) {
+	dir := t.TempDir()
+	cfg := baseConfig()
+	cfg.Version = "1.1.0"
+	path := writeTestConfig(t, dir, cfg)
+
+	var buf bytes.Buffer
+	refreshConfigVersionInDir(dir, "1.5.3", &buf)
+
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Failed to reload config: %v", err)
+	}
+	if reloaded.Version != "1.5.3" {
+		t.Errorf("Expected version rewritten to '1.5.3', got '%s'", reloaded.Version)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("Expected no warning on the success path, got: %s", buf.String())
+	}
+}
+
+func TestRefreshConfigVersionInDir_NoConfig_SilentBail(t *testing.T) {
+	dir := t.TempDir()
+
+	var buf bytes.Buffer
+	refreshConfigVersionInDir(dir, "1.5.3", &buf)
+
+	// An uninitialized repo is the normal case for a fresh checkout: no warning,
+	// no file created, no error surfaced to the command.
+	if buf.Len() != 0 {
+		t.Errorf("Expected silence when no config exists, got: %s", buf.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, config.ConfigFileName)); !os.IsNotExist(err) {
+		t.Error("Expected no config file to be created")
+	}
+}
+
+func TestRefreshConfigVersionInDir_CorruptConfig_WarnsWithoutAborting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, config.ConfigFileName)
+	if err := os.WriteFile(path, []byte("{not valid json"), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	var buf bytes.Buffer
+	refreshConfigVersionInDir(dir, "1.5.3", &buf)
+
+	if !strings.Contains(buf.String(), "Warning") {
+		t.Errorf("Expected a warning for an unreadable config, got: %q", buf.String())
+	}
+}
+
+func TestRefreshConfigVersionInDir_CurrentVersion_LeavesBytesUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	cfg := baseConfig()
+	cfg.Version = "1.5.3"
+	path := writeTestConfig(t, dir, cfg)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	var buf bytes.Buffer
+	refreshConfigVersionInDir(dir, "1.5.3", &buf)
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to re-read config: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("Expected config bytes unchanged when the version already matches")
+	}
+}
+
+func TestShouldRefreshVersion_HonorsExemptCommands(t *testing.T) {
+	// checkAcceptance and runDailyIntegrityCheck both skip these; the version
+	// refresh must agree or 'gh pmu help' would write the config.
+	for name := range exemptCommands {
+		if shouldRefreshVersion(name) {
+			t.Errorf("Expected exempt command %q to skip the version refresh", name)
+		}
+	}
+
+	for _, name := range []string{"list", "move", "board", "config"} {
+		if !shouldRefreshVersion(name) {
+			t.Errorf("Expected non-exempt command %q to run the version refresh", name)
+		}
+	}
+}
 
 func TestRootCommandHelp(t *testing.T) {
 	// Test that root command executes and shows help
