@@ -3,7 +3,8 @@
   "project": {
     "name": "gh-pmu",
     "number": 11,
-    "owner": "rubrical-worker"
+    "owner": "rubrical-worker",
+    "view": 1
   },
   "repositories": [
     "rubrical-worker/gh-pmu"
