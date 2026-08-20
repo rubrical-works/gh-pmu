@@ -149,20 +149,27 @@ func CompareContent(local, committed []byte) (*ComparisonResult, error) {
 // behalf and that must therefore not count as user-visible drift.
 //
 // project.view is resolved from the API and cached the first time it is needed
-// (#901). Without this exclusion, that write makes the next integrity check
-// report drift the user did not cause — and under strict mode
-// (cmd/integrity_check.go) drift is a hard error that blocks every subsequent
-// command until .gh-pmu.json is committed.
+// (#901). version is stamped by config.RefreshVersion whenever the running
+// binary differs from the one that last wrote the file (#905). Without these
+// exclusions, either write makes the next integrity check report drift the user
+// did not cause — and under strict mode (cmd/integrity_check.go) drift is a hard
+// error that blocks every subsequent command until .gh-pmu.json is committed.
+//
+// The version case is the sharper one: the refresh runs in the same
+// PersistentPreRunE as runDailyIntegrityCheck, three lines earlier, so without
+// the exclusion a single command would write the file and then report itself.
 //
 // Updating the stored checksum does not help: the drift check compares the
 // local file against the git HEAD blob and never reads the checksum file.
 //
 // Keep this list minimal and exact. It suppresses drift reporting, so a key
 // added here stops being watched. Matching is on the full dotted path, so a
-// top-level "view" is unaffected, and the project.owner / project.number /
-// repositories alerting from #792 is untouched.
+// top-level "view" and a nested "acceptance.version" are both unaffected, and
+// the project.owner / project.number / repositories alerting from #792 is
+// untouched.
 var driftExcludedKeys = map[string]bool{
 	"project.view": true,
+	"version":      true,
 }
 
 // isDriftExcluded reports whether a change description refers to an excluded
