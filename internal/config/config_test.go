@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,44 @@ func TestLoad_MinimalConfig_ReturnsRequiredFields(t *testing.T) {
 
 	if len(cfg.Repositories) != 1 {
 		t.Errorf("Expected 1 repository, got %d", len(cfg.Repositories))
+	}
+}
+
+// TestLoad_PopulatedReleaseBlock_IsIgnored guards the removal of the release
+// config section (#902). A config written by an older gh-pmu still carries a
+// populated release block; loading one must stay silent rather than erroring on
+// a key the struct no longer declares. This is a regression guard against a
+// future strict decoder, not a test of the removal itself — Load uses plain
+// json.Unmarshal, which already ignores unknown keys.
+func TestLoad_PopulatedReleaseBlock_IsIgnored(t *testing.T) {
+	// ARRANGE: a config in the pre-#902 shape, with release fully populated
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ConfigFileName)
+	legacy := `{
+  "project": {"name": "gh-pmu", "number": 11, "owner": "rubrical-worker"},
+  "repositories": ["rubrical-worker/gh-pmu"],
+  "release": {
+    "tracks": {"stable": {"prefix": "v", "default": true}},
+    "artifacts": {"directory": "Releases", "release_notes": true},
+    "coverage": {"enabled": true, "threshold": 80}
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(legacy), 0600); err != nil {
+		t.Fatalf("Failed to write legacy config: %v", err)
+	}
+
+	// ACT
+	cfg, err := Load(configPath)
+
+	// ASSERT: the unknown release key is ignored, not an error
+	if err != nil {
+		t.Fatalf("Expected a populated release block to load cleanly, got: %v", err)
+	}
+	if cfg.Project.Owner != "rubrical-worker" {
+		t.Errorf("Expected owner rubrical-worker, got %q", cfg.Project.Owner)
+	}
+	if cfg.Project.Number != 11 {
+		t.Errorf("Expected project number 11, got %d", cfg.Project.Number)
 	}
 }
 
@@ -763,6 +802,119 @@ func TestConfig_Save_WithVersion_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfig_Save_WithoutView_OmitsKey(t *testing.T) {
+	// ARRANGE: config that never had a view resolved
+	testDir := t.TempDir()
+
+	cfg := &Config{
+		Project:      Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"test-owner/test-repo"},
+	}
+
+	// ACT
+	if err := cfg.Save(testDir); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// ASSERT: omitempty keeps the key out entirely — existing configs stay byte-identical
+	raw, err := os.ReadFile(filepath.Join(testDir, ConfigFileName))
+	if err != nil {
+		t.Fatalf("Failed to read saved config: %v", err)
+	}
+	if strings.Contains(string(raw), "\"view\"") {
+		t.Errorf("Expected no 'view' key when View is unset, got: %s", raw)
+	}
+}
+
+func TestConfig_Save_WithView_RoundTrip(t *testing.T) {
+	// ARRANGE: view resolved to a number that is deliberately not 1
+	testDir := t.TempDir()
+	configPath := filepath.Join(testDir, ConfigFileName)
+
+	cfg := &Config{
+		Project:      Project{Owner: "test-owner", Number: 1, View: 2},
+		Repositories: []string{"test-owner/test-repo"},
+	}
+
+	// ACT
+	if err := cfg.Save(testDir); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	loadedCfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load saved config: %v", err)
+	}
+
+	// ASSERT
+	if loadedCfg.Project.View != 2 {
+		t.Errorf("Expected project.view 2 through round-trip, got %d", loadedCfg.Project.View)
+	}
+}
+
+func TestConfig_Load_WithoutView_LeavesViewUnset(t *testing.T) {
+	// ARRANGE: an existing config with no view key
+	testDir := t.TempDir()
+	configPath := filepath.Join(testDir, ConfigFileName)
+	configContent := `{"project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
+	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// ACT
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// ASSERT: absent means unresolved, which is the zero value
+	if cfg.Project.View != 0 {
+		t.Errorf("Expected View 0 when key absent, got %d", cfg.Project.View)
+	}
+}
+
+func TestConfig_HasResolvedView(t *testing.T) {
+	// A view number is a GitHub creation ordinal and is always >= 1, so anything
+	// at or below zero is "not resolved" rather than a usable value. Guarding here
+	// keeps a bogus {projectUrl}/views/0 URL from ever being built (#901).
+	tests := []struct {
+		name string
+		view int
+		want bool
+	}{
+		{name: "unset", view: 0, want: false},
+		{name: "negative", view: -1, want: false},
+		{name: "first view", view: 1, want: true},
+		{name: "org board starting at 2", view: 2, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Project: Project{Owner: "o", Number: 1, View: tt.view}}
+			if got := cfg.HasResolvedView(); got != tt.want {
+				t.Errorf("HasResolvedView() with view %d = %v, want %v", tt.view, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_Load_NonIntegerView_ReturnsError(t *testing.T) {
+	// ARRANGE: a hand-edited config where view is a string
+	testDir := t.TempDir()
+	configPath := filepath.Join(testDir, ConfigFileName)
+	configContent := `{"project":{"owner":"o","number":1,"view":"two"},"repositories":["o/r"]}`
+	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// ACT
+	_, err := Load(configPath)
+
+	// ASSERT: a malformed view is reported, not silently coerced to 0
+	if err == nil {
+		t.Fatal("Expected an error for a non-integer view, got nil")
+	}
+}
+
 func TestConfig_Load_WithoutVersion_BackwardCompatible(t *testing.T) {
 	// ARRANGE: Config JSON without version field (existing configs)
 	testDir := t.TempDir()
@@ -922,224 +1074,6 @@ func TestConfig_AddFieldMetadata_WithOptions(t *testing.T) {
 	}
 	if cfg.Metadata.Fields[0].Options[0].Name != "Development" {
 		t.Errorf("Expected first option 'Development', got '%s'", cfg.Metadata.Fields[0].Options[0].Name)
-	}
-}
-
-func TestGetTrackPrefix_DefaultStable(t *testing.T) {
-	cfg := &Config{}
-	prefix := cfg.GetTrackPrefix("stable")
-	if prefix != "v" {
-		t.Errorf("expected 'v' for stable track, got '%s'", prefix)
-	}
-}
-
-func TestGetTrackPrefix_DefaultPatch(t *testing.T) {
-	cfg := &Config{}
-	prefix := cfg.GetTrackPrefix("patch")
-	if prefix != "patch/" {
-		t.Errorf("expected 'patch/' for patch track, got '%s'", prefix)
-	}
-}
-
-func TestGetTrackPrefix_Configured(t *testing.T) {
-	cfg := &Config{
-		Release: Release{
-			Tracks: map[string]TrackConfig{
-				"beta": {Prefix: "beta-"},
-			},
-		},
-	}
-	prefix := cfg.GetTrackPrefix("beta")
-	if prefix != "beta-" {
-		t.Errorf("expected 'beta-' for beta track, got '%s'", prefix)
-	}
-}
-
-func TestGetDefaultTrack_NoConfig(t *testing.T) {
-	cfg := &Config{}
-	track := cfg.GetDefaultTrack()
-	if track != "stable" {
-		t.Errorf("expected 'stable' as default track, got '%s'", track)
-	}
-}
-
-func TestGetDefaultTrack_Configured(t *testing.T) {
-	cfg := &Config{
-		Release: Release{
-			Tracks: map[string]TrackConfig{
-				"stable": {Prefix: "v"},
-				"beta":   {Prefix: "beta/", Default: true},
-			},
-		},
-	}
-	track := cfg.GetDefaultTrack()
-	if track != "beta" {
-		t.Errorf("expected 'beta' as default track, got '%s'", track)
-	}
-}
-
-func TestFormatReleaseFieldValue(t *testing.T) {
-	cfg := &Config{
-		Release: Release{
-			Tracks: map[string]TrackConfig{
-				"stable": {Prefix: "v"},
-				"patch":  {Prefix: "patch/"},
-			},
-		},
-	}
-
-	tests := []struct {
-		version string
-		track   string
-		want    string
-	}{
-		{"1.2.0", "stable", "v1.2.0"},
-		{"1.1.1", "patch", "patch/1.1.1"},
-	}
-
-	for _, tt := range tests {
-		result := cfg.FormatReleaseFieldValue(tt.version, tt.track)
-		if result != tt.want {
-			t.Errorf("FormatReleaseFieldValue(%s, %s) = %s, want %s", tt.version, tt.track, result, tt.want)
-		}
-	}
-}
-
-// TestGetArtifactDirectory tests artifact directory configuration
-func TestGetArtifactDirectory(t *testing.T) {
-	tests := []struct {
-		name     string
-		cfg      *Config
-		expected string
-	}{
-		{
-			name:     "default directory when nil",
-			cfg:      &Config{},
-			expected: "Releases",
-		},
-		{
-			name: "custom directory",
-			cfg: &Config{
-				Release: Release{
-					Artifacts: &ArtifactConfig{
-						Directory: "dist/releases",
-					},
-				},
-			},
-			expected: "dist/releases",
-		},
-		{
-			name: "default when empty string",
-			cfg: &Config{
-				Release: Release{
-					Artifacts: &ArtifactConfig{
-						Directory: "",
-					},
-				},
-			},
-			expected: "Releases",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.cfg.GetArtifactDirectory()
-			if result != tt.expected {
-				t.Errorf("GetArtifactDirectory() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}
-
-// TestShouldGenerateReleaseNotes tests release notes generation config
-func TestShouldGenerateReleaseNotes(t *testing.T) {
-	tests := []struct {
-		name     string
-		cfg      *Config
-		expected bool
-	}{
-		{
-			name:     "default true when nil",
-			cfg:      &Config{},
-			expected: true,
-		},
-		{
-			name: "explicit true",
-			cfg: &Config{
-				Release: Release{
-					Artifacts: &ArtifactConfig{
-						ReleaseNotes: true,
-					},
-				},
-			},
-			expected: true,
-		},
-		{
-			name: "explicit false",
-			cfg: &Config{
-				Release: Release{
-					Artifacts: &ArtifactConfig{
-						ReleaseNotes: false,
-					},
-				},
-			},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.cfg.ShouldGenerateReleaseNotes()
-			if result != tt.expected {
-				t.Errorf("ShouldGenerateReleaseNotes() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}
-
-// TestShouldGenerateChangelog tests changelog generation config
-func TestShouldGenerateChangelog(t *testing.T) {
-	tests := []struct {
-		name     string
-		cfg      *Config
-		expected bool
-	}{
-		{
-			name:     "default true when nil",
-			cfg:      &Config{},
-			expected: true,
-		},
-		{
-			name: "explicit true",
-			cfg: &Config{
-				Release: Release{
-					Artifacts: &ArtifactConfig{
-						Changelog: true,
-					},
-				},
-			},
-			expected: true,
-		},
-		{
-			name: "explicit false",
-			cfg: &Config{
-				Release: Release{
-					Artifacts: &ArtifactConfig{
-						Changelog: false,
-					},
-				},
-			},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.cfg.ShouldGenerateChangelog()
-			if result != tt.expected {
-				t.Errorf("ShouldGenerateChangelog() = %v, want %v", result, tt.expected)
-			}
-		})
 	}
 }
 
@@ -1595,206 +1529,6 @@ func TestEnsureGitignore_RecognizesTmpWithoutSlash(t *testing.T) {
 }
 
 // ============================================================================
-// Coverage Configuration Tests
-// ============================================================================
-
-func TestIsCoverageGateEnabled_DefaultsToTrue(t *testing.T) {
-	// ARRANGE: Config with no coverage section
-	cfg := &Config{}
-
-	// ACT & ASSERT: Should default to true
-	if !cfg.IsCoverageGateEnabled() {
-		t.Error("Expected coverage gate to be enabled by default")
-	}
-}
-
-func TestIsCoverageGateEnabled_WithNilEnabled(t *testing.T) {
-	// ARRANGE: Config with coverage section but nil Enabled
-	cfg := &Config{
-		Release: Release{
-			Coverage: &CoverageConfig{
-				Threshold: 85,
-			},
-		},
-	}
-
-	// ACT & ASSERT: Should default to true when Enabled is nil
-	if !cfg.IsCoverageGateEnabled() {
-		t.Error("Expected coverage gate to be enabled when Enabled is nil")
-	}
-}
-
-func TestIsCoverageGateEnabled_ExplicitlyDisabled(t *testing.T) {
-	// ARRANGE: Config with coverage explicitly disabled
-	enabled := false
-	cfg := &Config{
-		Release: Release{
-			Coverage: &CoverageConfig{
-				Enabled: &enabled,
-			},
-		},
-	}
-
-	// ACT & ASSERT: Should be disabled
-	if cfg.IsCoverageGateEnabled() {
-		t.Error("Expected coverage gate to be disabled")
-	}
-}
-
-func TestIsCoverageGateEnabled_ExplicitlyEnabled(t *testing.T) {
-	// ARRANGE: Config with coverage explicitly enabled
-	enabled := true
-	cfg := &Config{
-		Release: Release{
-			Coverage: &CoverageConfig{
-				Enabled: &enabled,
-			},
-		},
-	}
-
-	// ACT & ASSERT: Should be enabled
-	if !cfg.IsCoverageGateEnabled() {
-		t.Error("Expected coverage gate to be enabled")
-	}
-}
-
-func TestGetCoverageThreshold_DefaultsTo80(t *testing.T) {
-	// ARRANGE: Config with no coverage section
-	cfg := &Config{}
-
-	// ACT & ASSERT: Should default to 80
-	if threshold := cfg.GetCoverageThreshold(); threshold != 80 {
-		t.Errorf("Expected default threshold 80, got %d", threshold)
-	}
-}
-
-func TestGetCoverageThreshold_WithZeroValue(t *testing.T) {
-	// ARRANGE: Config with coverage section but zero threshold
-	cfg := &Config{
-		Release: Release{
-			Coverage: &CoverageConfig{
-				Threshold: 0,
-			},
-		},
-	}
-
-	// ACT & ASSERT: Should default to 80 when threshold is 0
-	if threshold := cfg.GetCoverageThreshold(); threshold != 80 {
-		t.Errorf("Expected default threshold 80, got %d", threshold)
-	}
-}
-
-func TestGetCoverageThreshold_CustomValue(t *testing.T) {
-	// ARRANGE: Config with custom threshold
-	cfg := &Config{
-		Release: Release{
-			Coverage: &CoverageConfig{
-				Threshold: 90,
-			},
-		},
-	}
-
-	// ACT & ASSERT: Should return custom value
-	if threshold := cfg.GetCoverageThreshold(); threshold != 90 {
-		t.Errorf("Expected threshold 90, got %d", threshold)
-	}
-}
-
-func TestGetCoverageSkipPatterns_DefaultPatterns(t *testing.T) {
-	// ARRANGE: Config with no coverage section
-	cfg := &Config{}
-
-	// ACT
-	patterns := cfg.GetCoverageSkipPatterns()
-
-	// ASSERT: Should return default patterns
-	if len(patterns) != 2 {
-		t.Errorf("Expected 2 default patterns, got %d", len(patterns))
-	}
-	if patterns[0] != "*_test.go" {
-		t.Errorf("Expected first pattern '*_test.go', got '%s'", patterns[0])
-	}
-	if patterns[1] != "mock_*.go" {
-		t.Errorf("Expected second pattern 'mock_*.go', got '%s'", patterns[1])
-	}
-}
-
-func TestGetCoverageSkipPatterns_EmptyPatterns(t *testing.T) {
-	// ARRANGE: Config with coverage section but empty patterns
-	cfg := &Config{
-		Release: Release{
-			Coverage: &CoverageConfig{
-				SkipPatterns: []string{},
-			},
-		},
-	}
-
-	// ACT
-	patterns := cfg.GetCoverageSkipPatterns()
-
-	// ASSERT: Should return default patterns when empty
-	if len(patterns) != 2 {
-		t.Errorf("Expected 2 default patterns, got %d", len(patterns))
-	}
-}
-
-func TestGetCoverageSkipPatterns_CustomPatterns(t *testing.T) {
-	// ARRANGE: Config with custom patterns
-	cfg := &Config{
-		Release: Release{
-			Coverage: &CoverageConfig{
-				SkipPatterns: []string{"*_generated.go", "vendor/*"},
-			},
-		},
-	}
-
-	// ACT
-	patterns := cfg.GetCoverageSkipPatterns()
-
-	// ASSERT: Should return custom patterns
-	if len(patterns) != 2 {
-		t.Errorf("Expected 2 patterns, got %d", len(patterns))
-	}
-	if patterns[0] != "*_generated.go" {
-		t.Errorf("Expected first pattern '*_generated.go', got '%s'", patterns[0])
-	}
-	if patterns[1] != "vendor/*" {
-		t.Errorf("Expected second pattern 'vendor/*', got '%s'", patterns[1])
-	}
-}
-
-func TestCoverageConfig_JSONParsing(t *testing.T) {
-	// ARRANGE: JSON config with coverage section
-	jsonContent := `{"project":{"owner":"test","number":1},"repositories":["test/repo"],"release":{"coverage":{"enabled":false,"threshold":85,"skip_patterns":["*_generated.go","mock_*.go"]}}}`
-	testDir := t.TempDir()
-	configPath := filepath.Join(testDir, ConfigFileName)
-	if err := os.WriteFile(configPath, []byte(jsonContent), 0644); err != nil {
-		t.Fatalf("Failed to write config: %v", err)
-	}
-
-	// ACT
-	cfg, err := Load(configPath)
-
-	// ASSERT
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
-
-	if cfg.IsCoverageGateEnabled() {
-		t.Error("Expected coverage gate to be disabled")
-	}
-
-	if threshold := cfg.GetCoverageThreshold(); threshold != 85 {
-		t.Errorf("Expected threshold 85, got %d", threshold)
-	}
-
-	patterns := cfg.GetCoverageSkipPatterns()
-	if len(patterns) != 2 || patterns[0] != "*_generated.go" {
-		t.Errorf("Unexpected patterns: %v", patterns)
-	}
-}
-
-// ============================================================================
 // Config File Protection Test
 // ============================================================================
 
@@ -1859,6 +1593,40 @@ func TestSave_WritesJSONOnly(t *testing.T) {
 	yamlPath := filepath.Join(tmpDir, ".gh-pmu.yml")
 	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
 		t.Error("Expected .gh-pmu.yml to NOT be created by Save()")
+	}
+}
+
+func TestSave_OmitsReleaseKey(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &Config{
+		Project: Project{
+			Owner:  "test-owner",
+			Number: 1,
+		},
+		Repositories: []string{"test-owner/test-repo"},
+	}
+
+	// ACT: Save a config that sets no release configuration
+	if err := cfg.Save(tmpDir); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	jsonData, err := os.ReadFile(filepath.Join(tmpDir, ConfigFileName))
+	if err != nil {
+		t.Fatalf("Failed to read JSON file: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(jsonData, &raw); err != nil {
+		t.Fatalf("Saved config is not valid JSON: %v", err)
+	}
+
+	// ASSERT: no release key at all. A non-pointer struct tagged omitempty is
+	// not omitted by encoding/json, so a dead release block would surface here
+	// as "release": {} in every config the tool writes.
+	if _, ok := raw["release"]; ok {
+		t.Errorf("Saved config must not contain a release key, got: %s", string(jsonData))
 	}
 }
 

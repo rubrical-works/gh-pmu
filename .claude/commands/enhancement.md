@@ -1,5 +1,5 @@
 ---
-version: "v0.93.0"
+version: "v0.96.2"
 description: Create an enhancement issue with standard template (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -17,6 +17,7 @@ Create a labeled enhancement issue with standard template and add to project boa
 | Argument | Description |
 |----------|-------------|
 | `<title>` | Enhancement title (e.g., `add dark mode`) |
+| `--prior-art` | Run prior-art sweep before composing body. Absent = current behavior, no sweep. |
 
 If not provided, prompt user.
 ---
@@ -32,6 +33,7 @@ If not provided, prompt user.
 Extract `<title>`.
 **Empty:** Ask user before proceeding.
 **Special chars** (backticks, quotes): Escape for shell. On Windows, use temp file per shell safety.
+**`--prior-art` token:** recognize anywhere in argument text, **remove it from the title**, set sweep flag. Absent → no sweep. Required for direct slash-command invocation (no hook runs there); on the trigger-word path `workflow-trigger.js` already strips flag-shaped tokens by **shape**, not allowlist membership (#2515). A `--` that is not flag-shaped (bare separator, `---` rule, `--` in prose) is preserved verbatim.
 ### Step 2: Gather Description
 Extract `<body>` from args.
 **IF insufficient detail**, THEN:
@@ -41,6 +43,30 @@ Describe the enhancement (what it does, why it's useful):
 **Description provided:** use as body. **Declined/"skip":** minimal body.
 ### Step 2a: AC Feasibility Quick-Check (#2424)
 If AC text in description mentions a verification mechanism (see `.claude/metadata/ac-feasibility-prompts.json` `verificationGate.triggerPhrases`), apply the `verificationGate` prompt. Append warning to issue body's Scope section; do **not** block. Trigger list is heuristic.
+### Step 2b: Prior-Art Sweep (`--prior-art` only)
+**Trigger:** sweep flag from Step 1. Absent the flag, skip this step entirely.
+Runs **before** the body is composed, so findings change what gets written rather than annotating a body already wrong.
+**Re-read `.claude/metadata/prior-art-sweep.json` from disk at use** (rule `01-anti-hallucination.md`). Surfaces, excludes, stopwords, disposition signals and body formats live only there — not restated here.
+1. **Resolve surfaces:** `node -e "console.log(JSON.stringify(require('./.claude/scripts/shared/lib/prior-art-surfaces.js').resolveSurfaces(require('./.claude/metadata/prior-art-sweep.json'), process.cwd())))"`. Missing surface → skipped, not fatal. **Zero resolved is a failed sweep** — go to Error Handling, emit `PARTIAL`, do **not** report a clean result.
+2. **Derive terms** per `termDerivation`: feature nouns, **and** terms from the files this change would touch. The second axis is not optional — prior work often shares no vocabulary with the request.
+3. **Search** resolved surfaces honoring `excludes`; search issue history per `searchSurfaces.issueHistory`, including closed.
+4. **Apply `questions`** to what the search returned.
+5. **Classify** against `dispositions`; take that disposition's `action`.
+
+| Verdict | Action |
+|---|---|
+| `already-shipped` | **STOP.** Create no issue. Report conflicting issue numbers and file paths. |
+| `found-but-warranted` | Continue. Record `**Prior Art:**` — what exists, how this differs. |
+| `none-found` | Continue. Record `noneFoundFormat` line including terms searched. |
+
+**Emit the section on every `--prior-art` invocation, including a nil result.** Presence records the sweep ran; absence means none ran. Omitting on nil makes "nothing found" indistinguishable from "nobody looked".
+Use exact `bodyFormat` strings (`heading`, `noneFoundFormat`, `foundEntryFormat`, `partialFormat`) — never paraphrase, so consumers test the marker without parsing prose. `PARTIAL` is treated as equivalent to an absent marker and triggers re-sweep.
+**`reviewSweep` gates this path too, in one mode (#2564).** Four values (`framework-config.json`, absent = `recommend`): `full`, `recommend`, `flag-only`, `off`. First three honor `--prior-art`; only `off` refuses. Delegate, do not re-derive:
+```bash
+node -e "console.log(JSON.stringify(require('./.claude/scripts/shared/lib/prior-art-marker.js').decideFlagSweep({reviewSweep:REVIEW_SWEEP})))"
+```
+`REVIEW_SWEEP` ← `framework-config.json` `reviewSweep` (absent = `recommend`) → `{sweep, refused, mode, message}`. `sweep:true` → run the sweep step as written. `refused:true` → **do not sweep**; report `message` verbatim, emit **no** `**Prior Art:**` section (absence reads as "no sweep ran"), continue creating the issue. Never a silent no-op — the user typed a flag and must learn why nothing happened and what to change.
+Mode `off` deliberately overrides a typed flag. Earlier revisions of this spec, its sibling, and the schema all promised `--prior-art` swept regardless; #2564 inverts that on purpose, and the refusal message is what keeps the inversion honest.
 
 <!-- USER-EXTENSION-START: pre-create -->
 <!-- USER-EXTENSION-END: pre-create -->
@@ -62,28 +88,20 @@ Body template:
 **Scope:**
 - **In scope:** {infer from description, or "To be documented"}
 - **Out of scope:** {infer from description, or "To be documented"}
-
-**Deployment Impact:** {dev-only | deployed (list affected areas) | unknown}
-
 **Acceptance Criteria:**
 - [ ] {infer from description, or "To be documented"}
 ```
 Populate from user input where possible. Use "To be documented" only where insufficient.
-
+**Sweep ran (Step 2b):** insert `**Prior Art:**` after `**Description:**`, using `bodyFormat` strings.
 Create:
 ```bash
-gh pmu create --title "[Enhancement]: {title}" --label enhancement --status backlog --priority p2 --assignee @me -F .tmp-body.md
+gh pmu create --title "[Enhancement]: {title}" --label enhancement --status backlog --priority p2 --assignee {assignee} -F .tmp-body.md
 rm .tmp-body.md
 ```
 **Note:** Always `-F .tmp-body.md` (never inline `--body`).
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
 ### Step 4: Report and STOP
-```
-Created: Issue #$ISSUE_NUM — [Enhancement]: {title}
-Status: Backlog
-Label: enhancement
-
-Say "/review-issue #$ISSUE_NUM" then "/assign-branch #$ISSUE_NUM" then "work #$ISSUE_NUM" to start working on this enhancement.
-```
+Report the created issue number and title, Status `Backlog`, Label `enhancement`, then the follow-on sequence: `/review-issue`, `/assign-branch`, `work` with the issue number.
 
 <!-- USER-EXTENSION-START: post-create -->
 <!-- USER-EXTENSION-END: post-create -->
@@ -97,5 +115,8 @@ Say "/review-issue #$ISSUE_NUM" then "/assign-branch #$ISSUE_NUM" then "work #$I
 | Empty after prompt | "An enhancement title is required." → STOP |
 | `gh pmu create` fails | "Failed to create issue: {error}" → STOP |
 | Special chars | Escape for shell safety |
+| Sweep: issue history unavailable (`gh` error) | Warn, emit `partialFormat` naming what ran and what failed, continue. Never claim a clean sweep. |
+| Sweep: **zero `searchSurfaces` resolved** | Warn, emit `partialFormat`, continue. A sweep that searched nothing is failed, not empty — never emit `noneFoundFormat` here. |
+| Sweep: `prior-art-sweep.json` missing/unreadable | Warn, skip sweep, emit no `**Prior Art:**` section. Absence correctly reads as "no sweep ran". |
 ---
 **End of /enhancement Command**

@@ -1,5 +1,5 @@
 ---
-version: "v0.93.0"
+version: "v0.96.2"
 allowed-tools: Bash, AskUserQuestion
 description: "Assign or remove issues from a branch: [#issue...] [branch/...] [--add-ready] [--remove] (project)"
 argument-hint: "[#issue...] [branch/name] [--add-ready] [--remove]"
@@ -39,3 +39,6 @@ If branches exist, report the result directly.
 | Error | Cause | Resolution |
 |-------|-------|------------|
 | `Issue #N is a branch tracker and cannot be assigned.` | Target carries the `branch` label (branch tracker, not implementation work). Script exits non-zero before any mutation. | Target the sub-issues on the branch instead, or use `gh pmu sub list` to enumerate them. |
+| `"X" is not an open branch. No issues were assigned.` | Slash-bearing token read as a branch name matches no open tracker. Script exits non-zero before any mutation. | Re-run with a listed open branch, or omit the branch to use the current one. |
+
+**Why a slash command can be misread as a branch (#2554):** branch args are identified by shape — non-flag, non-numeric, contains a slash — so a token like `/work` in trailing chat text is picked up as the branch name. It is rejected because it matches no open tracker; nothing is written. Re-invoke with only the issue numbers.

@@ -111,3 +111,7 @@ runp_claude
 .tmp-*
 .claude/skills/electron-cross-build/
 .claude/skills/electron-development/
+
+# IDPF Framework (managed by Praxis Hub Manager)
+runa_claude
+runa_claude.cmd

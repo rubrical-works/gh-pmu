@@ -2,7 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Every branch, not an allow-list of prefixes. Branch names here are not
+    # conventional — chore/, docs/, fix/, ci/, feat/, config/, debt/, bug/,
+    # pmu/, ghpmu/ and idpf/ all appear in the history — so any enumerated
+    # list silently misses the next new prefix, and a branch with no CI looks
+    # exactly like a branch that passed.
+    #
+    # Without this, /work commits per AC and /done pushes the batch, so the
+    # first CI signal arrives at merge time with every commit at once.
+    branches: ['**']
     tags:
       - "v*"
   pull_request:
@@ -10,6 +18,17 @@ on:
 
 permissions:
   contents: write
+
+# Cancel superseded runs on the same ref, everywhere except main and tags.
+# Feature branches now run CI on every push, so without this a burst of
+# commits leaves several full runs racing over stale code.
+#
+# main and tags are exempt on purpose: ci.yml's release job publishes via
+# GoReleaser on a tag build, and a cancelled release is worse than a
+# duplicated one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   # Test and Lint run in parallel

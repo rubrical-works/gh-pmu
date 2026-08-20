@@ -129,7 +129,14 @@ func CompareContent(local, committed []byte) (*ComparisonResult, error) {
 	}
 
 	// Parse both as JSON to find specific differences
-	changes, unchanged := diffJSON(local, committed)
+	changes, unchanged, dropped := diffJSON(local, committed)
+
+	// Only tool-written keys moved. Reporting this as drift would blame the
+	// user for gh pmu's own write, and would block them outright under strict
+	// mode (#901).
+	if len(changes) == 0 && dropped > 0 {
+		return &ComparisonResult{Drifted: false}, nil
+	}
 
 	return &ComparisonResult{
 		Drifted:   true,
@@ -138,20 +145,72 @@ func CompareContent(local, committed []byte) (*ComparisonResult, error) {
 	}, nil
 }
 
-// diffJSON compares two JSON documents and returns change descriptions and unchanged top-level keys.
-func diffJSON(local, committed []byte) (changes []string, unchanged []string) {
+// driftExcludedKeys lists dotted config paths that gh pmu writes on its own
+// behalf and that must therefore not count as user-visible drift.
+//
+// project.view is resolved from the API and cached the first time it is needed
+// (#901). Without this exclusion, that write makes the next integrity check
+// report drift the user did not cause — and under strict mode
+// (cmd/integrity_check.go) drift is a hard error that blocks every subsequent
+// command until .gh-pmu.json is committed.
+//
+// Updating the stored checksum does not help: the drift check compares the
+// local file against the git HEAD blob and never reads the checksum file.
+//
+// Keep this list minimal and exact. It suppresses drift reporting, so a key
+// added here stops being watched. Matching is on the full dotted path, so a
+// top-level "view" is unaffected, and the project.owner / project.number /
+// repositories alerting from #792 is untouched.
+var driftExcludedKeys = map[string]bool{
+	"project.view": true,
+}
+
+// isDriftExcluded reports whether a change description refers to an excluded
+// key. Descriptions are formatted as "Changed: project.view", "Added: x" or
+// "Removed: x" by diffMaps.
+func isDriftExcluded(change string) bool {
+	parts := strings.SplitN(change, ": ", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	return driftExcludedKeys[parts[1]]
+}
+
+// diffJSON compares two JSON documents and returns change descriptions, the
+// unchanged top-level keys, and how many changes were dropped as
+// tool-written (driftExcludedKeys).
+//
+// The dropped count is what lets CompareContent tell "nothing changed but our
+// own bookkeeping" apart from "changed in some way diffMaps could not name" —
+// the two are both an empty change list, but only the first is not drift.
+func diffJSON(local, committed []byte) (changes []string, unchanged []string, dropped int) {
 	var localMap, committedMap map[string]interface{}
 
 	if err := json.Unmarshal(local, &localMap); err != nil {
-		return []string{"Local config is not valid JSON"}, nil
+		return []string{"Local config is not valid JSON"}, nil, 0
 	}
 	if err := json.Unmarshal(committed, &committedMap); err != nil {
-		return []string{"Committed config is not valid JSON"}, nil
+		return []string{"Committed config is not valid JSON"}, nil, 0
 	}
 
 	diffMaps("", localMap, committedMap, &changes)
 
-	if len(changes) == 0 {
+	// Drop tool-written keys before anything else looks at the list, so they
+	// never reach a report or the unchanged-key tally below.
+	kept := changes[:0]
+	for _, c := range changes {
+		if isDriftExcluded(c) {
+			dropped++
+			continue
+		}
+		kept = append(kept, c)
+	}
+	changes = kept
+
+	// Bytes differ but no key does: a formatting-only edit, which has always
+	// been reported. Suppress it only when an excluded key explains the
+	// difference, otherwise real reformatting would go unreported.
+	if len(changes) == 0 && dropped == 0 {
 		changes = append(changes, "Content differs (whitespace or formatting change)")
 	}
 
@@ -185,7 +244,7 @@ func diffJSON(local, committed []byte) (changes []string, unchanged []string) {
 	// Sort for deterministic output
 	sort.Strings(unchanged)
 
-	return changes, unchanged
+	return changes, unchanged, dropped
 }
 
 // diffMaps recursively compares two maps and appends change descriptions.

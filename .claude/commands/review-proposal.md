@@ -1,5 +1,5 @@
 ---
-version: "v0.93.0"
+version: "v0.96.2"
 description: Review a proposal with tracked history (project)
 argument-hint: "#issue [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -62,17 +62,21 @@ After evaluating `path-analysis-present`, if ⚠️ or ❌ (section missing):
    - "Continue without" — record ⚠️ and resume
 3. If already ✅: no prompt, continue normally.
 
+**Step 2a-iv: Prior-Art Sweep When Marker Absent (#2517)**
+Trigger: `prior-art-checked` ❌ (absent, or `PARTIAL` — incomplete sweep, treated as absent, re-swept). Covers `proposal`-labelled issues redirected here. Delegate, do not re-derive: `node -e "console.log(JSON.stringify(require('./.claude/scripts/shared/lib/prior-art-marker.js').decideSweep({body:BODY,createdAt:CREATED_AT,reviewSweep:REVIEW_SWEEP})))"` → `{sweep, status, reason}`; report the criterion with that `status`.
+`pass` = complete marker, no sweep/write. `fail` = absent/`PARTIAL` under mode `full`, sweep. `recommend` ⚠️ = absent/`PARTIAL` under mode `recommend` (default) — **no sweep/write**; report ⚠️ with the `formatSweepAdvisory()` text naming the runnable command, **not** ❌, which would downgrade nearly every review since `--prior-art` is opt-in and rarely passed. `skip` ⊘ = mode `flag-only`/`off`, no sweep/write — report ⊘, **not** ❌, which downgrades every review in an opted-out project. `not-applicable` = predates the feature (pinned cutoff).
+**Arguments — substitute from the named source; never a literal placeholder.** `BODY` ← `context.issue.body`; `CREATED_AT` ← **`context.issue.createdAt`** (ISO 8601, added #2539); `REVIEW_SWEEP` ← `framework-config.json` `reviewSweep` (absent = `recommend`, #2564; call `require('./.claude/scripts/shared/lib/framework-config.js').ensureReviewSweep(process.cwd())` first to materialize it — second writer alongside Praxis Hub Manager; fills a missing key only, leaves a legacy boolean for read-time migration). Reached through the preamble's redirect branch, which carries the same `context.issue`, so no second call is needed.
+**`createdAt` decides whether the criterion means anything.** `isExemptFromSweep` treats absent/unparseable as exempt — safe, but it makes `decideSweep` return `not-applicable` for *every* unmarked proposal; before #2539 the preamble emitted no such field, so that is what happened. Never substitute a hand-entered date. A `CREATED_AT_UNAVAILABLE` preamble warning → say so in the criterion rather than reporting a bare `not-applicable`.
+**Sweeping:** run the #2514 procedure reading `.claude/metadata/prior-art-sweep.json` (surfaces, excludes, terms, dispositions, formats) — not restated here. **Output:** findings in the review; write `**Prior Art:**` via `insertPriorArtSection` into both `Proposal/[Name].md` and the tracking issue body.
+**Ordering is load-bearing.** Write **here, before Step 3** updates `**Reviews:** N`; a write during or after Step 3 races it — both read-modify-write the same content, later wins, loser vanishes silently. **Recommendation:** prior art duplicating the proposal's scope is blocking — `Needs revision`+. **Missing config:** `prior-art-sweep.json` unreadable → report criterion, warn, skip sweep; do not fail the review.
+
 **Step 2b: Ask Subjective Criteria**
 Load subjective criteria from `proposal-review-criteria.json`. **Scope Context Display:** extract scope section and present inline before asking. Handle missing scope gracefully (not an error). Use `AskUserQuestion` with each criterion's `question`/`header`/`options`. Partial reviews valid — record skipped as "⊘ Skipped". **Solo mode:** skip entirely.
 
 **Step 2c: Extension Criteria** (if `--with` specified)
 Evaluate extension criteria loaded by preamble. Auto-evaluate objective; ask subjective.
 
-**Step 2d: Determine Recommendation**
-- **Ready for implementation** — No blocking concerns
-- **Ready with minor revisions** — Small issues
-- **Needs revision** — Should be addressed first
-- **Needs major rework** — Fundamental issues
+**Step 2d: Determine Recommendation** — one of: **Ready for implementation** (no blocking concerns) / **Ready with minor revisions** (small issues) / **Needs revision** (address first) / **Needs major rework** (fundamental issues).
 
 Extension findings can **escalate** but cannot downgrade.
 **Applicability Filtering:** Omit extension domain sections with no applicable findings. Only domains with findings appear in `**Extensions Applied:**`. If no findings with `--with`, fall back to standard with warning. At least one domain section must appear when `--with` is used.

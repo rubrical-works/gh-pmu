@@ -1,5 +1,5 @@
 ---
-version: "v0.93.0"
+version: "v0.96.2"
 description: Create GitHub epics/stories from PRD (project)
 argument-hint: "<issue-number> (e.g., 151)"
 copyright: "Rubrical Works (c) 2026"
@@ -120,6 +120,15 @@ Read `PRD/{name}/PRD-{name}.md` and extract Epics, Stories, Acceptance criteria.
 
 **Fallback:** If Test-Strategy.md missing, check `{frameworkPath}/IDPF-Agile/Agile-Core.md` for defaults and warn.
 
+**Preserve the `(Human)` marker (#2508).** Rows marked `✓ (Human) …` are human gates, not automated test cases:
+
+| Test plan row | Emit as |
+|---|---|
+| `✓ <assertion>` | `- [ ] <assertion>` (ordinary DoD checkbox) |
+| `✓ (Human) <assertion>` | `- [ ] <assertion> → GATE: review` (out-of-phase gate) |
+
+**Do NOT flatten a `(Human)` row into an undifferentiated plain checkbox** — that discards the one signal a downstream gate uses to tell an intentionally-open gate from unfinished work, and is what deadlocked every sub-issue of epic #2491 (`✓ (Human) /review-issue approval recorded per story` became a bare DoD checkbox, uncheckable before `in_review`). Two further rules: **strip any command name the row claims is doing the reviewing** unless that command's documented scope covers reviewing implemented content (`/review-issue` reviews a *specification* and evaluates no implemented work — emit the human action, not the command); and if the row is work another command's checklist already owns (`phaseFeasibility.ownedElsewhere`), **drop** it rather than annotating — see Phase 6.
+
 ## Phase 5: Create Epic Issues
 
 For each epic. Use `gh pmu create` (auto-adds to project board):
@@ -152,9 +161,25 @@ Stories will be linked as sub-issues.
 
 Cleanup: `rm .tmp-epic-body.md`
 
-## Phase 5.5: AC Feasibility Re-Check (#2425)
-For each PRD AC about to be materialized into a story body in Phase 6, apply the `verificationGate` prompt from `.claude/metadata/ac-feasibility-prompts.json`: scan against `triggerPhrases`; on match, Grep `tests/` for the mechanism; if absent, surface a warning. **Warn, do not block** — PRDs may pre-date the gate. Record warnings in materialized story body under a new `## AC Feasibility Warnings` section. **ASK USER** per warning (batched at end of phase): (a) rewrite AC inline, (b) accept + file follow-up, or (c) spike. Asymmetric with `/create-prd` Phase 4.6 (block) by design — drafting vs. materialization.
+**Success Criteria — never fabricate (#2508).** `{Success criteria from PRD}` is a placeholder for PRD-supplied content. When the PRD's epic section has **no** Success Criteria heading, the slot has no source. **Do NOT synthesize criteria from the epic's child stories, and do NOT invent them** — an empty template slot is a gap to surface, not a prompt to generate. Epic #2491 got "8 specialists rewritten in opinion-dense format … each user-reviewed via `/review-issue`" this way: pulled up out of the child stories, inheriting their unsatisfiable review gate.
 
+When the PRD supplies none: (1) emit `## Success Criteria` with `_Not specified in the PRD. Add before this epic is worked._`; (2) record the gap in the Phase 7 summary and report `⚠️ Epic "{Epic Name}": PRD section has no Success Criteria. Created with the slot marked unspecified.`; (3) continue — warns, does not block.
+
+**Success Criteria — apply the AC gates.** When the PRD *does* supply criteria, they are ACs. Re-read `.claude/metadata/ac-feasibility-prompts.json` from disk and apply **`deliverableSplit`** (its `appliesTo` names `epic success criteria`; a criterion bundling deliverable + verification must be split, since one checkbox cannot express a satisfied deliverable alongside an unsatisfiable verification) and **`phaseFeasibility`** (condition resolving after the epic reaches `in_review` → annotate `→ GATE: review` / `→ GATE: release`; work another command's checklist owns → drop per `ownedElsewhere`).
+
+## Phase 5.5: AC Feasibility Re-Check (#2425, #2508)
+For each PRD AC about to be materialized into a story body in Phase 6, apply the `verificationGate` **and** `phaseFeasibility` prompts from `.claude/metadata/ac-feasibility-prompts.json` (re-read from disk): scan against both `triggerPhrases` lists.
+
+**`verificationGate` match:** Grep `tests/` for the named mechanism; if absent, surface a warning. **Warn, do not block** — PRDs may pre-date the gate. Record warnings in the materialized story body under a new `## AC Feasibility Warnings` section. **ASK USER** per warning (batched at end of phase): (a) rewrite AC inline, (b) accept + file follow-up, or (c) spike. Asymmetric with `/create-prd` Phase 4.6 (block) by design — drafting vs. materialization.
+
+**`phaseFeasibility` rewrites, it does not merely warn.** The questions are not equivalent: `verificationGate` asks whether a mechanism *exists* (renegotiable later); `phaseFeasibility` asks whether the AC can *close in time*, and materializing it unchanged guarantees a deadlocked `in_review` that no implementer can resolve without `--force`. Apply `phaseFeasibility.actionIfOutOfPhase`:
+
+| Disposition | When | Emit |
+|---|---|---|
+| **Drop** | Work appears in `phaseFeasibility.ownedElsewhere` — another command's checklist discharges it (CHANGELOG, tagging, release publication → `/prepare-release`) | Nothing. Note the drop in the report; do **not** emit or annotate a story checkbox |
+| **Annotate** | Gate is genuinely load-bearing (required human review or sign-off) | `- [ ] {acText} → GATE: {phase}` per `phaseFeasibility.annotationFormat` |
+
+Report both dispositions (`Annotated → GATE: review — "{acText}"` / `Dropped (owned by /prepare-release) — "{acText}"`) so the user sees what changed on the way in.
 ## Phase 6: Create Story Issues
 
 For each story:
@@ -177,10 +202,21 @@ Link to epic: `gh pmu sub add {epic_number} {story_number} || true`. Cleanup: `r
 | **Description** | PRD user story (As a / I want / So that) |
 | **Relevant Skills** | `framework-config.json` → `projectSkills` |
 | **Acceptance Criteria** | PRD AC checkbox list |
-| **Documentation** | Standard checkboxes (atomic) |
+| **Files to modify** | PRD `## Technical Notes` + per-story codebase analysis — see derivation below |
+| **Documentation** | Standard checkboxes **verbatim** — closed set, see below |
 | **TDD Test Cases** | ⬇️ EXTENDED (replaces placeholder) |
 | **Definition of Done** | ⬇️ EXTENDED (replaces base) |
 | **Priority** | PRD priority (P0/P1/P2) |
+
+**Files to modify — derivation (#2521).** Derive from the PRD’s `## Technical Notes` + codebase analysis. Format, marker, and empty case are defined in `/add-story` — do NOT restate them here.
+
+**`## Technical Notes` may be read for this.** Its "Do not create issues from this section" annotation governs issue *creation* (stops a hint becoming its own story); deriving the file list of a story that already exists is not that. By this point the proposal, PRD, and both reviews have settled the technical shape — the files are known here, not rediscovered at work time. **Thin/absent Technical Notes → codebase analysis** of the story’s ACs against the repo, as `/review-issue` Step 2a-ii does. Nothing inferable → the template’s `N/A` case.
+
+**Per story, never per epic.** Each story declares only the files its own ACs implicate. An epic-level union declares everything and constrains nothing — it defeats the gate.
+
+**Documentation section — CLOSED SET (#2508).** Emit exactly the two standard checkboxes from `/add-story` Phase 3 (design decisions, tech debt). **Do not add, invent, or infer additional Documentation checkboxes** — not from the PRD, not from the story text, not from what seems obviously needed. The `- [ ] Note the drop in CHANGELOG at release time` AC that deadlocked #2494 came from here: it appears in **neither** the PRD nor the test plan and is not in the standard template; it was generated at story-authoring time because it looked reasonable. That is the failure mode — a plausible checkbox with no upstream requirement and no way to close inside the story.
+
+**Release-phase work is never a story checkbox.** `/prepare-release` owns the CHANGELOG end to end (writes the section, commits it, carries its own `- [ ] CHANGELOG updated`); tagging, release notes, and asset verification are the same. A story-level checkbox for any of these is not merely uncheckable — it duplicates an obligation another command already discharges and creates a second place to mark it done. Authoritative list: `phaseFeasibility.ownedElsewhere` in `.claude/metadata/ac-feasibility-prompts.json`. Documentation work that genuinely belongs to this story goes in **Acceptance Criteria** as a deliverable that closes here.
 
 #### TDD Test Cases Extension
 

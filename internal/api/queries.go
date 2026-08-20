@@ -662,6 +662,155 @@ func (c *Client) GetProjectItems(projectID string, filter *ProjectItemsFilter) (
 	)
 }
 
+// backlogViewName is the view name resolution looks for. Matching is
+// whitespace-trimmed and case-insensitive, but it is equality — "Backlog
+// Archive" is a different view, not a Backlog.
+const backlogViewName = "backlog"
+
+// boardLayout is the ProjectV2ViewLayout value identifying a board view.
+//
+// ProjectV2ViewLayout is a closed three-value enum (BOARD_LAYOUT,
+// TABLE_LAYOUT, ROADMAP_LAYOUT), none deprecated, so comparing the decoded
+// string against a literal is safe. A future fourth value simply fails to
+// match rather than selecting the wrong view.
+const boardLayout = "BOARD_LAYOUT"
+
+// isBacklogBoardView reports whether v is the Backlog board.
+//
+// Layout is checked before name deliberately. A project can hold several views
+// named "Backlog" in different layouts; filtering on position alone would pick
+// whichever came first, which may be the table.
+func isBacklogBoardView(v ProjectView) bool {
+	return v.Layout == boardLayout &&
+		strings.EqualFold(strings.TrimSpace(v.Name), backlogViewName)
+}
+
+// ResolveBacklogViewNumber returns the number of the project's first Backlog
+// view with a BOARD_LAYOUT layout, in POSITION order — the left-to-right tab
+// order the user sees.
+//
+// The three ways this can come up empty are deliberately kept apart (#901):
+//
+//	no such owner    -> ErrOwnerNotFound
+//	no such project  -> ErrProjectNotFound
+//	no Backlog view  -> (0, false, nil)
+//
+// Collapsing them would make a typo'd owner login read as a missing view and
+// send the user looking in the wrong place. The third is not an error at all:
+// GitHub has no createProjectV2View mutation, so a board without a Backlog
+// view is a fact to report, never something to repair.
+//
+// A single query serves both personal and org-owned boards via repositoryOwner
+// -> ... on ProjectV2Owner, which User and Organization both implement. This
+// differs from GetProject's try-user-then-org pattern on purpose: that pattern
+// joins the two failures with errors.Join, and a joined error cannot tell a
+// missing owner from a missing project — the misattribution fixed in #861.
+func (c *Client) ResolveBacklogViewNumber(owner string, number int) (int, bool, error) {
+	matches, err := collectPages(
+		func(cursor *string) ([]ProjectView, pageInfo, error) {
+			return c.getProjectViewsPage(owner, number, cursor)
+		},
+		isBacklogBoardView,
+		1, // stop at the first match — later pages cannot beat it in POSITION order
+	)
+	if err != nil {
+		return 0, false, err
+	}
+	if len(matches) == 0 {
+		return 0, false, nil
+	}
+	return matches[0].Number, true, nil
+}
+
+// getProjectViewsPage fetches a single page of a project's views.
+//
+// orderBy is passed explicitly even though the schema already defaults it to
+// {field: POSITION, direction: ASC}. Relying on a server-side default means a
+// change to it silently reorders our results; stating the intent keeps the
+// "first match wins" contract in ResolveBacklogViewNumber honest.
+func (c *Client) getProjectViewsPage(owner string, number int, cursor *string) ([]ProjectView, pageInfo, error) {
+	var query struct {
+		RepositoryOwner struct {
+			TypeName       string `graphql:"__typename"`
+			ProjectV2Owner struct {
+				ProjectV2 struct {
+					ID    string
+					Views struct {
+						Nodes []struct {
+							ID     string
+							Number int
+							Name   string
+							Layout string
+						}
+						PageInfo struct {
+							HasNextPage bool
+							EndCursor   string
+						}
+						// first: 50 is a literal because shurcooL-graphql reads the page
+						// size out of this struct tag — it cannot be a constant. GitHub caps
+						// connection pages at 100; 50 keeps responses small and the cursor
+						// loop below still runs, because a second page is rare, not absent (#860).
+					} `graphql:"views(first: 50, after: $cursor, orderBy: {field: POSITION, direction: ASC})"`
+				} `graphql:"projectV2(number: $number)"`
+			} `graphql:"... on ProjectV2Owner"`
+		} `graphql:"repositoryOwner(login: $owner)"`
+	}
+
+	if err := validateOwner(owner); err != nil {
+		return nil, pageInfo{}, err
+	}
+
+	gqlNumber, err := safeGraphQLInt(number)
+	if err != nil {
+		return nil, pageInfo{}, err
+	}
+
+	// owner and number travel as variables, never interpolated into the
+	// document text (#832, #835).
+	variables := map[string]interface{}{
+		"owner":  graphql.String(owner),
+		"number": gqlNumber,
+		"cursor": (*graphql.String)(nil),
+	}
+	if cursor != nil {
+		variables["cursor"] = graphql.String(*cursor)
+	}
+
+	if err := c.gql.Query("GetProjectViews", &query, variables); err != nil {
+		// Propagate rather than treating a failed request as an empty view
+		// list — that would report "no Backlog view" for a transient 502 or a
+		// token missing read:project.
+		return nil, pageInfo{}, fmt.Errorf("failed to fetch views for project %s/%d: %w", owner, number, err)
+	}
+
+	// A null repositoryOwner leaves __typename empty; a null projectV2 leaves
+	// its non-null ID empty. Checking owner first matters — when the login does
+	// not resolve, the project is absent too, and reporting that as a missing
+	// project would point at the wrong argument.
+	if query.RepositoryOwner.TypeName == "" {
+		return nil, pageInfo{}, fmt.Errorf("%w: no user or organization named %q", ErrOwnerNotFound, owner)
+	}
+	project := query.RepositoryOwner.ProjectV2Owner.ProjectV2
+	if project.ID == "" {
+		return nil, pageInfo{}, fmt.Errorf("%w: %s has no project number %d", ErrProjectNotFound, owner, number)
+	}
+
+	views := make([]ProjectView, 0, len(project.Views.Nodes))
+	for _, n := range project.Views.Nodes {
+		views = append(views, ProjectView{
+			ID:     n.ID,
+			Number: n.Number,
+			Name:   n.Name,
+			Layout: n.Layout,
+		})
+	}
+
+	return views, pageInfo{
+		HasNextPage: project.Views.PageInfo.HasNextPage,
+		EndCursor:   project.Views.PageInfo.EndCursor,
+	}, nil
+}
+
 // pageInfo holds pagination information from GraphQL responses
 type pageInfo struct {
 	HasNextPage bool

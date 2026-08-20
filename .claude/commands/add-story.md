@@ -1,5 +1,5 @@
 ---
-version: "v0.93.0"
+version: "v0.96.2"
 description: Add story to epic with charter compliance (project)
 argument-hint: "[epic-number] (e.g., 42 or #42)"
 copyright: "Rubrical Works (c) 2026"
@@ -48,8 +48,17 @@ gh issue view $epic_num --json labels --jq '.labels[].name' | grep -q "epic"
 If not an epic: `Error: Issue #$epic_num does not have the 'epic' label.`
 **Step 4: Gather story details**
 **ASK USER:** Describe the new story — what can the user do, benefit, acceptance criteria.
-**Step 4a: AC Feasibility Gate (#2424)**
-Re-read `.claude/metadata/ac-feasibility-prompts.json`. Apply `classify`, `verificationGate`, `deliverableSplit` to each AC. If any verification AC matches `triggerPhrases` and no existing test uses that mechanism (verify via Grep), **ASK USER** to (a) rewrite, (b) commit to a feasibility spike + issue number, or (c) accept weaker mechanism. Do not proceed to Step 5 until each flagged AC resolved. Trigger list is heuristic; prompts are load-bearing.
+**Step 4a: AC Feasibility Gate (#2424, #2508)**
+Re-read `.claude/metadata/ac-feasibility-prompts.json`. Apply `classify`, `verificationGate`, `deliverableSplit`, `phaseFeasibility` to each AC. If any verification AC matches `triggerPhrases` and no existing test uses that mechanism (verify via Grep), **ASK USER** to (a) rewrite, (b) commit to a feasibility spike + issue number, or (c) accept weaker mechanism. Do not proceed to Step 5 until each flagged AC resolved. Trigger list is heuristic; prompts are load-bearing.
+
+**`phaseFeasibility` (#2508)** asks what `verificationGate` does not: can this AC close inside the workflow phase that owns it? An AC can name a mechanism that exists and still be unsatisfiable — "user-reviewed and approved before merge" names a real review whose output does not exist when the box must be checked. Apply `phaseFeasibility.actionIfOutOfPhase`:
+
+| Disposition | When | Result |
+|---|---|---|
+| **Drop** | Work appears in `phaseFeasibility.ownedElsewhere` — CHANGELOG, tagging, release publication belong to `/prepare-release`'s checklist | Do not author the AC at all; tell the user which command owns it |
+| **Annotate** | Gate is genuinely load-bearing (required human review or sign-off) | Author as `- [ ] {acText} → GATE: {phase}` per `phaseFeasibility.annotationFormat` |
+
+Prefer annotation over deletion when the requirement is real — the goal is to stop the gate deadlocking `in_review`, not to remove the requirement.
 **Step 5: Transform to story format**
 | User Input | Story Field |
 |------------|-------------|
@@ -87,8 +96,9 @@ gh pmu create --repo {repository} \
   --body "{story_body}" \
   --status backlog \
   --priority {priority} \
-  --assignee @me
+  --assignee {assignee}
 ```
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
 **Story Body Template:**
 > **⚠️ ATOMIC TEMPLATE — All sections below are REQUIRED.**
 > Every story MUST include ALL sections. No section may be omitted.
@@ -114,11 +124,19 @@ Load skill: `read {frameworkPath}/Skills/{skill-name}/SKILL.md`
 - [ ] {Criterion 1}
 - [ ] {Criterion 2}
 - [ ] {Criterion 3}
+**Files to modify:**
+- `{path/to/file}`
+- `{path/to/another/file}`
+
+**REQUIRED — `N/A` when empty.** List only files *this story’s* ACs implicate. Purely behavioral ACs → marker + `N/A`, never omission (atomic-template rule above). Step 4c treats `N/A` and absent identically.
+**Bold marker is load-bearing — do NOT normalize to a `###` heading.** Step 4c’s gate parses this with `extractFilesToModify` (`.claude/scripts/shared/scope-drift-check.js`), which matches only the literal line `**Files to modify:**`. A `### Files to Modify` heading declares zero paths silently → story reaches the gate with `Declared scope: none`. Same reason: no blank line between marker and first bullet (terminates the section); every path backticked (only backticked spans extracted). A table fails both at once — #2523.
 ### Documentation (if applicable)
 - [ ] Design decisions documented (update existing or create `Construction/Design-Decisions/YYYY-MM-DD-{topic}.md`)
 - [ ] Tech debt logged (update existing or create `Construction/Tech-Debt/YYYY-MM-DD-{topic}.md`)
 
 **Guidelines:** Skip trivial findings. Update existing docs rather than duplicating. For significant tech debt, create an enhancement issue.
+
+**CLOSED SET (#2508).** These two checkboxes are the complete Documentation section. **Do not add or invent additional Documentation checkboxes** — none may be inferred from the story text, the PRD, or what seems obviously needed. `/create-backlog` applies the same rule when materializing this template. **Release-phase work is never a Documentation checkbox:** `/prepare-release` owns the CHANGELOG end to end (writes the section, commits it, carries its own `- [ ] CHANGELOG updated`); tagging, release notes, and asset verification are the same. A story-level checkbox for any of them cannot close inside the story *and* duplicates an obligation another command already discharges. Authoritative list: `phaseFeasibility.ownedElsewhere` in `.claude/metadata/ac-feasibility-prompts.json`. Documentation work that genuinely belongs to this story goes in **Acceptance Criteria** as a deliverable that closes here.
 ### TDD Test Cases
 **Note:** Test cases added when story work begins. See test plan for related cases.
 ### Definition of Done

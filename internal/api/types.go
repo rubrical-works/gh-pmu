@@ -32,6 +32,19 @@ type ProjectOwner struct {
 	Login string
 }
 
+// ProjectView represents a view (board, table or roadmap tab) within a
+// GitHub Projects v2 project.
+//
+// Number is a creation ordinal starting at 1 that is never backfilled, so it
+// is not a position: deleting the first view leaves the second numbered 2.
+// Order comes from the connection, not from this field (#901).
+type ProjectView struct {
+	ID     string
+	Number int
+	Name   string
+	Layout string // ProjectV2ViewLayout: BOARD_LAYOUT, TABLE_LAYOUT or ROADMAP_LAYOUT
+}
+
 // ProjectField represents a field in a GitHub project
 type ProjectField struct {
 	ID       string

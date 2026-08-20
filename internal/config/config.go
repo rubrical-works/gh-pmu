@@ -22,7 +22,6 @@ type Config struct {
 	Defaults     Defaults          `yaml:"defaults,omitempty" json:"defaults,omitempty"`
 	Fields       map[string]Field  `yaml:"fields,omitempty" json:"fields,omitempty"`
 	Triage       map[string]Triage `yaml:"triage,omitempty" json:"triage,omitempty"`
-	Release      Release           `yaml:"release,omitempty" json:"release,omitempty"`
 	Acceptance   *Acceptance       `yaml:"acceptance,omitempty" json:"acceptance,omitempty"`
 	Metadata     *Metadata         `yaml:"metadata,omitempty" json:"metadata,omitempty"`
 }
@@ -32,6 +31,12 @@ type Project struct {
 	Name   string `yaml:"name,omitempty" json:"name,omitempty"`
 	Number int    `yaml:"number" json:"number"`
 	Owner  string `yaml:"owner" json:"owner"`
+	// View is the number of the project's first Backlog view with a BOARD_LAYOUT
+	// layout, resolved from the API and cached here (#901). omitempty keeps configs
+	// that predate resolution byte-identical. Zero means unresolved, never view 1:
+	// view numbers are creation ordinals starting at 1 and are never backfilled, so
+	// org-owned boards routinely start at 2.
+	View int `yaml:"view,omitempty" json:"view,omitempty"`
 }
 
 // Defaults contains default values for new issues
@@ -198,6 +203,16 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// HasResolvedView reports whether project.view holds a usable view number.
+//
+// GitHub view numbers are creation ordinals starting at 1, so zero means the
+// field was absent (omitempty) and anything below zero means the config was
+// hand-edited into an invalid state. Both are treated as unresolved rather than
+// as a value, which keeps a bogus {projectUrl}/views/0 URL from being built (#901).
+func (c *Config) HasResolvedView() bool {
+	return c.Project.View >= 1
 }
 
 // ResolveFieldValue maps an alias to its actual GitHub field value.
@@ -382,161 +397,6 @@ func (c *Config) AddFieldMetadata(field FieldMetadata) {
 
 	// Add new field
 	c.Metadata.Fields = append(c.Metadata.Fields, field)
-}
-
-// Release contains release management configuration
-type Release struct {
-	Tracks    map[string]TrackConfig `yaml:"tracks,omitempty" json:"tracks,omitempty"`
-	Artifacts *ArtifactConfig        `yaml:"artifacts,omitempty" json:"artifacts,omitempty"`
-	Coverage  *CoverageConfig        `yaml:"coverage,omitempty" json:"coverage,omitempty"`
-}
-
-// CoverageConfig contains configuration for release coverage gates
-type CoverageConfig struct {
-	Enabled      *bool    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	Threshold    int      `yaml:"threshold,omitempty" json:"threshold,omitempty"`
-	SkipPatterns []string `yaml:"skip_patterns,omitempty" json:"skip_patterns,omitempty"`
-}
-
-// ArtifactConfig contains configuration for release artifacts
-type ArtifactConfig struct {
-	Directory    string `yaml:"directory,omitempty" json:"directory,omitempty"`
-	ReleaseNotes bool   `yaml:"release_notes,omitempty" json:"release_notes,omitempty"`
-	Changelog    bool   `yaml:"changelog,omitempty" json:"changelog,omitempty"`
-}
-
-// TrackConfig contains configuration for a release track
-type TrackConfig struct {
-	Prefix      string            `yaml:"prefix" json:"prefix"`
-	Default     bool              `yaml:"default,omitempty" json:"default,omitempty"`
-	Constraints *TrackConstraints `yaml:"constraints,omitempty" json:"constraints,omitempty"`
-}
-
-// TrackConstraints contains constraints for a release track
-type TrackConstraints struct {
-	Version string            `yaml:"version,omitempty" json:"version,omitempty"`
-	Labels  *LabelConstraints `yaml:"labels,omitempty" json:"labels,omitempty"`
-}
-
-// LabelConstraints contains label requirements for a track
-type LabelConstraints struct {
-	Required  []string `yaml:"required,omitempty" json:"required,omitempty"`
-	Forbidden []string `yaml:"forbidden,omitempty" json:"forbidden,omitempty"`
-}
-
-// GetTrackPrefix returns the prefix for a given track name
-// Returns "v" for stable track if not configured
-func (c *Config) GetTrackPrefix(track string) string {
-	if c.Release.Tracks == nil {
-		// Default prefixes when not configured
-		switch track {
-		case "stable", "":
-			return "v"
-		default:
-			return track + "/"
-		}
-	}
-
-	if cfg, ok := c.Release.Tracks[track]; ok {
-		return cfg.Prefix
-	}
-
-	// Default for unconfigured tracks
-	if track == "stable" || track == "" {
-		return "v"
-	}
-	return track + "/"
-}
-
-// GetDefaultTrack returns the default track name
-func (c *Config) GetDefaultTrack() string {
-	if c.Release.Tracks != nil {
-		for name, cfg := range c.Release.Tracks {
-			if cfg.Default {
-				return name
-			}
-		}
-	}
-	return "stable"
-}
-
-// GetTrackConstraints returns constraints for a track, or nil if none
-func (c *Config) GetTrackConstraints(track string) *TrackConstraints {
-	if c.Release.Tracks == nil {
-		return nil
-	}
-	if cfg, ok := c.Release.Tracks[track]; ok {
-		return cfg.Constraints
-	}
-	return nil
-}
-
-// FormatReleaseFieldValue formats a version with the track prefix
-func (c *Config) FormatReleaseFieldValue(version, track string) string {
-	prefix := c.GetTrackPrefix(track)
-	return prefix + version
-}
-
-// GetArtifactDirectory returns the base artifact directory
-func (c *Config) GetArtifactDirectory() string {
-	if c.Release.Artifacts != nil && c.Release.Artifacts.Directory != "" {
-		return c.Release.Artifacts.Directory
-	}
-	return "Releases"
-}
-
-// GetArtifactPath returns the full artifact path for a release
-// For stable: Releases/v1.0.0
-// For other tracks: Releases/patch/v1.1.1
-func (c *Config) GetArtifactPath(version, track string) string {
-	baseDir := c.GetArtifactDirectory()
-	if track == "stable" || track == "" {
-		return fmt.Sprintf("%s/%s", baseDir, version)
-	}
-	return fmt.Sprintf("%s/%s/%s", baseDir, track, version)
-}
-
-// ShouldGenerateReleaseNotes returns whether release notes should be generated
-func (c *Config) ShouldGenerateReleaseNotes() bool {
-	if c.Release.Artifacts == nil {
-		return true // Default to true
-	}
-	return c.Release.Artifacts.ReleaseNotes
-}
-
-// ShouldGenerateChangelog returns whether changelog should be generated
-func (c *Config) ShouldGenerateChangelog() bool {
-	if c.Release.Artifacts == nil {
-		return true // Default to true
-	}
-	return c.Release.Artifacts.Changelog
-}
-
-// IsCoverageGateEnabled returns whether coverage gate is enabled (default: true)
-func (c *Config) IsCoverageGateEnabled() bool {
-	if c.Release.Coverage == nil || c.Release.Coverage.Enabled == nil {
-		return true // Default to enabled
-	}
-	return *c.Release.Coverage.Enabled
-}
-
-// GetCoverageThreshold returns the minimum patch coverage percentage (default: 80)
-func (c *Config) GetCoverageThreshold() int {
-	if c.Release.Coverage == nil || c.Release.Coverage.Threshold == 0 {
-		return 80 // Default threshold
-	}
-	return c.Release.Coverage.Threshold
-}
-
-// GetCoverageSkipPatterns returns patterns to exclude from coverage analysis
-func (c *Config) GetCoverageSkipPatterns() []string {
-	if c.Release.Coverage == nil {
-		return []string{"*_test.go", "mock_*.go"}
-	}
-	if len(c.Release.Coverage.SkipPatterns) == 0 {
-		return []string{"*_test.go", "mock_*.go"}
-	}
-	return c.Release.Coverage.SkipPatterns
 }
 
 // TempDirName is the name of the temporary directory within the project root

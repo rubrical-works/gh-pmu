@@ -9,14 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rubrical-works/gh-pmu/internal/api"
 	"github.com/rubrical-works/gh-pmu/internal/config"
 	"github.com/rubrical-works/gh-pmu/internal/integrity"
 	"github.com/spf13/cobra"
 )
 
 type configVerifyOptions struct {
-	dir    string
-	remote bool
+	dir         string
+	remote      bool
+	resolveView bool
 }
 
 func newConfigCommand() *cobra.Command {
@@ -42,7 +44,11 @@ Compares the local config against the last committed version (git HEAD)
 and reports any differences. Optionally compares against origin/main.
 
 In strict mode (configIntegrity: "strict" in .gh-pmu.json), returns
-a non-zero exit code when drift is detected.`,
+a non-zero exit code when drift is detected.
+
+Verification is read-only. Pass --resolve-view to additionally resolve
+the Backlog board view number from the API and write it to project.view;
+that is the one mode in which this command modifies the config.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runConfigVerify(cmd, opts)
 		},
@@ -50,6 +56,7 @@ a non-zero exit code when drift is detected.`,
 
 	cmd.Flags().StringVar(&opts.dir, "dir", "", "Directory to search for config (default: current directory)")
 	cmd.Flags().BoolVar(&opts.remote, "remote", false, "Also compare against origin/main")
+	cmd.Flags().BoolVar(&opts.resolveView, "resolve-view", false, "Re-resolve project.view even when it is already set")
 
 	return cmd
 }
@@ -72,6 +79,29 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 	configDir := filepath.Dir(configPath)
 	configName := filepath.Base(configPath)
 	out := cmd.OutOrStdout()
+
+	// project.view resolution is opt-in. Plain `config verify` stays read-only,
+	// as its name and help text promise — a verification run that rewrites the
+	// thing it verifies is a surprise, and it would need network and auth for a
+	// command that otherwise needs neither.
+	//
+	// When it does run, it runs before the local file is read: the comparison
+	// below hashes whatever is on disk at that moment, so resolving afterwards
+	// would make this run report the write it just performed.
+	if opts.resolveView {
+		cfg, cfgErr := config.Load(configPath)
+		if cfgErr != nil {
+			return fmt.Errorf("cannot resolve project.view: %w", cfgErr)
+		}
+		client, clientErr := api.NewClient()
+		if clientErr != nil {
+			// Explicitly asked for, so say why it did not happen — but do not
+			// fail the verification the user also asked for.
+			fmt.Fprintf(out, "Warning: could not resolve project.view: %v\n", clientErr)
+		} else if err := resolveAndPersistView(cfg, configPath, client, out, true); err != nil {
+			return err
+		}
+	}
 
 	// Read local config
 	localContent, err := os.ReadFile(configPath)
@@ -182,6 +212,66 @@ func runConfigVerify(cmd *cobra.Command, opts *configVerifyOptions) error {
 		return fmt.Errorf("config integrity check failed (strict mode) — resolve drift before continuing")
 	}
 
+	return nil
+}
+
+// backlogViewResolver is the slice of the API client that view resolution
+// needs. Narrowing it to one method keeps the resolve logic testable without a
+// network client or a gh auth token.
+type backlogViewResolver interface {
+	ResolveBacklogViewNumber(owner string, number int) (int, bool, error)
+}
+
+// resolveAndPersistView fills in project.view and writes it to configPath.
+//
+// This is the single explicit resolve site, deliberately not a side effect of
+// config.LoadFromDirectory. The config is read up to four times per invocation
+// (runYAMLMigration, checkAcceptance, runIntegrityCheck, then the subcommand's
+// own load), so a hook on load would fire a network call and a file write
+// several times for one command.
+//
+// Three outcomes, kept apart:
+//
+//   - a view is found      -> written, checksum refreshed
+//   - the board has none   -> reported, nothing written, never defaulted to 1
+//   - resolution failed    -> warned, nothing written, and NOT an error
+//
+// The last one matters: making a resolve failure fatal would turn config verify
+// into a command that cannot run offline or unauthenticated, which is a worse
+// outcome than an unresolved cache field.
+//
+// force re-resolves a value that is already present. Without it an existing
+// value is left alone, because a number already in the config is the user's —
+// possibly hand-corrected — and silently overwriting it would discard that.
+func resolveAndPersistView(cfg *config.Config, configPath string, resolver backlogViewResolver, w io.Writer, force bool) error {
+	if cfg.HasResolvedView() && !force {
+		return nil
+	}
+
+	number, found, err := resolver.ResolveBacklogViewNumber(cfg.Project.Owner, cfg.Project.Number)
+	if err != nil {
+		fmt.Fprintf(w, "Warning: could not resolve the Backlog board view: %v\n", err)
+		return nil
+	}
+	if !found {
+		fmt.Fprintf(w, "Note: project %s/%d has no Backlog board view — project.view left unset.\n",
+			cfg.Project.Owner, cfg.Project.Number)
+		return nil
+	}
+
+	cfg.Project.View = number
+	if err := cfg.Save(filepath.Dir(configPath)); err != nil {
+		// Fail loud. The checksum is deliberately not touched: recording a
+		// checksum for a file that was not written would describe a state that
+		// does not exist on disk.
+		return fmt.Errorf("failed to persist project.view: %w", err)
+	}
+
+	if err := integrity.UpdateChecksumForConfig(configPath); err != nil {
+		return fmt.Errorf("project.view was written but its checksum could not be updated: %w", err)
+	}
+
+	fmt.Fprintf(w, "Resolved project.view = %d (Backlog board view).\n", number)
 	return nil
 }
 
