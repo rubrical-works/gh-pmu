@@ -84,6 +84,64 @@ func TestRefreshConfigVersionInDir_CurrentVersion_LeavesBytesUnchanged(t *testin
 	}
 }
 
+func TestRefreshConfigVersionInDir_RepoRootProtected_DoesNotWrite(t *testing.T) {
+	// go test ./cmd/ runs with the package directory as cwd, and FindConfigFile
+	// walks up to the repository's own .gh-pmu.json. Without this guard every
+	// command test that goes through PersistentPreRunE rewrites the real config
+	// — the #436 class of defect, and the reason writeConfig carries the same
+	// check.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/x\n"), 0644); err != nil {
+		t.Fatalf("Failed to write go.mod: %v", err)
+	}
+	cfg := baseConfig()
+	cfg.Version = "1.1.0"
+	path := writeTestConfig(t, dir, cfg)
+
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	setRepoRootProtectionForTest(t, true)
+
+	var buf bytes.Buffer
+	refreshConfigVersionInDir(dir, "1.5.3", &buf)
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to re-read config: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("Expected no write to a protected repo root")
+	}
+}
+
+func TestRefreshConfigVersionInDir_RepoRootUnprotected_StillWrites(t *testing.T) {
+	// The guard is scoped to test protection; real users running gh pmu at a
+	// repository root must still get their version stamped.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/x\n"), 0644); err != nil {
+		t.Fatalf("Failed to write go.mod: %v", err)
+	}
+	cfg := baseConfig()
+	cfg.Version = "1.1.0"
+	path := writeTestConfig(t, dir, cfg)
+
+	setRepoRootProtectionForTest(t, false)
+
+	var buf bytes.Buffer
+	refreshConfigVersionInDir(dir, "1.5.3", &buf)
+
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Failed to reload config: %v", err)
+	}
+	if reloaded.Version != "1.5.3" {
+		t.Errorf("Expected version rewritten to '1.5.3', got '%s'", reloaded.Version)
+	}
+}
+
 func TestShouldRefreshVersion_HonorsExemptCommands(t *testing.T) {
 	// checkAcceptance and runDailyIntegrityCheck both skip these; the version
 	// refresh must agree or 'gh pmu help' would write the config.

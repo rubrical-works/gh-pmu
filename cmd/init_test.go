@@ -746,10 +746,7 @@ func TestIsRepoRoot_InvalidPath(t *testing.T) {
 // ============================================================================
 
 func TestSetRepoRootProtection_EnablesProtection(t *testing.T) {
-	// Reset protection state after test
-	defer SetRepoRootProtection(false)
-
-	SetRepoRootProtection(true)
+	setRepoRootProtectionForTest(t, true)
 
 	tmpDir := t.TempDir()
 	// Create go.mod to simulate repo root
@@ -771,7 +768,7 @@ func TestSetRepoRootProtection_EnablesProtection(t *testing.T) {
 }
 
 func TestSetRepoRootProtection_DisabledAllowsWrite(t *testing.T) {
-	SetRepoRootProtection(false)
+	setRepoRootProtectionForTest(t, false)
 
 	tmpDir := t.TempDir()
 	// Create go.mod to simulate repo root
@@ -793,10 +790,7 @@ func TestSetRepoRootProtection_DisabledAllowsWrite(t *testing.T) {
 }
 
 func TestWriteConfigWithMetadata_RepoRootProtection(t *testing.T) {
-	// Reset protection state after test
-	defer SetRepoRootProtection(false)
-
-	SetRepoRootProtection(true)
+	setRepoRootProtectionForTest(t, true)
 
 	tmpDir := t.TempDir()
 	// Create go.mod to simulate repo root

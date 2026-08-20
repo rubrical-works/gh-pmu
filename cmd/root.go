@@ -160,6 +160,14 @@ func refreshConfigVersion(cmd *cobra.Command) {
 // takes the config directory outright rather than resolving it from the process
 // working directory.
 func refreshConfigVersionInDir(dir string, currentVersion string, w io.Writer) {
+	// Same safety check writeConfig carries. go test ./cmd/ runs with the package
+	// directory as cwd and FindConfigFile walks up to the repository's own
+	// .gh-pmu.json, so without this every command test that reaches
+	// PersistentPreRunE would rewrite the real config (#436).
+	if protectRepoRoot.Load() && isRepoRoot(dir) {
+		return
+	}
+
 	if _, err := os.Stat(filepath.Join(dir, config.ConfigFileName)); err != nil {
 		// No config file — expected for uninitialized repos
 		return
