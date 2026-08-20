@@ -857,6 +857,9 @@ gh pmu config verify --remote
 
 # Check config in a specific directory
 gh pmu config verify --dir /path/to/repo
+
+# Resolve and persist the Backlog board view number
+gh pmu config verify --resolve-view
 ```
 
 **Flags:**
@@ -864,6 +867,7 @@ gh pmu config verify --dir /path/to/repo
 |------|---------|
 | `--remote` | Also compare against origin/main |
 | `--dir` | Directory to search for config (default: current directory) |
+| `--resolve-view` | Resolve the Backlog board view number and persist it as `project.view` |
 
 **Daily Auto-Check:**
 On the first `gh pmu` command each day, the tool automatically compares local `.gh-pmu.json` against HEAD and warns if drift is detected. This check is throttled to once per day.
@@ -872,7 +876,7 @@ On the first `gh pmu` command each day, the tool automatically compares local `.
 Add `"configIntegrity": "strict"` to `.gh-pmu.json` to block command execution when config drift is detected.
 
 **Checksum File:**
-A `.gh-pmu.checksum` file (gitignored) stores the SHA-256 hash of the known-good config. Updated automatically when config is written via `gh pmu accept` or `gh pmu field`.
+A `.gh-pmu.checksum` file (gitignored) stores the SHA-256 hash of the known-good config. Updated automatically when config is written via `gh pmu accept`, `gh pmu field`, or `gh pmu config verify --resolve-view`. There is no command that re-blesses the checksum after a deliberate hand-edit; `config verify` reports the mismatch but does not clear it.
 
 ---
 

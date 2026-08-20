@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-08-19
+
+Released as a patch rather than the minor `recommend-version.js` suggested,
+following the same reasoning as 1.5.1: the v1.5.x line is scoped to stabilizing
+v1.5.0's correctness work. `config verify --resolve-view` is a new flag and is
+technically additive, but it exists to make the drift report correct rather than
+to add a capability.
+
+### Added
+- `gh pmu config verify --resolve-view` resolves the Backlog board view number via `repositoryOwner` and persists it as `project.view` in `.gh-pmu.json` (#901)
+
+### Fixed
+- `project.view` is excluded from the config drift comparison, so a tool-written view no longer reads as unauthorized modification (#901)
+- `Save` no longer writes an empty `"release": {}` key into `.gh-pmu.json`. `Config.Release` was a non-pointer struct tagged `omitempty`, which `encoding/json` does not omit, so the key reappeared after every write (#902)
+
+### Removed
+- The `release` config section and its `tracks`/`artifacts`/`coverage` sub-config, along with the six types and eleven getters over them. Nothing outside the config package's own tests read any of it; #504 removed `release.active` and `cache.releases` but left the enclosing block behind (#902)
+- `docs/configuration.md` no longer documents a `release` section. It described a coverage gate "for /prepare-release" in stale YAML syntax; the gate script hardcodes its own threshold and never read the config (#902)
+
+### Compatibility
+- A `.gh-pmu.json` written by an older gh-pmu that still carries a populated `release` block loads without error or warning — `Load` uses plain `json.Unmarshal`, which ignores unknown keys. Covered by a regression test (#902)
+
+
 ## [1.5.1] - 2026-07-28
 
 Released as a patch rather than the minor `recommend-version.js` suggested. The
