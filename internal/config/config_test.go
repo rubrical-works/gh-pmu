@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2010,6 +2011,122 @@ func TestRefreshVersion_ChangesOnlyTheVersionValueBytes(t *testing.T) {
 
 	// Keys the Config struct does not model are deliberately outside this
 	// comparison: Save drops them, which is tracked separately as #910.
+}
+
+// configWriteSite is one os.WriteFile call that targets ConfigFileName.
+type configWriteSite struct {
+	file string
+	line int
+}
+
+// findConfigWriteSites walks the module for non-test Go files containing an
+// os.WriteFile call whose destination is built from ConfigFileName.
+//
+// The destination is identified by looking a few lines above the call for a
+// ConfigFileName reference, which is how all known writers are shaped:
+//
+//	jsonPath := filepath.Join(dir, ConfigFileName)
+//	if err := os.WriteFile(jsonPath, jsonData, 0600); err != nil {
+func findConfigWriteSites(t *testing.T, root string) []configWriteSite {
+	t.Helper()
+	const lookback = 5
+	var sites []configWriteSite
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			// Vendored and fixture trees are not ours to police.
+			switch info.Name() {
+			case ".git", "vendor", "testdata", "node_modules":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			if !strings.Contains(line, "os.WriteFile(") {
+				continue
+			}
+			start := i - lookback
+			if start < 0 {
+				start = 0
+			}
+			if !strings.Contains(strings.Join(lines[start:i+1], "\n"), "ConfigFileName") {
+				continue
+			}
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				rel = path
+			}
+			sites = append(sites, configWriteSite{file: filepath.ToSlash(rel), line: i + 1})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to walk %s: %v", root, err)
+	}
+	return sites
+}
+
+func TestNoWriterBypassesTheNewlineEmittingPath(t *testing.T) {
+	// The byte assertions above cannot catch this. A fourth writer that
+	// marshals and writes .gh-pmu.json inline would leave every one of them
+	// green and still strip the trailing newline — which is exactly the defect
+	// review caught on this branch, in a different codebase (px-manager#1042).
+	//
+	// Counting per file rather than pinning line numbers is deliberate: an
+	// edit anywhere above a call would shift a pinned line and fail the test
+	// for a reason unrelated to what it guards. A new writer changes the count,
+	// which is the condition worth failing on.
+	want := map[string]int{
+		"internal/config/config.go": 1, // Config.Save
+		"cmd/init.go":               2, // writeConfig, writeConfigWithMetadata
+	}
+
+	sites := findConfigWriteSites(t, filepath.Join("..", ".."))
+
+	got := make(map[string]int, len(want))
+	for _, s := range sites {
+		got[s.file]++
+	}
+
+	for file, n := range got {
+		if want[file] == 0 {
+			t.Errorf("New writer of %s found at %s — it must route through Config.Save, "+
+				"or append '\\n' itself as the existing writers do", ConfigFileName, describeSites(sites, file))
+			continue
+		}
+		if n != want[file] {
+			t.Errorf("%s: expected %d writer(s) of %s, found %d at %s",
+				file, want[file], ConfigFileName, n, describeSites(sites, file))
+		}
+	}
+	for file, n := range want {
+		if got[file] == 0 {
+			t.Errorf("%s: expected %d writer(s) of %s, found none — if a writer moved, "+
+				"update this guard so it keeps covering it", file, n, ConfigFileName)
+		}
+	}
+}
+
+// describeSites renders the file:line list for one file, for failure messages.
+func describeSites(sites []configWriteSite, file string) string {
+	var out []string
+	for _, s := range sites {
+		if s.file == file {
+			out = append(out, fmt.Sprintf("%s:%d", s.file, s.line))
+		}
+	}
+	return strings.Join(out, ", ")
 }
 func TestSave_DoesNotWriteYAMLCompanion(t *testing.T) {
 	// ARRANGE: Save a config and verify no YAML companion is created
