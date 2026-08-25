@@ -1878,6 +1878,87 @@ func TestRefreshVersion_NoConfig_ReturnsErrorWithoutWriting(t *testing.T) {
 		t.Error("Expected RefreshVersion not to create a config file")
 	}
 }
+
+// assertTrailingNewline fails unless data ends with exactly one 0x0a.
+//
+// The assertion is on raw bytes on purpose. Every existing config test reaches
+// the file through Load or json.Unmarshal, and a JSON round-trip cannot observe
+// a trailing newline at all — the byte is outside the document. That blind spot
+// is why the newline could go missing without a single test turning red.
+func assertTrailingNewline(t *testing.T, data []byte, what string) {
+	t.Helper()
+	if len(data) == 0 {
+		t.Fatalf("%s: file is empty, expected a trailing newline", what)
+	}
+	if data[len(data)-1] != '\n' {
+		t.Errorf("%s: expected final byte 0x0a, got %#x (tail: %q)", what, data[len(data)-1], tailOf(data))
+		// The "exactly one" check below reads the byte before the last one. With
+		// no trailing newline at all that byte is the newline MarshalIndent puts
+		// before the closing brace, which would report a spurious second failure.
+		return
+	}
+	if len(data) >= 2 && data[len(data)-2] == '\n' {
+		t.Errorf("%s: expected exactly one trailing newline, found more than one (tail: %q)", what, tailOf(data))
+	}
+}
+
+// tailOf returns the last few bytes of data for use in failure messages.
+func tailOf(data []byte) string {
+	const n = 8
+	if len(data) <= n {
+		return string(data)
+	}
+	return string(data[len(data)-n:])
+}
+
+func TestSave_WritesExactlyOneTrailingNewline(t *testing.T) {
+	// ARRANGE
+	testDir := t.TempDir()
+	cfg := &Config{
+		Version:      "1.5.3",
+		Project:      Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"test-owner/test-repo"},
+	}
+
+	// ACT
+	if err := cfg.Save(testDir); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// ASSERT
+	data, err := os.ReadFile(filepath.Join(testDir, ConfigFileName))
+	if err != nil {
+		t.Fatalf("Failed to read saved config: %v", err)
+	}
+	assertTrailingNewline(t, data, "Config.Save")
+}
+
+func TestRefreshVersion_WritesExactlyOneTrailingNewline(t *testing.T) {
+	// ARRANGE: a stale config written without a trailing newline, so a passing
+	// result proves RefreshVersion emitted one rather than preserving one.
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("Failed to write JSON config: %v", err)
+	}
+
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
+
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if !wrote {
+		t.Fatal("Expected RefreshVersion to report a write for a stale version")
+	}
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to read refreshed config: %v", err)
+	}
+	assertTrailingNewline(t, data, "RefreshVersion")
+}
 func TestSave_DoesNotWriteYAMLCompanion(t *testing.T) {
 	// ARRANGE: Save a config and verify no YAML companion is created
 	testDir := t.TempDir()
