@@ -528,3 +528,59 @@ func TestSaveCallSiteInventoryIsUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// legacyReleaseConfigJSON is a config in the pre-#902 shape, with release fully
+// populated. It matches the fixture in TestLoad_PopulatedReleaseBlock_IsIgnored
+// deliberately: that test owns the load half of this guarantee, this one owns
+// the write half, and they should be describing the same file.
+const legacyReleaseConfigJSON = `{
+  "project": {"name": "gh-pmu", "number": 11, "owner": "rubrical-worker"},
+  "repositories": ["rubrical-worker/gh-pmu"],
+  "release": {
+    "tracks": {"stable": {"prefix": "v", "default": true}},
+    "artifacts": {"directory": "Releases", "release_notes": true},
+    "coverage": {"enabled": true, "threshold": 80}
+  }
+}
+`
+
+// TestLoad_PopulatedReleaseBlock_LoadsSilentlyAndSurvivesSave records what #910
+// changes about the release block, which is the one unmodeled key known to
+// exist in real configs today.
+//
+// #902's fourth acceptance criterion still holds unchanged: the block loads with
+// no error and no warning. That half is guaranteed by construction rather than
+// by assertion — Load takes no writer and returns only (*Config, error), so
+// there is nowhere for a warning to go.
+//
+// What is new is the second half. Before #910 the block loaded silently and was
+// then deleted by the next write. Now it loads silently and stays. That is a
+// deliberate consequence of preserving unmodeled keys generally, not a partial
+// revert of #902: the Release struct is still gone, nothing reads the block, and
+// TestSave_OmitsReleaseKey still requires that a config which never carried one
+// does not acquire one.
+func TestLoad_PopulatedReleaseBlock_LoadsSilentlyAndSurvivesSave(t *testing.T) {
+	// ARRANGE
+	dir, path := seedConfigFile(t, legacyReleaseConfigJSON)
+
+	// ACT
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Expected a populated release block to load cleanly, got: %v", err)
+	}
+	if err := cfg.Save(dir); err != nil {
+		t.Fatalf("Expected Save to succeed; got %v", err)
+	}
+
+	// ASSERT: the block came back whole, not merely present.
+	assertRawKeyValue(t, path, "release",
+		`{"tracks":{"stable":{"prefix":"v","default":true}},`+
+			`"artifacts":{"directory":"Releases","release_notes":true},`+
+			`"coverage":{"enabled":true,"threshold":80}}`)
+
+	// And the struct still does not model it: nothing here re-introduces a
+	// Release field, it is carried as opaque bytes.
+	if _, modeled := modeledConfigKeys["release"]; modeled {
+		t.Error("Config models a release key again — #902 removed it and #910 does not restore it")
+	}
+}
