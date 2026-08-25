@@ -1,13 +1,35 @@
-# Proposal: GitLab Provider Support
+# Proposal: Multi-Provider Support
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Draft
 **Created:** 2026-08-25
-**Updated:** 2026-08-25 — platform survey folded in (see Revision History)
+**Updated:** 2026-08-25 — retitled from GitLab Provider Support (see Revision History)
 **Author:** AI Assistant
 **Tracking Issue:** #909
 **Diagrams:** None
 **Companion:** Decision document — "The GitLab Seam" (Artifact)
+
+---
+
+## Scope
+
+This proposal decides two things:
+
+1. **Should gh-pmu grow a provider abstraction**, so that commands run against
+   platforms other than GitHub?
+2. **Which platform validates it first**, and in what order do others follow?
+
+It recommends yes to the first, and **GitLab Premium** to the second. Other
+candidates — OneDev, Gitea, Forgejo — are assessed here as comparators that
+establish whether the abstraction is worth building at all, not as parallel
+proposals. See **Candidate Platforms**.
+
+A platform earns its own proposal once the abstraction exists and it becomes an
+implementation decision rather than a comparison — with
+`**Predecessor:** PROPOSAL-Multi-Provider-Support.md`, matching the convention
+in `PROPOSAL-Integration-Test-Alternatives.md`. For OneDev the trigger is
+**Phase 2 complete and an instance running**, since its API is documented only
+from a live instance and any estimate before that is a guess.
 
 ---
 
@@ -429,3 +451,4 @@ until an instance exists.
 |---------|------|--------|
 | 1.0 | 2026-08-25 | Initial proposal. Assumed scoped labels as the primary encoding; assumed Gitea/Forgejo were plausible targets. |
 | 1.1 | 2026-08-25 | Platform survey folded in. Primary encoding changed to native work item custom fields; Free/CE reclassified as non-viable; Gitea and Forgejo disqualified on missing board APIs; OneDev added as strongest structural fit; risk revised High → Medium-high. |
+| 1.2 | 2026-08-25 | Retitled from *GitLab Provider Support* and renamed from `PROPOSAL-GitLab-Provider-Support.md`. The document decides the provider abstraction and its first target, not GitLab support alone, and the old title undersold that. Added **Scope**, including the trigger at which a candidate platform earns its own proposal. |
