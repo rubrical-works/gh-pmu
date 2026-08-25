@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -330,5 +331,200 @@ func TestSave_OutputIsUnchangedWhenNoUnmodeledKeysArePresent(t *testing.T) {
 	}
 	if string(got) != savedConfigGolden {
 		t.Errorf("Saved config differs from the pre-#910 output.\n--- want ---\n%s\n--- got ---\n%s", savedConfigGolden, got)
+	}
+}
+
+// The five call sites of Save must all behave the same way (#910). They do,
+// because preservation is a property of Save itself rather than of any caller —
+// so what these tests cover is the two conditions that could break that:
+// a caller saving a Config it built rather than one it loaded, and a sixth
+// caller appearing that does neither.
+//
+// The two in-package call sites are exercised directly below. The three in cmd/
+// share one shape — load, mutate, save — which TestLoadMutateSave_... pins down
+// at the package boundary, since reaching them for real would mean standing up
+// command plumbing to test a property that is not theirs.
+
+func TestLoadFromDirectoryAndNormalize_PreservesUnmodeledKeysWhenItSavesUnasked(t *testing.T) {
+	// ARRANGE: an unmodeled key and no framework key. The missing framework is
+	// what makes this path write at all — it normalises to IDPF and saves. This
+	// is the worst of the five triggers, because it is a load function that
+	// writes: no command the user typed reads as a write, and before this change
+	// the key was gone by the time anything else ran.
+	dir, path := seedConfigFile(t, `{
+  "version": "1.5.2",
+  "project": {"number": 11, "owner": "test-owner"},
+  "repositories": ["test-owner/test-repo"],
+  "customField": "value"
+}
+`)
+
+	// ACT
+	cfg, err := LoadFromDirectoryAndNormalize(dir)
+	if err != nil {
+		t.Fatalf("Expected the config to load; got %v", err)
+	}
+
+	// ASSERT: the normalisation happened, and it did not cost the unmodeled key.
+	if cfg.Framework != "IDPF" {
+		t.Errorf("Expected framework to normalise to IDPF, got %q", cfg.Framework)
+	}
+	assertRawKeyValue(t, path, "customField", `"value"`)
+}
+
+func TestRefreshVersion_PreservesUnmodeledKeys(t *testing.T) {
+	// ARRANGE: a stale version, so the refresh writes.
+	dir, path := seedConfigFile(t, `{
+  "version": "1.1.0",
+  "project": {"number": 11, "owner": "test-owner"},
+  "repositories": ["test-owner/test-repo"],
+  "framework": "IDPF-Agile",
+  "customField": "value"
+}
+`)
+
+	// ACT
+	wrote, err := RefreshVersion(dir, "1.5.3")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if !wrote {
+		t.Fatal("Expected RefreshVersion to report a write for a stale version")
+	}
+
+	// ASSERT
+	assertRawKeyValue(t, path, "version", `"1.5.3"`)
+	assertRawKeyValue(t, path, "customField", `"value"`)
+}
+
+func TestLoadMutateSave_PreservesUnmodeledKeys(t *testing.T) {
+	// ARRANGE: the shape cmd/accept.go, cmd/field.go and cmd/config.go all share
+	// — each loads the existing config, changes one modeled field, and saves the
+	// same value it loaded. That last part is what makes preservation reach them:
+	// a caller that built a fresh Config instead would carry no overflow, and no
+	// amount of care inside Save could recover it.
+	dir, path := seedConfigFile(t, unmodeledConfigJSON)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Expected the seeded config to load; got %v", err)
+	}
+
+	// ACT
+	cfg.Framework = "IDPF-Agile"
+	if err := cfg.Save(dir); err != nil {
+		t.Fatalf("Expected Save to succeed; got %v", err)
+	}
+
+	// ASSERT
+	assertRawKeyValue(t, path, "framework", `"IDPF-Agile"`)
+	assertRawKeyValue(t, path, "customField", `"value"`)
+	assertRawKeyValue(t, path, "experimental", `{"nested":true,"count":3}`)
+}
+
+// assertRawKeyValue reads the file at path and asserts that key holds exactly
+// wantCompact, compared as compacted JSON so indentation does not enter into it.
+func assertRawKeyValue(t *testing.T, path, key, wantCompact string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read %s: %v", path, err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("%s is not valid JSON: %v", path, err)
+	}
+	raw, ok := got[key]
+	if !ok {
+		t.Errorf("Key %q is absent from the saved config. File:\n%s", key, data)
+		return
+	}
+	var compacted bytes.Buffer
+	if err := json.Compact(&compacted, raw); err != nil {
+		t.Fatalf("Value of %q is not valid JSON: %v", key, err)
+	}
+	if compacted.String() != wantCompact {
+		t.Errorf("Value of %q:\n  want: %s\n  got:  %s", key, wantCompact, compacted.String())
+	}
+}
+
+// TestSaveCallSiteInventoryIsUnchanged fails when the set of Save callers
+// changes, so a new one gets the same look the five current ones were given.
+//
+// What it proves: the inventory the fourth acceptance criterion enumerates is
+// still the whole inventory. What it does not prove: that a caller saves the
+// Config it loaded rather than one it built. That distinction is the one thing
+// preservation actually depends on at the call site, and it is not decidable
+// from a line-level scan — so it is checked by hand when this test fails, which
+// is the only moment it needs checking.
+//
+// Complementary to the guard in config_test.go covering os.WriteFile against
+// ConfigFileName: that one catches a writer that bypasses Save altogether, this
+// one catches a caller of Save that nobody has looked at yet. Neither subsumes
+// the other.
+func TestSaveCallSiteInventoryIsUnchanged(t *testing.T) {
+	want := map[string]int{
+		"cmd/accept.go":             1, // gh pmu accept
+		"cmd/field.go":              1, // gh pmu field mutations
+		"cmd/config.go":             1, // resolveAndPersistView
+		"internal/config/config.go": 2, // LoadFromDirectoryAndNormalize, RefreshVersion
+	}
+
+	got := map[string][]int{}
+	root := filepath.Join("..", "..")
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			switch info.Name() {
+			case ".git", "vendor", "testdata", "node_modules":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			rel = path
+		}
+		rel = filepath.ToSlash(rel)
+		for i, line := range strings.Split(string(data), "\n") {
+			trimmed := strings.TrimSpace(line)
+			// A prose mention is not a call site. internal/integrity/integrity.go
+			// says "Call this after config.Save()" in a doc comment.
+			if strings.HasPrefix(trimmed, "//") || !strings.Contains(line, ".Save(") {
+				continue
+			}
+			got[rel] = append(got[rel], i+1)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to walk %s: %v", root, err)
+	}
+
+	for file, lines := range got {
+		if want[file] == 0 {
+			t.Errorf("New caller of Save in %s at line(s) %v. Confirm it saves a Config it loaded "+
+				"rather than one it constructed, then add it here and to the fourth acceptance "+
+				"criterion of #910.", file, lines)
+			continue
+		}
+		if len(lines) != want[file] {
+			t.Errorf("%s: expected %d Save call site(s), found %d at line(s) %v",
+				file, want[file], len(lines), lines)
+		}
+	}
+	for file, n := range want {
+		if len(got[file]) == 0 {
+			t.Errorf("%s: expected %d Save call site(s), found none — if one moved, update this "+
+				"guard so it keeps covering it", file, n)
+		}
 	}
 }
