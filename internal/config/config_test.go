@@ -1959,6 +1959,58 @@ func TestRefreshVersion_WritesExactlyOneTrailingNewline(t *testing.T) {
 	}
 	assertTrailingNewline(t, data, "RefreshVersion")
 }
+
+func TestRefreshVersion_ChangesOnlyTheVersionValueBytes(t *testing.T) {
+	// ARRANGE: seed through Save so the file is already in canonical form.
+	// Seeding with hand-written JSON would make the first refresh reformat the
+	// whole document, and the test would pass or fail on formatting rather than
+	// on what the refresh changed.
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+	cfg := &Config{
+		Version:      "1.1.0",
+		Project:      Project{Name: "gh-pmu", Owner: "test-owner", Number: 11, View: 2},
+		Repositories: []string{"test-owner/test-repo", "test-owner/other-repo"},
+		Framework:    "IDPF-Agile",
+		Defaults:     Defaults{Priority: "P2", Status: "Backlog", Labels: []string{"needs-triage"}},
+		Fields:       map[string]Field{"status": {Field: "Status", Values: map[string]string{"wip": "In Progress"}}},
+	}
+	if err := cfg.Save(testDir); err != nil {
+		t.Fatalf("Failed to seed config: %v", err)
+	}
+	before, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to read seeded config: %v", err)
+	}
+
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if !wrote {
+		t.Fatal("Expected RefreshVersion to report a write for a stale version")
+	}
+
+	// ASSERT: the only permitted difference is the version value itself.
+	// Comparing raw bytes catches indentation drift, key reordering and a lost
+	// trailing newline in one assertion — none of which a JSON round-trip or a
+	// field-by-field struct comparison can see.
+	after, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to read refreshed config: %v", err)
+	}
+	want := bytes.Replace(before, []byte(`"version": "1.1.0"`), []byte(`"version": "1.5.3"`), 1)
+	if bytes.Equal(want, before) {
+		t.Fatal("Test setup error: expected version string not found in the seeded config")
+	}
+	if !bytes.Equal(want, after) {
+		t.Errorf("RefreshVersion changed more than the version value.\n--- want ---\n%s\n--- got ---\n%s", want, after)
+	}
+
+	// Keys the Config struct does not model are deliberately outside this
+	// comparison: Save drops them, which is tracked separately as #910.
+}
 func TestSave_DoesNotWriteYAMLCompanion(t *testing.T) {
 	// ARRANGE: Save a config and verify no YAML companion is created
 	testDir := t.TempDir()
