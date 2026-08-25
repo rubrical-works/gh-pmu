@@ -2,10 +2,13 @@ package config
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -23,6 +26,132 @@ type Config struct {
 	Triage       map[string]Triage `yaml:"triage,omitempty" json:"triage,omitempty"`
 	Acceptance   *Acceptance       `yaml:"acceptance,omitempty" json:"acceptance,omitempty"`
 	Metadata     *Metadata         `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+
+	// unknown holds the top-level keys the file carried that this struct does
+	// not model, so Save can put them back rather than deleting them (#910).
+	// Unexported on purpose: encoding/json ignores it, so the overflow can never
+	// itself become a config key.
+	//
+	// Populated on the JSON path only. FindConfigFile resolves .gh-pmu.json and
+	// Save writes JSON, so no reachable path round-trips YAML.
+	unknown map[string]json.RawMessage
+}
+
+// modeledConfigKeys is the set of top-level JSON keys Config models, derived
+// from the struct tags rather than listed by hand. A hand-kept list would fall
+// out of date the first time a field was added, and the failure would be quiet:
+// the new field would be marshalled by the struct *and* replayed from the
+// overflow map, emitting the same key twice.
+var modeledConfigKeys = jsonObjectKeys(reflect.TypeOf(Config{}))
+
+// jsonObjectKeys returns the JSON key each exported field of t encodes to.
+func jsonObjectKeys(t reflect.Type) map[string]struct{} {
+	keys := make(map[string]struct{}, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.PkgPath != "" {
+			continue // unexported — never a JSON key
+		}
+		name := field.Name
+		if tag, ok := field.Tag.Lookup("json"); ok {
+			if tag == "-" {
+				continue // explicitly not encoded
+			}
+			if tagName, _, _ := strings.Cut(tag, ","); tagName != "" {
+				name = tagName
+			}
+		}
+		keys[name] = struct{}{}
+	}
+	return keys
+}
+
+// UnmarshalJSON decodes a config and captures every top-level key Config does
+// not model, so a later Save can write it back unchanged (#910).
+//
+// The read side stays exactly as tolerant as it was — unmodeled keys are still
+// accepted with no error and no warning, which is what #902's fourth acceptance
+// criterion requires of a config still carrying a populated `release` block.
+// What changes is only that the keys are now remembered instead of discarded.
+func (c *Config) UnmarshalJSON(data []byte) error {
+	// The alias sheds Config's methods, so this does not recurse.
+	type alias Config
+	if err := json.Unmarshal(data, (*alias)(c)); err != nil {
+		return err
+	}
+
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(data, &all); err != nil {
+		return err
+	}
+	for key := range all {
+		if _, modeled := modeledConfigKeys[key]; modeled {
+			delete(all, key)
+		}
+	}
+	if len(all) == 0 {
+		all = nil
+	}
+	c.unknown = all
+
+	return nil
+}
+
+// MarshalJSON writes the modeled fields followed by any keys captured at decode
+// time (#910).
+//
+// Those keys are spliced into the encoded struct rather than merged into a map
+// first. encoding/json emits struct fields in declaration order but map keys in
+// sorted order, so merging would silently realphabetise every existing config —
+// a diff in every repository on the next write, for no reason a user could see.
+// Splicing leaves the modeled keys where they have always been and appends the
+// rest.
+//
+// The result is compact. Save marshals through json.MarshalIndent, which
+// re-indents whatever this returns, so the captured values pick up the
+// surrounding indentation rather than keeping the whitespace they had on disk.
+func (c *Config) MarshalJSON() ([]byte, error) {
+	type alias Config
+	encoded, err := json.Marshal((*alias)(c))
+	if err != nil {
+		return nil, err
+	}
+	if len(c.unknown) == 0 {
+		return encoded, nil
+	}
+	// Splicing assumes an object; a struct always encodes to one. Checked so a
+	// future change to that assumption fails here rather than writing a
+	// corrupted config file.
+	if len(encoded) == 0 || encoded[len(encoded)-1] != '}' {
+		return nil, fmt.Errorf("failed to marshal %s: expected a JSON object, got %q", ConfigFileName, encoded)
+	}
+
+	// Sorted for determinism. The order these keys had in the file is not
+	// recoverable from encoding/json without a token-level decoder, and nothing
+	// depends on it.
+	keys := make([]string, 0, len(c.unknown))
+	for key := range c.unknown {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var buf bytes.Buffer
+	buf.Write(encoded[:len(encoded)-1])
+	for _, key := range keys {
+		if buf.Len() > 1 { // not the first member of the object
+			buf.WriteByte(',')
+		}
+		encodedKey, err := json.Marshal(key)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encodedKey)
+		buf.WriteByte(':')
+		buf.Write(c.unknown[key])
+	}
+	buf.WriteByte('}')
+
+	return buf.Bytes(), nil
 }
 
 // Project contains GitHub project configuration
