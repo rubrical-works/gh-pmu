@@ -1,5 +1,5 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Review a proposal with tracked history (project)
 argument-hint: "#issue [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -26,7 +26,7 @@ Reviews a proposal document linked from a GitHub issue. Delegates setup to `revi
 **REQUIRED:** Routed command — two-phase task creation:
 1. **Phase 1 — Preamble task only:** Create one task for preamble/setup via `TaskCreate`.
 2. **Phase 2 — Bulk create after routing:** After preamble confirms no redirect/early exit, bulk-create remaining tasks.
-3. **On redirect or early exit:** Mark preamble completed and stop. Do NOT create remaining tasks.
+3. **On redirect or early exit:** Mark preamble completed, prune the task list per Closing Notification and Cleanup part (2), then stop. Do NOT create remaining tasks.
 4. **Include Extensions:** Each non-empty `USER-EXTENSION` block → task in Phase 2.
 5. **Track Progress:** `in_progress` → `completed`.
 6. **Post-Compaction:** Re-read spec, resume from first incomplete task.
@@ -103,8 +103,8 @@ Available: security, accessibility, performance, chaos, contract, qa, seo, priva
 <!-- USER-EXTENSION-START: post-review -->
 <!-- USER-EXTENSION-END: post-review -->
 
-### Closing Notification
-Output `closingNotification` from finalize script output.
+### Closing Notification and Cleanup
+Two parts in order; the prune is **part of** this step, not a trailing step a reader can stop before. **(1)** Output `closingNotification` from finalize script output. **(2) Prune the task list** (unconditional — every path, including redirect and early-exit paths where Phase 1 created a preamble task and Phase 2 never ran): `TaskList` to enumerate, then `TaskUpdate status=deleted` for every task owned by this `/review-proposal` invocation (Phase 1 preamble, Phase 2 step tasks, `USER-EXTENSION` tasks). Do **not** delete tasks created outside this invocation (user TODOs).
 
 ## Error Handling
 | Situation | Response |

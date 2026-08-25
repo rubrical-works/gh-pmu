@@ -1,5 +1,5 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Review a PRD with tracked history (project)
 argument-hint: "#issue [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -26,7 +26,7 @@ Review a PRD document linked from a GitHub issue. Delegates setup to `review-pre
 **REQUIRED — routed command, two-phase task creation:**
 1. **Phase 1 — Preamble task only:** `TaskCreate` single preamble task.
 2. **Phase 2 — Bulk after routing:** After preamble confirms path, bulk-create remaining.
-3. **Redirect or early exit:** Mark preamble done, stop.
+3. **Redirect or early exit:** Mark preamble done, prune the task list per Closing Notification and Cleanup part (2), stop.
 4. **Extensions:** Active `USER-EXTENSION` block → Phase 2 task
 5. Mark `in_progress` → `completed`
 6. **Post-Compaction:** Re-read, resume first incomplete.
@@ -85,7 +85,10 @@ Write findings to `.tmp-$ISSUE-findings.json`, run:
 ```bash
 node ./.claude/scripts/shared/review-finalize.js $ISSUE -F .tmp-$ISSUE-findings.json
 ```
-Finalize handles: body metadata (`**Reviews:** N` increment), structured comment, label assignment (`reviewed`/`pending`). Clean up temp file.
+Finalize handles: body metadata (`**Reviews:** N` increment), structured comment, label assignment (`reviewed`/`pending`). Clean up temp file. **Read** `.claude/scripts/shared/lib/findings-schema.json` for contract structure, required fields, status values, recommendation values.
+**`type` MUST be `"prd"`** — not `"story"`, `"generic"`, omitted (#2594). Drives two behaviours:
+- **Header verb.** `review-finalize.js` derives `## PRD Review #N`. Any other value emits `## Issue Review #N`, which `/resolve-review` cannot reconcile with a PRD — reports `NO_REVIEW` against a review that exists.
+- **AC check-off suppression.** `prd` is tracker-shaped, so Step 5 leaves the tracker's lifecycle checklist alone instead of checking boxes positionally.
 Non-`--with`: append:
 ```
 Tip: Use --with security,performance to add domain-specific review criteria.
@@ -96,14 +99,15 @@ Available: security, accessibility, performance, chaos, contract, qa, seo, priva
 ```bash
 node .claude/scripts/shared/review-ac-checkoff.js --issue $ISSUE --findings .tmp-$ISSUE-findings.json
 ```
-Report: `"AC check-off: X/Y criteria checked off on issue #$ISSUE."` No status transition — `/create-backlog` owns it.
+Script reads `type` from findings JSON. With `type: "prd"` it returns `skipped: true` and checks off **nothing** — a PRD tracker's checklist is a 3-item lifecycle gate, not the ~20 review criteria, so positional check-off would check whichever box aligned with a passing criterion (#2594).
+Report the skip, not a count: `"AC check-off skipped: #$ISSUE is a PRD tracker; its Y lifecycle gates are owned by the commands that close them."` NEVER report `X/Y checked off` here — X is always 0. No status transition — `/create-backlog` owns it, and owns "Ready for backlog creation" too.
 **Otherwise:** skip entirely.
 
 <!-- USER-EXTENSION-START: post-review -->
 <!-- USER-EXTENSION-END: post-review -->
 
-### Closing Notification
-Output `closingNotification` from finalize output.
+### Closing Notification and Cleanup
+Two parts in order; the prune is **part of** this step, not a trailing step a reader can stop before. **(1)** Output `closingNotification` from finalize output. **(2) Prune the task list** (unconditional — every path, including redirect and early-exit paths where Phase 1 created a preamble task and Phase 2 never ran): `TaskList` to enumerate, then `TaskUpdate status=deleted` for every task owned by this `/review-prd` invocation (Phase 1 preamble, Phase 2 step tasks, `USER-EXTENSION` tasks). Do **not** delete tasks created outside this invocation (user TODOs).
 ---
 ## Error Handling
 | Situation | Response |

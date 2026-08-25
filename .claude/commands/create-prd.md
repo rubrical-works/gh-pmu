@@ -1,5 +1,5 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Transform proposal into Agile PRD
 argument-hint: "<issue-number> | extract [<directory>]"
 copyright: "Rubrical Works (c) 2026"
@@ -19,6 +19,7 @@ Load shared from `.claude/metadata/command-boilerplate.json` -> `prerequisites.c
 | `<issue-number>` | Proposal issue (`123` or `#123`) |
 | `extract` | Extract PRD from codebase (requires `/charter`) |
 | `extract <directory>` | Extract from specific directory |
+| `--assignee <value>` | GitHub login for the new issue. Omitted → `@me`. |
 
 ## Modes
 | Mode | Invocation | Description |
@@ -218,7 +219,7 @@ Create PRD at `PRD/{name}/PRD-{name}.md`. Load template `{frameworkPath}/Templat
 **Derivation:** parse each story's ACs; generate 2-3 test cases per AC (valid, invalid, edge); identify cross-story/cross-epic integration points; extract E2E scenarios from user journeys.
 
 ### Phase 6.6: Create Test Plan Approval Issue
-**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag. Applies to both `gh pmu create` calls below.
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee <value>` — pass the user's `--assignee` value, omit when none given. Helper returns that login, else `@me`; reads no config file. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag. Applies to both `gh pmu create` calls below.
 ```bash
 gh pmu create --label test-plan --label approval-required --assignee {assignee} \
   --title "Approve Test Plan: {Name}" \
@@ -382,5 +383,13 @@ fi
 - [ ] Out of scope explicitly stated
 - [ ] Open questions flagged
 - [ ] PRD is Create-Backlog compatible
+### Closing Cleanup
+Two parts, in order. The prune is **part of** this step, not a trailing step a reader can stop before — the closing output makes a run *feel* finished, so a prune placed after it never runs.
+**(1) Emit the closing output** described by the final step above.
+**(2) Prune the task list** (unconditional — every path, including early-exit paths where Phase 1 created tasks and later phases never ran):
+1. `TaskList` — enumerate all tasks.
+2. For every task owned by this `/create-prd` invocation, `TaskUpdate status=deleted`.
+3. Do **not** delete tasks created outside this invocation (user TODOs).
+
 
 **End of /create-prd Command**

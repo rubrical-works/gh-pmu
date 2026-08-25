@@ -1,5 +1,5 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Produce DTCG-compliant design tokens with pluggable adapter architecture (project)
 argument-hint: "[--init | --discover | --export <adapter> | --theme <name>]"
 copyright: "Rubrical Works (c) 2026"
@@ -156,5 +156,13 @@ Design-System/
 | Adapter crash | Warn, continue with others |
 | Unknown DTCG type | Error with valid type list |
 | Circular alias | Report cycle path, block write |
+### Closing Cleanup
+Two parts, in order. The prune is **part of** this step, not a trailing step a reader can stop before — the closing output makes a run *feel* finished, so a prune placed after it never runs.
+**(1) Emit the closing output** described by the final step above.
+**(2) Prune the task list** (unconditional — every path, including early-exit paths where Phase 1 created tasks and later phases never ran):
+1. `TaskList` — enumerate all tasks.
+2. For every task owned by this `/design-system` invocation, `TaskUpdate status=deleted`.
+3. Do **not** delete tasks created outside this invocation (user TODOs).
+
 ---
 **End of /design-system Command**
