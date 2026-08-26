@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -54,7 +55,7 @@ Use 'gh pmu <command> --help' for more information about a command.`,
 		Version: getVersion(),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			applyFallbackFlags(cmd)
-			runYAMLMigration(cmd)
+			refreshConfigVersion(cmd)
 			if err := checkAcceptance(cmd); err != nil {
 				return err
 			}
@@ -113,13 +114,30 @@ func applyFallbackFlags(cmd *cobra.Command) {
 	})
 }
 
-// runYAMLMigration performs a one-time migration to remove the legacy .gh-pmu.yml
-// file when .gh-pmu.json exists, and updates the config version.
-func runYAMLMigration(cmd *cobra.Command) {
+// shouldRefreshVersion reports whether the version refresh runs for a command.
+//
+// It mirrors the guard checkAcceptance and runDailyIntegrityCheck already apply:
+// the commands a user reaches for before a repo is configured must not write to
+// the config as a side effect of being run.
+func shouldRefreshVersion(name string) bool {
+	return !exemptCommands[name]
+}
+
+// refreshConfigVersion stamps the running version into .gh-pmu.json so the file
+// records which gh pmu version last wrote it.
+//
+// The check runs on every non-exempt command; the write happens only when the
+// stored version is stale (see config.RefreshVersion). Failures warn and never
+// abort the command — a version stamp is bookkeeping, not a precondition.
+func refreshConfigVersion(cmd *cobra.Command) {
+	if !shouldRefreshVersion(cmd.Name()) {
+		return
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		if os.Getenv("GH_PMU_DEBUG") != "" {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Debug: YAML migration skipped (getwd failed): %v\n", err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "Debug: version refresh skipped (getwd failed): %v\n", err)
 		}
 		return
 	}
@@ -130,13 +148,33 @@ func runYAMLMigration(cmd *cobra.Command) {
 		return
 	}
 
-	// Only migrate if we found a JSON config (not a YAML fallback)
+	// Only refresh a JSON config (not a YAML fallback)
 	if filepath.Ext(jsonPath) != ".json" {
 		return
 	}
 
-	if err := config.MigrateYAML(jsonPath, getVersion(), cmd.ErrOrStderr()); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: YAML migration failed: %v\n", err)
+	refreshConfigVersionInDir(filepath.Dir(jsonPath), getVersion(), cmd.ErrOrStderr())
+}
+
+// refreshConfigVersionInDir is the testable half of refreshConfigVersion: it
+// takes the config directory outright rather than resolving it from the process
+// working directory.
+func refreshConfigVersionInDir(dir string, currentVersion string, w io.Writer) {
+	// Same safety check writeConfig carries. go test ./cmd/ runs with the package
+	// directory as cwd and FindConfigFile walks up to the repository's own
+	// .gh-pmu.json, so without this every command test that reaches
+	// PersistentPreRunE would rewrite the real config (#436).
+	if protectRepoRoot.Load() && isRepoRoot(dir) {
+		return
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, config.ConfigFileName)); err != nil {
+		// No config file — expected for uninitialized repos
+		return
+	}
+
+	if _, err := config.RefreshVersion(dir, currentVersion); err != nil {
+		fmt.Fprintf(w, "Warning: config version refresh failed: %v\n", err)
 	}
 }
 

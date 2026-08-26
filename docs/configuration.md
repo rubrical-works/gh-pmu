@@ -152,6 +152,26 @@ When `framework` is set to an IDPF variant (e.g., `IDPF`, `IDPF-Agile`), automat
 **Disable validation:**
 - Remove the `framework` field or set to a non-IDPF value
 
+### How gh-pmu Writes This File
+
+Two behaviors change `.gh-pmu.json` without you editing it.
+
+**The `version` key is a stamp, not a setting.** It records the gh-pmu version
+that last wrote the file. Every non-exempt command compares it against the
+running binary and rewrites it when the two differ — so it tells you what wrote
+your config, not what created it. A matching version is *not* rewritten, so an
+up-to-date config keeps its mtime and its line endings. `version` is excluded
+from the drift comparison for this reason; a tool-written stamp is not
+unauthorized modification. Do not use this field to detect whether `gh pmu init`
+needs re-running — it always equals the running binary, so it can never report
+staleness.
+
+**Top-level keys gh-pmu does not recognize are preserved.** A config written by
+a newer gh-pmu, or carrying a key from an older one, survives a round-trip
+through a binary that knows nothing about it: unknown keys are read on load and
+written back in place, keeping their original position in the file. Only keys
+gh-pmu models are validated — an unrecognized key is carried, not checked.
+
 ### Config Integrity
 
 Optional integrity checking for `.gh-pmu.json`. When enabled in strict mode, commands are blocked if the local config differs from the committed version.

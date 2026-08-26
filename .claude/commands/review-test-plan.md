@@ -1,5 +1,5 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Review a test plan against its PRD (project)
 argument-hint: "#issue [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -24,7 +24,7 @@ Review a TDD test plan against its source PRD for coverage completeness. Delegat
 **REQUIRED — routed command, two-phase task creation:**
 1. **Phase 1 — Preamble task only:** `TaskCreate` one preamble task.
 2. **Phase 2 — Bulk after routing:** After preamble confirms path, bulk-create remaining.
-3. **Redirect or early exit:** Mark preamble done, stop.
+3. **Redirect or early exit:** Mark preamble done, prune the task list per Closing Notification and Cleanup part (2), stop.
 4. **Extensions:** Active `USER-EXTENSION` block → Phase 2 task
 5. Mark `in_progress` → `completed`
 6. **Post-Compaction:** Re-read, resume first incomplete.
@@ -70,20 +70,24 @@ Write findings to `.tmp-$ISSUE-findings.json`, run:
 ```bash
 node ./.claude/scripts/shared/review-finalize.js $ISSUE -F .tmp-$ISSUE-findings.json
 ```
-Finalize: body metadata (`**Reviews:** N` increment), structured comment, labels (`reviewed`/`pending`). Clean up temp file.
+Finalize: body metadata (`**Reviews:** N` increment), structured comment, labels (`reviewed`/`pending`). Clean up temp file. **Read** `.claude/scripts/shared/lib/findings-schema.json` for contract structure, required fields, status values, recommendation values.
+**`type` MUST be `"test-plan"`** — not `"story"`, `"generic"`, omitted (#2594). Drives two behaviours:
+- **Header verb.** `review-finalize.js` derives `## Test Plan Review #N`. Any other value emits `## Issue Review #N`, which `/resolve-review` cannot reconcile with a test plan — reports `NO_REVIEW` against a review that exists.
+- **AC check-off suppression.** `test-plan` is tracker-shaped, so Step 5 leaves the template's fixed 6-item Approval Checklist alone. The `--move-status in_review` transition still happens.
 ### Step 5: Approval Gate AC Check-Off (Conditional)
 **Only if "Ready for approval":**
 ```bash
 node .claude/scripts/shared/review-ac-checkoff.js --issue $ISSUE --findings .tmp-$ISSUE-findings.json --move-status in_review
 ```
-Report: `"Approval gate: X/Y criteria checked off. Issue #$ISSUE moved to in_review. Run /done #$ISSUE to close the approval gate."`
+Script reads `type` from findings JSON. With `type: "test-plan"` it returns `skipped: true` and checks off **nothing** — the template's Approval Checklist is a fixed 6-item gate, not the review criteria (#2594). **The `--move-status in_review` transition still happens**; only check-off is suppressed.
+Report the skip, not a count: `"Approval gate: check-off skipped (#$ISSUE is a test plan; its Y approval gates are checked by the approver). Issue #$ISSUE moved to in_review. Run /done #$ISSUE to close the approval gate."` NEVER report `X/Y checked off` here — X is always 0.
 **Otherwise:** skip — no AC check-off, no status transition.
 
 <!-- USER-EXTENSION-START: post-review -->
 <!-- USER-EXTENSION-END: post-review -->
 
-### Closing Notification
-Output `closingNotification` from finalize output.
+### Closing Notification and Cleanup
+Two parts in order; the prune is **part of** this step, not a trailing step a reader can stop before. **(1)** Output `closingNotification` from finalize output. **(2) Prune the task list** (unconditional — every path, including redirect and early-exit paths where Phase 1 created a preamble task and Phase 2 never ran): `TaskList` to enumerate, then `TaskUpdate status=deleted` for every task owned by this `/review-test-plan` invocation (Phase 1 preamble, Phase 2 step tasks, `USER-EXTENSION` tasks). Do **not** delete tasks created outside this invocation (user TODOs).
 ---
 ## Error Handling
 | Situation | Response |

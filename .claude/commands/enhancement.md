@@ -1,7 +1,7 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Create an enhancement issue with standard template (project)
-argument-hint: "<title>"
+argument-hint: "<title> [--prior-art]"
 copyright: "Rubrical Works (c) 2026"
 ---
 <!-- EXTENSIBLE -->
@@ -18,6 +18,7 @@ Create a labeled enhancement issue with standard template and add to project boa
 |----------|-------------|
 | `<title>` | Enhancement title (e.g., `add dark mode`) |
 | `--prior-art` | Run prior-art sweep before composing body. Absent = current behavior, no sweep. |
+| `--assignee <value>` | GitHub login for the new issue. Omitted → `@me`. |
 
 If not provided, prompt user.
 ---
@@ -99,7 +100,7 @@ gh pmu create --title "[Enhancement]: {title}" --label enhancement --status back
 rm .tmp-body.md
 ```
 **Note:** Always `-F .tmp-body.md` (never inline `--body`).
-**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee <value>` — pass the user's `--assignee` value, omit when none given. Helper returns that login, else `@me`; reads no config file. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
 ### Step 4: Report and STOP
 Report the created issue number and title, Status `Backlog`, Label `enhancement`, then the follow-on sequence: `/review-issue`, `/assign-branch`, `work` with the issue number.
 
@@ -118,5 +119,13 @@ Report the created issue number and title, Status `Backlog`, Label `enhancement`
 | Sweep: issue history unavailable (`gh` error) | Warn, emit `partialFormat` naming what ran and what failed, continue. Never claim a clean sweep. |
 | Sweep: **zero `searchSurfaces` resolved** | Warn, emit `partialFormat`, continue. A sweep that searched nothing is failed, not empty — never emit `noneFoundFormat` here. |
 | Sweep: `prior-art-sweep.json` missing/unreadable | Warn, skip sweep, emit no `**Prior Art:**` section. Absence correctly reads as "no sweep ran". |
+### Closing Cleanup
+Two parts, in order. The prune is **part of** this step, not a trailing step a reader can stop before — the closing output makes a run *feel* finished, so a prune placed after it never runs.
+**(1) Emit the closing output** described by the final step above.
+**(2) Prune the task list** (unconditional — every path, including early-exit paths where Phase 1 created tasks and later phases never ran):
+1. `TaskList` — enumerate all tasks.
+2. For every task owned by this `/enhancement` invocation, `TaskUpdate status=deleted`.
+3. Do **not** delete tasks created outside this invocation (user TODOs).
+
 ---
 **End of /enhancement Command**

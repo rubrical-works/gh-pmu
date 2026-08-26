@@ -1,7 +1,9 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1766,122 +1768,367 @@ func TestEnsureGitignore_AppendsToExistingFile(t *testing.T) {
 	}
 }
 
-func TestMigrateYAML_BothFilesExist_DeletesYAMLAndUpdatesVersion(t *testing.T) {
-	// ARRANGE: Directory with both .gh-pmu.json and .gh-pmu.yml
+func TestRefreshVersion_StaleVersion_RewritesToCurrent(t *testing.T) {
+	// ARRANGE: config stamped by an older binary
 	testDir := t.TempDir()
 	jsonPath := filepath.Join(testDir, ConfigFileName)
-	yamlPath := filepath.Join(testDir, ".gh-pmu.yml")
-
 	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
 	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
 		t.Fatalf("Failed to write JSON config: %v", err)
 	}
-	yamlContent := "version: 1.1.0\nproject:\n  owner: test-owner\n  number: 1\nrepositories:\n  - test-owner/test-repo\n"
-	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
-		t.Fatalf("Failed to write YAML config: %v", err)
-	}
 
-	var buf strings.Builder
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
 
-	// ACT: Run migration
-	err := MigrateYAML(jsonPath, "1.4.0", &buf)
-
-	// ASSERT: No error
+	// ASSERT
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
-
-	// ASSERT: YAML file deleted
-	if _, err := os.Stat(yamlPath); !os.IsNotExist(err) {
-		t.Error("Expected .gh-pmu.yml to be deleted, but it still exists")
+	if !wrote {
+		t.Error("Expected RefreshVersion to report a write for a stale version")
 	}
 
-	// ASSERT: Console message printed
-	output := buf.String()
-	if !strings.Contains(output, ".gh-pmu.yml") {
-		t.Errorf("Expected console message mentioning %s, got: %q", ".gh-pmu.yml", output)
-	}
-
-	// ASSERT: Version updated in JSON
 	cfg, err := Load(jsonPath)
 	if err != nil {
-		t.Fatalf("Failed to load config after migration: %v", err)
+		t.Fatalf("Failed to reload config: %v", err)
 	}
-	if cfg.Version != "1.4.0" {
-		t.Errorf("Expected version '1.4.0', got '%s'", cfg.Version)
-	}
-
-	// ASSERT: JSON file still valid and has original data
-	if cfg.Project.Owner != "test-owner" {
-		t.Errorf("Expected owner 'test-owner', got '%s'", cfg.Project.Owner)
+	if cfg.Version != "1.5.3" {
+		t.Errorf("Expected version to be rewritten to '1.5.3', got '%s'", cfg.Version)
 	}
 }
 
-func TestMigrateYAML_CorruptJSON_PreservesYAML(t *testing.T) {
-	// #869 finding 2: MigrateYAML must verify the JSON config is loadable BEFORE
-	// removing the legacy YAML. A corrupt JSON must not destroy the user's only
-	// intact copy of their configuration.
+func TestRefreshVersion_CurrentVersion_NoWriteBytesUnchanged(t *testing.T) {
+	// ARRANGE: config already stamped at the running version
 	testDir := t.TempDir()
 	jsonPath := filepath.Join(testDir, ConfigFileName)
-	yamlPath := filepath.Join(testDir, ".gh-pmu.yml")
-
-	// Corrupt/unparsable JSON.
-	if err := os.WriteFile(jsonPath, []byte("{not valid json"), 0644); err != nil {
+	jsonContent := `{"version":"1.5.3","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
 		t.Fatalf("Failed to write JSON config: %v", err)
 	}
-	yamlContent := "version: 1.1.0\nproject:\n  owner: test-owner\n  number: 1\nrepositories:\n  - test-owner/test-repo\n"
-	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
-		t.Fatalf("Failed to write YAML config: %v", err)
+	before, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
 	}
 
-	var buf strings.Builder
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
 
-	// ACT: migration should fail because the JSON is unparsable.
-	err := MigrateYAML(jsonPath, "1.4.0", &buf)
+	// ASSERT
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if wrote {
+		t.Error("Expected RefreshVersion to report no write when the version already matches")
+	}
+
+	// Byte comparison, not mtime: filesystem timestamp granularity makes mtime flaky.
+	after, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to re-read config: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("Expected config bytes to be unchanged.\nBefore: %s\nAfter:  %s", before, after)
+	}
+}
+
+func TestRefreshVersion_PreservesOtherFields(t *testing.T) {
+	// ARRANGE: a stale config carrying fields the refresh must not disturb
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":7},"repositories":["test-owner/test-repo"],"framework":"IDPF-Agile","acceptance":{"accepted":true,"user":"tester","date":"2026-01-01","version":"1.1.0"}}`
+	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("Failed to write JSON config: %v", err)
+	}
+
+	// ACT
+	if _, err := RefreshVersion(testDir, "1.5.3"); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// ASSERT: only the top-level version moved
+	cfg, err := Load(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to reload config: %v", err)
+	}
+	if cfg.Project.Number != 7 || cfg.Project.Owner != "test-owner" {
+		t.Errorf("Expected project fields preserved, got owner=%q number=%d", cfg.Project.Owner, cfg.Project.Number)
+	}
+	if cfg.Framework != "IDPF-Agile" {
+		t.Errorf("Expected framework preserved, got %q", cfg.Framework)
+	}
+	if cfg.Acceptance == nil || cfg.Acceptance.Version != "1.1.0" {
+		t.Error("Expected acceptance.version to be left untouched by the top-level version refresh")
+	}
+}
+
+func TestRefreshVersion_NoConfig_ReturnsErrorWithoutWriting(t *testing.T) {
+	// ARRANGE: an uninitialized directory
+	testDir := t.TempDir()
+
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
+
+	// ASSERT
 	if err == nil {
-		t.Fatal("expected error migrating with corrupt JSON, got nil")
+		t.Error("Expected an error when no config file exists")
 	}
-
-	// ASSERT: the legacy YAML must still exist — it was the only intact copy.
-	if _, statErr := os.Stat(yamlPath); os.IsNotExist(statErr) {
-		t.Error("expected .gh-pmu.yml to be preserved when JSON is corrupt, but it was deleted")
+	if wrote {
+		t.Error("Expected no write to be reported when no config file exists")
+	}
+	if _, statErr := os.Stat(filepath.Join(testDir, ConfigFileName)); !os.IsNotExist(statErr) {
+		t.Error("Expected RefreshVersion not to create a config file")
 	}
 }
 
-func TestMigrateYAML_OnlyJSONExists_NoOp(t *testing.T) {
-	// ARRANGE: Directory with only .gh-pmu.json
+// assertTrailingNewline fails unless data ends with exactly one 0x0a.
+//
+// The assertion is on raw bytes on purpose. Every existing config test reaches
+// the file through Load or json.Unmarshal, and a JSON round-trip cannot observe
+// a trailing newline at all — the byte is outside the document. That blind spot
+// is why the newline could go missing without a single test turning red.
+func assertTrailingNewline(t *testing.T, data []byte, what string) {
+	t.Helper()
+	if len(data) == 0 {
+		t.Fatalf("%s: file is empty, expected a trailing newline", what)
+	}
+	if data[len(data)-1] != '\n' {
+		t.Errorf("%s: expected final byte 0x0a, got %#x (tail: %q)", what, data[len(data)-1], tailOf(data))
+		// The "exactly one" check below reads the byte before the last one. With
+		// no trailing newline at all that byte is the newline MarshalIndent puts
+		// before the closing brace, which would report a spurious second failure.
+		return
+	}
+	if len(data) >= 2 && data[len(data)-2] == '\n' {
+		t.Errorf("%s: expected exactly one trailing newline, found more than one (tail: %q)", what, tailOf(data))
+	}
+}
+
+// tailOf returns the last few bytes of data for use in failure messages.
+func tailOf(data []byte) string {
+	const n = 8
+	if len(data) <= n {
+		return string(data)
+	}
+	return string(data[len(data)-n:])
+}
+
+func TestSave_WritesExactlyOneTrailingNewline(t *testing.T) {
+	// ARRANGE
+	testDir := t.TempDir()
+	cfg := &Config{
+		Version:      "1.5.3",
+		Project:      Project{Owner: "test-owner", Number: 1},
+		Repositories: []string{"test-owner/test-repo"},
+	}
+
+	// ACT
+	if err := cfg.Save(testDir); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// ASSERT
+	data, err := os.ReadFile(filepath.Join(testDir, ConfigFileName))
+	if err != nil {
+		t.Fatalf("Failed to read saved config: %v", err)
+	}
+	assertTrailingNewline(t, data, "Config.Save")
+}
+
+func TestRefreshVersion_WritesExactlyOneTrailingNewline(t *testing.T) {
+	// ARRANGE: a stale config written without a trailing newline, so a passing
+	// result proves RefreshVersion emitted one rather than preserving one.
 	testDir := t.TempDir()
 	jsonPath := filepath.Join(testDir, ConfigFileName)
-
 	jsonContent := `{"version":"1.1.0","project":{"owner":"test-owner","number":1},"repositories":["test-owner/test-repo"]}`
 	if err := os.WriteFile(jsonPath, []byte(jsonContent), 0644); err != nil {
 		t.Fatalf("Failed to write JSON config: %v", err)
 	}
 
-	var buf strings.Builder
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
 
-	// ACT: Run migration
-	err := MigrateYAML(jsonPath, "1.4.0", &buf)
-
-	// ASSERT: No error, no output
+	// ASSERT
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
-	if buf.Len() != 0 {
-		t.Errorf("Expected no output for no-op migration, got: %q", buf.String())
+	if !wrote {
+		t.Fatal("Expected RefreshVersion to report a write for a stale version")
+	}
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to read refreshed config: %v", err)
+	}
+	assertTrailingNewline(t, data, "RefreshVersion")
+}
+
+func TestRefreshVersion_ChangesOnlyTheVersionValueBytes(t *testing.T) {
+	// ARRANGE: seed through Save so the file is already in canonical form.
+	// Seeding with hand-written JSON would make the first refresh reformat the
+	// whole document, and the test would pass or fail on formatting rather than
+	// on what the refresh changed.
+	testDir := t.TempDir()
+	jsonPath := filepath.Join(testDir, ConfigFileName)
+	cfg := &Config{
+		Version:      "1.1.0",
+		Project:      Project{Name: "gh-pmu", Owner: "test-owner", Number: 11, View: 2},
+		Repositories: []string{"test-owner/test-repo", "test-owner/other-repo"},
+		Framework:    "IDPF-Agile",
+		Defaults:     Defaults{Priority: "P2", Status: "Backlog", Labels: []string{"needs-triage"}},
+		Fields:       map[string]Field{"status": {Field: "Status", Values: map[string]string{"wip": "In Progress"}}},
+	}
+	if err := cfg.Save(testDir); err != nil {
+		t.Fatalf("Failed to seed config: %v", err)
+	}
+	before, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to read seeded config: %v", err)
 	}
 
-	// ASSERT: Version NOT updated (migration didn't trigger)
-	cfg, err := Load(jsonPath)
+	// ACT
+	wrote, err := RefreshVersion(testDir, "1.5.3")
 	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
+		t.Fatalf("Expected no error, got: %v", err)
 	}
-	if cfg.Version != "1.1.0" {
-		t.Errorf("Expected version to remain '1.1.0', got '%s'", cfg.Version)
+	if !wrote {
+		t.Fatal("Expected RefreshVersion to report a write for a stale version")
+	}
+
+	// ASSERT: the only permitted difference is the version value itself.
+	// Comparing raw bytes catches indentation drift, key reordering and a lost
+	// trailing newline in one assertion — none of which a JSON round-trip or a
+	// field-by-field struct comparison can see.
+	after, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("Failed to read refreshed config: %v", err)
+	}
+	want := bytes.Replace(before, []byte(`"version": "1.1.0"`), []byte(`"version": "1.5.3"`), 1)
+	if bytes.Equal(want, before) {
+		t.Fatal("Test setup error: expected version string not found in the seeded config")
+	}
+	if !bytes.Equal(want, after) {
+		t.Errorf("RefreshVersion changed more than the version value.\n--- want ---\n%s\n--- got ---\n%s", want, after)
+	}
+
+	// Keys the Config struct does not model are deliberately outside this
+	// comparison: Save drops them, which is tracked separately as #910.
+}
+
+// configWriteSite is one os.WriteFile call that targets ConfigFileName.
+type configWriteSite struct {
+	file string
+	line int
+}
+
+// findConfigWriteSites walks the module for non-test Go files containing an
+// os.WriteFile call whose destination is built from ConfigFileName.
+//
+// The destination is identified by looking a few lines above the call for a
+// ConfigFileName reference, which is how all known writers are shaped:
+//
+//	jsonPath := filepath.Join(dir, ConfigFileName)
+//	if err := os.WriteFile(jsonPath, jsonData, 0600); err != nil {
+func findConfigWriteSites(t *testing.T, root string) []configWriteSite {
+	t.Helper()
+	const lookback = 5
+	var sites []configWriteSite
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			// Vendored and fixture trees are not ours to police.
+			switch info.Name() {
+			case ".git", "vendor", "testdata", "node_modules":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			if !strings.Contains(line, "os.WriteFile(") {
+				continue
+			}
+			start := i - lookback
+			if start < 0 {
+				start = 0
+			}
+			if !strings.Contains(strings.Join(lines[start:i+1], "\n"), "ConfigFileName") {
+				continue
+			}
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				rel = path
+			}
+			sites = append(sites, configWriteSite{file: filepath.ToSlash(rel), line: i + 1})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to walk %s: %v", root, err)
+	}
+	return sites
+}
+
+func TestNoWriterBypassesTheNewlineEmittingPath(t *testing.T) {
+	// The byte assertions above cannot catch this. A fourth writer that
+	// marshals and writes .gh-pmu.json inline would leave every one of them
+	// green and still strip the trailing newline — which is exactly the defect
+	// review caught on this branch, in a different codebase (px-manager#1042).
+	//
+	// Counting per file rather than pinning line numbers is deliberate: an
+	// edit anywhere above a call would shift a pinned line and fail the test
+	// for a reason unrelated to what it guards. A new writer changes the count,
+	// which is the condition worth failing on.
+	want := map[string]int{
+		"internal/config/config.go": 1, // Config.Save
+		"cmd/init.go":               2, // writeConfig, writeConfigWithMetadata
+	}
+
+	sites := findConfigWriteSites(t, filepath.Join("..", ".."))
+
+	got := make(map[string]int, len(want))
+	for _, s := range sites {
+		got[s.file]++
+	}
+
+	for file, n := range got {
+		if want[file] == 0 {
+			t.Errorf("New writer of %s found at %s — it must route through Config.Save, "+
+				"or append '\\n' itself as the existing writers do", ConfigFileName, describeSites(sites, file))
+			continue
+		}
+		if n != want[file] {
+			t.Errorf("%s: expected %d writer(s) of %s, found %d at %s",
+				file, want[file], ConfigFileName, n, describeSites(sites, file))
+		}
+	}
+	for file, n := range want {
+		if got[file] == 0 {
+			t.Errorf("%s: expected %d writer(s) of %s, found none — if a writer moved, "+
+				"update this guard so it keeps covering it", file, n, ConfigFileName)
+		}
 	}
 }
 
-func TestMigrateYAML_SaveNoLongerWritesYAML(t *testing.T) {
+// describeSites renders the file:line list for one file, for failure messages.
+func describeSites(sites []configWriteSite, file string) string {
+	var out []string
+	for _, s := range sites {
+		if s.file == file {
+			out = append(out, fmt.Sprintf("%s:%d", s.file, s.line))
+		}
+	}
+	return strings.Join(out, ", ")
+}
+func TestSave_DoesNotWriteYAMLCompanion(t *testing.T) {
 	// ARRANGE: Save a config and verify no YAML companion is created
 	testDir := t.TempDir()
 	jsonPath := filepath.Join(testDir, ConfigFileName)

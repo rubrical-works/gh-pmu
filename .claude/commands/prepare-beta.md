@@ -1,5 +1,5 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Tag beta from feature branch (no merge to main)
 argument-hint: "[--skip-coverage] [--dry-run] [--help]"
 copyright: "Rubrical Works (c) 2026"
@@ -7,29 +7,20 @@ copyright: "Rubrical Works (c) 2026"
 
 <!-- EXTENSIBLE -->
 # /prepare-beta
-
-Tag a beta release from feature branch without merging to main.
-
-**Extension Points:** See `.claude/metadata/extension-points.json` or run `/extensions list --command prepare-beta`
-
+Tag a beta from a feature branch without merging to main.
+**Extension Points:** `.claude/metadata/extension-points.json` or `/extensions list --command prepare-beta`
+---
 ## Arguments
 | Argument | Description |
 |----------|-------------|
 | `--skip-coverage` | Skip coverage gate |
 | `--dry-run` | Preview without changes |
 | `--help` | Show extension points |
-
+---
 ## Execution Instructions
-**REQUIRED:** Before executing:
-1. **Create Task List:** Parse phases and extension points, use `TaskCreate`
-2. **Include Extensions:** Add task for each non-empty `USER-EXTENSION` block
-3. **Track Progress:** Mark tasks `in_progress` → `completed`
-4. **Post-Compaction:** Re-read spec and regenerate tasks
-
-**Task Rules:** One task per numbered phase/step; one per active extension; skip commented-out extensions.
-
+**REQUIRED:** `TaskCreate` one task per numbered phase/step and one per non-empty `USER-EXTENSION` block; skip commented-out extensions. Mark `in_progress` -> `completed`. **Post-Compaction:** re-read spec, `TaskList`, resume from first incomplete task.
+---
 ## Pre-Checks
-
 ### Verify NOT on Main
 ```bash
 BRANCH=$(git branch --show-current)
@@ -38,28 +29,32 @@ if [ "$BRANCH" = "main" ]; then
   exit 1
 fi
 ```
+---
 
 <!-- USER-EXTENSION-START: pre-phase-1 -->
 <!-- USER-EXTENSION-END: pre-phase-1 -->
 
 ## Phase 1: Analysis
-
 ### Step 1.1: Analyze Changes
 ```bash
 git log $(git describe --tags --abbrev=0)..HEAD --oneline
 ```
-
 ### Analyze Commits
 ```bash
 node .claude/scripts/shared/analyze-commits.js
 ```
-Outputs JSON: `lastTag`, `commits`, `summary` (counts by type).
-
+JSON: `lastTag`, `commits`, `summary`. `summary` counts **conventional-commit prefixes only** — an unprefixed commit lands in `other` whatever it did.
 ### Recommend Version
 ```bash
-node .claude/scripts/shared/recommend-version.js
+node .claude/scripts/shared/recommend-version.js --prerelease
 ```
-Recommends beta version (e.g., `v1.0.0-beta.1`).
+`--prerelease` is REQUIRED — without it the recommendation is a **stable** version, wrong to tag from an unmerged branch. `--prerelease=rc` picks another identifier (default `beta`). Read `warnings` in the output.
+| Last tag | Recommends |
+|----------|------------|
+| `v0.20.0-beta.4` | `v0.20.0-beta.5` — counter advances, core held |
+| `v0.20.0-alpha.3` | `v0.20.0-beta.1` — new identifier, core held |
+| `v0.20.0` (stable) | `v0.21.0-beta.1` — core bumped by commit analysis, line opens |
+**The two scripts classify differently by design.** `analyze-commits.js` counts prefixes only; `recommend-version.js` also resolves issue labels (`enhancement`/`story`/`epic` → feature) then keywords, so `feat: 0` beside `reason: "new feature(s)"` is expected, not a contradiction. Trust the recommendation.
 
 <!-- USER-EXTENSION-START: post-analysis -->
 ### Analyze Commits
@@ -91,7 +86,7 @@ The script analyzes which E2E tests may be impacted by changes:
 <!-- USER-EXTENSION-END: post-analysis -->
 
 **ASK USER:** Confirm beta version before proceeding.
-
+---
 ## Phase 2: Validation
 
 <!-- USER-EXTENSION-START: pre-validation -->
@@ -135,9 +130,8 @@ E2E tests validate complete workflows against the test project.
 <!-- USER-EXTENSION-END: post-validation -->
 
 **ASK USER:** Confirm validation passed before proceeding.
-
+---
 ## Phase 3: Prepare
-
 Update CHANGELOG.md with beta section.
 
 <!-- USER-EXTENSION-START: post-prepare -->
@@ -156,8 +150,8 @@ The script polls CI status every 60 seconds (5-minute timeout).
 <!-- USER-EXTENSION-START: pre-commit -->
 <!-- USER-EXTENSION-END: pre-commit -->
 
+---
 ## Phase 4: Tag (No Merge)
-
 ### Step 4.1: Commit Changes
 ```bash
 git add -A
@@ -192,24 +186,13 @@ rm .release-authorized
 git tag -a $VERSION -m "Beta $VERSION"
 git push origin $VERSION
 ```
-**Note:** Beta tags feature branch. No merge to main.
-
+**Note:** tags the feature branch. No merge to main.
 ### Step 4.3: Wait for CI Workflow
-
-**Conditional:** Check if CI workflows exist before waiting.
-
-```bash
-ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null
-```
-
-**If no workflow files found:** Skip CI wait with message: `No CI workflows detected — skipping CI wait.`
-
-**If workflow files exist:**
+**Conditional:** `ls .github/workflows/*.yml .github/workflows/*.yaml 2>/dev/null` first. **No workflow files found:** skip the CI wait, reporting `No CI workflows detected — skipping CI wait.` **Workflow files exist:**
 ```bash
 node .claude/scripts/shared/wait-for-ci.js
 ```
 **If CI fails, STOP and report.**
-
 ### Step 4.4: Update Release Notes
 ```bash
 node .claude/scripts/shared/update-release-notes.js
@@ -232,15 +215,12 @@ Issues included in this beta still require explicit user approval ("Done") to cl
 Do NOT auto-close issues just because a beta shipped.
 <!-- USER-EXTENSION-END: post-tag -->
 
+---
 ## Next Step
-
-Beta is tagged. When ready for full release:
-1. Merge feature branch to main
-2. Run `/prepare-release` for official release
-
+For the full release: merge the feature branch to main, run `/prepare-release`.
+---
 ## Summary Checklist
-
-**Core (Before tagging):**
+**Before tagging:**
 - [ ] Not on main branch
 - [ ] Commits analyzed
 - [ ] Beta version confirmed
@@ -251,7 +231,7 @@ Beta is tagged. When ready for full release:
 - [ ] Coverage gate passed (or `--skip-coverage`)
 <!-- USER-EXTENSION-END: checklist-before-tag -->
 
-**Core (After tagging):**
+**After tagging:**
 - [ ] Beta tag pushed
 - [ ] CI workflow completed
 - [ ] Release notes updated
@@ -259,5 +239,14 @@ Beta is tagged. When ready for full release:
 <!-- USER-EXTENSION-START: checklist-after-tag -->
 - [ ] Beta build monitored
 <!-- USER-EXTENSION-END: checklist-after-tag -->
+### Closing Cleanup
+Two parts, in order. The prune is **part of** this step, not a trailing step a reader can stop before — the closing output makes a run *feel* finished, so a prune placed after it never runs.
+**(1) Emit the closing output** described by the final step above.
+**(2) Prune the task list** (unconditional — every path, including early-exit paths where Phase 1 created tasks and later phases never ran):
+1. `TaskList` — enumerate all tasks.
+2. For every task owned by this `/prepare-beta` invocation, `TaskUpdate status=deleted`.
+3. Do **not** delete tasks created outside this invocation (user TODOs).
 
+
+---
 **End of Prepare Beta**

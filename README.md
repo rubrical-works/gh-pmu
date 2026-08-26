@@ -98,7 +98,7 @@ To use standalone, simply omit the `framework` field from your config:
 
 | Guide | Description |
 |-------|-------------|
-| [Configuration](docs/configuration.md) | Setup `.gh-pmu.yml`, field aliases, triage rules |
+| [Configuration](docs/configuration.md) | Setup `.gh-pmu.json`, field aliases, triage rules |
 | [Commands](docs/commands.md) | Complete command reference with examples |
 | [Sub-Issues](docs/sub-issues.md) | Parent-child hierarchies, epics, progress tracking |
 | [Batch Operations](docs/batch-operations.md) | Intake, triage, and split workflows |

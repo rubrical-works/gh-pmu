@@ -1,5 +1,5 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Create a bug issue with standard template (project)
 argument-hint: "<title>"
 copyright: "Rubrical Works (c) 2026"
@@ -14,6 +14,7 @@ Create a labeled bug issue with standard template and add to project board.
 | Argument | Description |
 |----------|-------------|
 | `<title>` | Bug title (e.g., `assign-branch fails on Windows paths`) |
+| `--assignee <value>` | GitHub login for the new issue. Omitted → `@me`. |
 
 If not provided, prompt user.
 ## Execution
@@ -81,7 +82,7 @@ gh pmu create --title "[Bug]: {title}" --label bug --status backlog --priority p
 rm .tmp-body.md
 ```
 **Note:** Always `-F .tmp-body.md` (never inline `--body`).
-**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee` — `.gh-pmu.json` `defaults.assignee`, else `@me`. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable configured login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
+**Assignee:** substitute `{assignee}` from `node .claude/scripts/shared/lib/gh-pmu-config.js --assignee <value>` — pass the user's `--assignee` value, omit when none given. Helper returns that login, else `@me`; reads no config file. NEVER hardcode a login or drop the flag (omitted `--assignee` silently creates an unassigned issue). Unresolvable login → `gh pmu` exits 1 and creates nothing; report the error, do NOT retry without the flag.
 ### Step 4: Report and STOP
 ```
 Created: Issue #$ISSUE_NUM — [Bug]: {title}
@@ -102,5 +103,13 @@ Say "/review-issue #$ISSUE_NUM" then "/assign-branch #$ISSUE_NUM" then "work #$I
 | Empty after prompt | "A bug title is required." → STOP |
 | `gh pmu create` fails | "Failed to create issue: {error}" → STOP |
 | Special chars | Escape for shell safety |
+### Closing Cleanup
+Two parts, in order. The prune is **part of** this step, not a trailing step a reader can stop before — the closing output makes a run *feel* finished, so a prune placed after it never runs.
+**(1) Emit the closing output** described by the final step above.
+**(2) Prune the task list** (unconditional — every path, including early-exit paths where Phase 1 created tasks and later phases never ran):
+1. `TaskList` — enumerate all tasks.
+2. For every task owned by this `/bug` invocation, `TaskUpdate status=deleted`.
+3. Do **not** delete tasks created outside this invocation (user TODOs).
+
 
 **End of /bug Command**

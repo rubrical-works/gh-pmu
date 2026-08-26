@@ -1,7 +1,7 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Create text-based or diagrammatic screen mockups (project)
-argument-hint: "[#NN]"
+argument-hint: "[#NN] [--from-image <path>] [--serve [{Name}]] [--port <N>] [--open] [--showcase] [--apply-decisions]"
 copyright: "Rubrical Works (c) 2026"
 ---
 
@@ -36,6 +36,8 @@ Creates text-based or diagrammatic screen mockups. Fully interactive via `AskUse
 /mockups --serve sandbox           # Serve Mockups/sandbox/ only
 /mockups --serve --open            # Serve + auto-launch browser
 /mockups --serve --port 8080 --open
+/mockups --showcase                # Launch Living Style Guide showcase
+/mockups --apply-decisions         # Apply pending showcase decisions, no server
 ```
 
 ## Execution Instructions
@@ -313,6 +315,8 @@ Runs standalone or after Step 8. Steps:
 
 1. **Resolve target:** bare `--serve` → `Mockups/`; `--serve {Name}` → `Mockups/{Name}/`. Missing target → report "Target not found: {path}. Create mockups first." → STOP.
 2. **Port:** use `--port`/`-p` if given, else `3000`. Helper handles in-use fallback internally.
+
+   **Entry point (#2590):** reported URL is browsable without an `index.html` — helper serves a directory's `index.html` when present, else a generated listing. Do **not** pre-create an index, warn about a missing one, or hand the user a deep file path instead of the root URL: a mockup set has no index (Step 5 writes `README.md`), the exact case the listing covers. Hrefs are absolute, so `/{Name}` and `/{Name}/` behave identically.
 3. **Spawn server** via `Bash` with `run_in_background: true`:
    ```bash
    node .claude/scripts/shared/mockups-serve.js --root <target> --port <port>
@@ -348,6 +352,16 @@ Server runs until user kills its shell; `/mockups --serve` itself does NOT block
 | Schema file missing | "Shared schema not found at .claude/metadata/screen-spec-schema.json" → STOP |
 | `--serve`: requested port in use | Helper falls back to next free port; command reports actual port. Not an error. |
 | `--serve`: target `Mockups/` or `Mockups/{Name}/` missing | "Target not found: {path}. Create mockups first." → STOP |
+| `--serve`: served root has no `index.html` | Expected, not an error. Helper renders a listing; report the root URL unchanged. |
+| `--serve`: path is neither file nor directory | Helper returns 404. Not a command failure; server keeps running. |
 | `--serve --open`: browser launch fails | Warn with launch exit code; leave server running; do NOT fail command |
+### Closing Cleanup
+Two parts, in order. The prune is **part of** this step, not a trailing step a reader can stop before — the closing output makes a run *feel* finished, so a prune placed after it never runs.
+**(1) Emit the closing output** described by the final step above.
+**(2) Prune the task list** (unconditional — every path, including early-exit paths where Phase 1 created tasks and later phases never ran):
+1. `TaskList` — enumerate all tasks.
+2. For every task owned by this `/mockups` invocation, `TaskUpdate status=deleted`.
+3. Do **not** delete tasks created outside this invocation (user TODOs).
+
 
 **End of /mockups Command**

@@ -189,6 +189,146 @@ func isBodyEmpty(body string) bool {
 	return strings.TrimSpace(body) == ""
 }
 
+// fenceDelimiter describes a line that opens or closes a fenced code block.
+type fenceDelimiter struct {
+	char   byte // '`' or '~'
+	length int  // how many fence characters the run holds
+}
+
+// stripBlockquotePrefix removes a leading blockquote marker run and returns the
+// rest of the line. Nested markers ("> > ") are consumed together, and the one
+// optional space after the final marker belongs to the marker rather than to
+// the content.
+func stripBlockquotePrefix(line string) string {
+	i := 0
+	for {
+		j := i
+		for j < len(line) && line[j] == ' ' {
+			j++
+		}
+		if j >= len(line) || line[j] != '>' {
+			break
+		}
+		i = j + 1
+	}
+	if i > 0 && i < len(line) && line[i] == ' ' {
+		i++
+	}
+	return line[i:]
+}
+
+// parseFenceDelimiter reports whether line is a fenced-code delimiter.
+//
+// The test runs against the RAW line, not a trimmed one. Trimming first was the
+// defect (#907): it made indentation invisible, so a fence at any depth toggled
+// the block state, and a fence indented inside an open block closed it early.
+//
+// The rules implemented are the ones the issue names: an optional blockquote
+// prefix, then at most three spaces of indent, then a run of at least three
+// backticks or tildes. A run indented four or more is content, and a leading
+// tab counts as indented code for the same reason.
+func parseFenceDelimiter(line string) (fenceDelimiter, bool) {
+	rest := stripBlockquotePrefix(line)
+
+	indent := 0
+	for indent < len(rest) && rest[indent] == ' ' {
+		indent++
+	}
+	if indent > 3 {
+		return fenceDelimiter{}, false
+	}
+	rest = rest[indent:]
+	if len(rest) < 3 {
+		return fenceDelimiter{}, false
+	}
+
+	char := rest[0]
+	if char != '`' && char != '~' {
+		return fenceDelimiter{}, false
+	}
+	length := 0
+	for length < len(rest) && rest[length] == char {
+		length++
+	}
+	if length < 3 {
+		return fenceDelimiter{}, false
+	}
+
+	return fenceDelimiter{char: char, length: length}, true
+}
+
+// listItemIndent returns the visual indent of a markdown list item line and
+// whether the line is one. A tab counts as four columns, matching the width
+// the indented-code test uses.
+func listItemIndent(line string) (int, bool) {
+	indent := 0
+	i := 0
+	for i < len(line) {
+		if line[i] == 0x20 {
+			indent++
+		} else if line[i] == 0x09 {
+			indent += 4
+		} else {
+			break
+		}
+		i++
+	}
+
+	rest := line[i:]
+	if len(rest) < 2 || rest[1] != 0x20 {
+		return 0, false
+	}
+	if rest[0] != 0x2d && rest[0] != 0x2a && rest[0] != 0x2b {
+		return 0, false
+	}
+
+	return indent, true
+}
+
+// continuesShallowerListItem reports whether the line at index i is a nested
+// list item rather than the start of an indented code block: an indented list
+// item whose nearest preceding non-blank line is itself a list item at a
+// shallower indent.
+//
+// This is the discriminator that replaced the checkbox carve-out (#908). The
+// carve-out exempted any line containing "- [ ]" or "- [x]" from indented-code
+// stripping, which disabled the branch for exactly the lines it exists to
+// strip. It was protecting something real — the originating proposal requires
+// that nested and indented checkboxes be validated equally — but it read the
+// glyph instead of the structure, so it also exempted prose that merely
+// mentioned a checkbox.
+func continuesShallowerListItem(lines []string, i int) bool {
+	indent, isItem := listItemIndent(lines[i])
+	if !isItem {
+		return false
+	}
+
+	for j := i - 1; j >= 0; j-- {
+		if strings.TrimSpace(lines[j]) == "" {
+			continue // a blank line separates a loose list, it does not end one
+		}
+		prevIndent, prevIsItem := listItemIndent(lines[j])
+		return prevIsItem && prevIndent < indent
+	}
+
+	return false
+}
+
+// isBlockquoted reports whether line begins with a blockquote marker, allowing
+// the same 0-3 spaces of indent CommonMark allows before one. Four or more is
+// indented code and is handled by that branch instead.
+func isBlockquoted(line string) bool {
+	indent := 0
+	for indent < len(line) && line[indent] == 0x20 {
+		indent++
+	}
+	if indent > 3 {
+		return false
+	}
+
+	return indent < len(line) && line[indent] == 0x3e
+}
+
 // stripCodeBlocks removes content inside fenced code blocks (``` or ~~~) and
 // indented code blocks (4 spaces or tab) from the body. This prevents example
 // checkboxes in code blocks from being counted as acceptance criteria.
@@ -196,39 +336,59 @@ func stripCodeBlocks(body string) string {
 	lines := strings.Split(body, "\n")
 	var filteredLines []string
 	inFencedCodeBlock := false
-	fenceChar := ""
+	var openFence fenceDelimiter
 	inIndentedCodeBlock := false
 
 	for i, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
 
-		// Check for fenced code block start/end (``` or ~~~)
-		if strings.HasPrefix(trimmedLine, "```") || strings.HasPrefix(trimmedLine, "~~~") {
-			currentFence := trimmedLine[:3]
+		// Fenced code block start/end (``` or ~~~), tested against the raw line
+		// so indentation and any blockquote prefix are visible (#907).
+		if fence, isDelimiter := parseFenceDelimiter(line); isDelimiter {
 			if !inFencedCodeBlock {
-				// Starting a fenced code block
 				inFencedCodeBlock = true
-				fenceChar = currentFence
+				openFence = fence
 				continue // Skip the opening fence line
-			} else if currentFence == fenceChar {
-				// Ending a fenced code block (matching fence)
+			}
+			// A closer must use the same character and be at least as long as
+			// its opener, so a longer outer fence encloses a shorter quoted one.
+			if fence.char == openFence.char && fence.length >= openFence.length {
 				inFencedCodeBlock = false
-				fenceChar = ""
+				openFence = fenceDelimiter{}
 				continue // Skip the closing fence line
 			}
-			// Different fence inside a code block - just skip it
+			// Too short, or the other fence character: content, not a delimiter.
 			continue
 		}
 
-		// Skip content inside fenced code blocks
+		// Skip content inside fenced code blocks. A fence indented four or more
+		// spaces reaches here rather than the branch above, which is what makes
+		// it content instead of an early closer.
 		if inFencedCodeBlock {
+			continue
+		}
+
+		// A blockquote is quoted content — an example, a citation, or someone
+		// else's criterion — so its checkboxes are not criteria of this issue
+		// (#911). Excluding them here rather than teaching the checkbox patterns
+		// a > prefix keeps the exclusion symmetric and stated: a quoted - [x] and
+		// a quoted - [ ] are removed by one named mechanism instead of both
+		// happening to score zero for unrelated reasons.
+		//
+		// This runs AFTER the fence branch on purpose. A blockquoted fence is a
+		// delimiter (#907), and consuming it here would leave its block unclosed.
+		if isBlockquoted(line) {
 			continue
 		}
 
 		// Check for indented code block (4+ spaces or tab at start)
 		// But not if it's a list item (- [ ] or - [x] pattern)
-		isIndentedCode := (strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t")) &&
-			!strings.Contains(line, "- [ ]") && !strings.Contains(line, "- [x]")
+		isIndented := strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t")
+
+		// List context, not the checkbox glyph, decides whether an indented line
+		// is code (#908). A nested list item is legitimately indented and must
+		// keep counting; a line following a paragraph is code and must not.
+		isIndentedCode := isIndented && !continuesShallowerListItem(lines, i)
 
 		// Check if previous line was blank (indented code blocks are preceded by blank line)
 		prevLineBlank := i == 0 || strings.TrimSpace(lines[i-1]) == ""

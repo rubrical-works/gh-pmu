@@ -1,5 +1,5 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Review issues with type-specific criteria (project)
 argument-hint: "#issue [#issue...] [--with ...] [--mode ...] [--force]"
 copyright: "Rubrical Works (c) 2026"
@@ -27,7 +27,7 @@ Multi: `/review-issue #42 #43 #44` reviews each sequentially.
 **REQUIRED:** Routed command — two-phase task creation:
 1. **Phase 1:** Single `TaskCreate` for preamble step only.
 2. **Phase 2:** After preamble confirms path (no redirect, no early exit), bulk-create tasks for all remaining steps + one per non-empty `USER-EXTENSION` block.
-3. **On redirect/early exit:** Mark preamble completed; do NOT create remaining tasks.
+3. **On redirect/early exit:** Mark preamble completed, prune the task list per Step 4 part (2), then stop; do NOT create remaining tasks.
 4. **Track Progress:** mark each task `in_progress` → `completed` as you work it.
 5. **Post-Compaction:** Re-read spec; resume from first incomplete task — no re-routing.
 
@@ -113,6 +113,7 @@ All ✅ → no label.
 
 ### Step 3: Finalize (Script)
 Write findings JSON to `.tmp-$ISSUE-findings.json`. **Read** `.claude/scripts/shared/lib/findings-schema.json` for contract structure, required fields, status values, recommendation values. Solo mode: `userEvaluated` always `[]`.
+**`type`:** issue type from preamble `context` — `bug`, `enhancement`, `story`, `epic`, or `generic`. Issue-shaped types produce a `## Issue Review #N` header and keep positional AC check-off (on an issue the checkbox list **is** the reviewed AC list). NEVER write `prd`, `proposal`, or `test-plan` here (#2594).
 
 ```bash
 node ./.claude/scripts/shared/review-finalize.js $ISSUE -F .tmp-$ISSUE-findings.json
@@ -153,8 +154,8 @@ If accepted, add `Refs #N` notes to related issue bodies. No findings → `"No i
 
 Configuration: dimensions and `typeFilter` in `.claude/metadata/review-interdependence.json` (config-driven; add to `eligible`/`excluded` to customize). Single-issue: skipped.
 
-### Step 4: Closing Notification
-Output `closingNotification` from finalize. Multi-issue: `"Reviews complete: #42, #43, #44"`.
+### Step 4: Closing Notification and Cleanup
+Two parts in order; the prune is **part of** this step, not a trailing step a reader can stop before. **(1)** Output `closingNotification` from finalize. Multi-issue: `"Reviews complete: #42, #43, #44"`. **(2) Prune the task list** (unconditional — every path, including redirect and early-exit paths where Phase 1 created a preamble task and Phase 2 never ran): `TaskList` to enumerate, then `TaskUpdate status=deleted` for every task owned by this `/review-issue` invocation (Phase 1 preamble, Phase 2 step tasks, `USER-EXTENSION` tasks). Do **not** delete tasks created outside this invocation (user TODOs). Nested via `Skill("review-issue")` from `/resolve-review`: the prune still runs; the parent's sweep becomes redundancy.
 
 ## Error Handling
 | Situation | Response |

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -1218,5 +1220,314 @@ func TestBuildValidationContext(t *testing.T) {
 	}
 	if len(ctx.ActiveReleases) != 2 {
 		t.Errorf("Expected 2 active releases, got %d", len(ctx.ActiveReleases))
+	}
+}
+
+// stripCodeBlocks tested the fence delimiter against the TRIMMED line, so any
+// indentation was invisible to it and a fence indented to any depth toggled the
+// block state (#907). It also compared only the first three characters, so a
+// short quoted fence closed a longer outer one. The cases below are the four
+// the issue's acceptance criteria name; the existing five in TestStripCodeBlocks
+// cover the flat, column-0 shapes and stay green.
+func TestStripCodeBlocks_FenceDelimiterRules(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected string
+	}{
+		{
+			// A closing fence may be indented 0-3 spaces. At 4+ it is content,
+			// so the block stays open and everything after it belongs to the
+			// block — including a checkbox that would otherwise be counted.
+			name:     "fence indented four spaces while a block is open is content",
+			body:     "```\n- [ ] example\n    ```\n- [ ] swallowed",
+			expected: "",
+		},
+		{
+			// A quoted fence shorter than its opener must not close it. This is
+			// how a markdown sample containing a fence is written.
+			name:     "closing fence shorter than its opener does not close",
+			body:     "````\n- [ ] example\n```\n- [ ] still inside\n````\n- [ ] real",
+			expected: "- [ ] real",
+		},
+		{
+			// The 0-3 bound is a bound, not a requirement of column 0.
+			name:     "fence at three spaces is still a delimiter",
+			body:     "Before\n   ```\n- [ ] example\n   ```\nAfter",
+			expected: "Before\nAfter",
+		},
+		{
+			// A fence written inside a blockquote delimits a block like any
+			// other. Without this, its contents are never stripped.
+			name:     "blockquote-prefixed fence is recognized",
+			body:     "Before\n> ```\n> - [ ] example\n> ```\nAfter",
+			expected: "Before\nAfter",
+		},
+		{
+			// The case that keeps this criterion earning its place after #911
+			// strips blockquoted lines: the fence lines carry the > prefix but
+			// the content does not, so a blockquote-stripping rule would leave
+			// the checkbox behind and only fence recognition reaches it.
+			name:     "blockquote-prefixed fence strips non-blockquoted content",
+			body:     "> ```\n- [ ] example\n> ```",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if result := stripCodeBlocks(tt.body); result != tt.expected {
+				t.Errorf("stripCodeBlocks() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestFenceRulesReachTheCountingFunctions asserts the shared-path inheritance
+// rather than assuming it. All four counters call stripCodeBlocks, but
+// countCodeBlockCheckboxes is the one that could still be wrong when the other
+// three are right: it subtracts a post-strip count from a pre-strip count, so a
+// change in stripping moves both of its operands.
+func TestFenceRulesReachTheCountingFunctions(t *testing.T) {
+	// One real unchecked criterion, one real checked one, and two examples
+	// inside a blockquoted fence that the old delimiter test never recognized.
+	//
+	// The example lines deliberately carry NO blockquote prefix. Prefixing them
+	// would make them invisible to the checkbox patterns themselves (#911), and
+	// countCodeBlockCheckboxes would then correctly report 0 — it counts boxes
+	// the patterns can see that stripping removed, so a box the patterns never
+	// matched cannot be one of them. Leaving them unprefixed also makes this the
+	// mixed-fence case, which is the one blockquote stripping alone cannot reach.
+	body := "- [ ] real unchecked\n- [x] real checked\n> ```\n- [ ] example one\n- [x] example two\n> ```"
+
+	if got := countUncheckedBoxes(body); got != 1 {
+		t.Errorf("countUncheckedBoxes() = %d, want 1", got)
+	}
+	if got := countCheckedBoxes(body); got != 1 {
+		t.Errorf("countCheckedBoxes() = %d, want 1", got)
+	}
+	if got := countCodeBlockCheckboxes(body); got != 2 {
+		t.Errorf("countCodeBlockCheckboxes() = %d, want 2", got)
+	}
+	items := getUncheckedItems(body)
+	if len(items) != 1 {
+		t.Fatalf("getUncheckedItems() returned %d items, want 1: %v", len(items), items)
+	}
+	if !strings.Contains(items[0], "real unchecked") {
+		t.Errorf("getUncheckedItems() = %v, want the real criterion", items)
+	}
+}
+
+// isIndentedCode exempted any line containing "- [ ]" or "- [x]" from
+// indented-code stripping (#908), which disabled the branch precisely for the
+// lines it exists to strip. The carve-out was not arbitrary: the originating
+// proposal requires that all checkboxes be validated equally, including nested
+// and indented ones, so deleting it outright drops a real nested list item.
+//
+// The discriminator is list context, not the checkbox glyph. An indented
+// checkbox whose nearest preceding non-blank line is a shallower list item is
+// a nested list item; one that follows a paragraph is code.
+func TestStripCodeBlocks_IndentedCodeVersusNestedList(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected string
+	}{
+		{
+			// The defect. Prose, blank line, indented checkbox: that is a code
+			// block, and the carve-out was letting it through.
+			name:     "checkbox in a four-space indented code block is stripped",
+			body:     "Prose.\n\n    - [ ] example\n\n- [ ] real",
+			expected: "Prose.\n\n- [ ] real",
+		},
+		{
+			// The case that justifies a discriminator rather than a deletion. On
+			// pure deletion of the carve-out this drops from 1 to 0 — a real
+			// criterion silently lost, which is the dangerous direction.
+			name:     "loose nested list item is not stripped",
+			body:     "- parent\n\n    - [ ] child",
+			expected: "- parent\n\n    - [ ] child",
+		},
+		{
+			// Same regression, tab-indented. Measured separately because the
+			// indent test has two arms and only one of them is spaces.
+			name:     "tab-indented loose nested list item is not stripped",
+			body:     "- parent\n\n\t- [ ] child",
+			expected: "- parent\n\n\t- [ ] child",
+		},
+		{
+			// A no-regression case, not the one that proves the fix: it already
+			// passes on pure deletion, guarded by prevLineBlank.
+			name:     "tight nested list item is not stripped",
+			body:     "- parent\n    - [ ] child",
+			expected: "- parent\n    - [ ] child",
+		},
+		{
+			// The strings.Contains test was unanchored, so an indented line that
+			// merely mentioned the glyph escaped stripping too.
+			name:     "indented prose mentioning a checkbox glyph is stripped",
+			body:     "Prose.\n\n    write - [ ] to mark a task\n\n- [ ] real",
+			expected: "Prose.\n\n- [ ] real",
+		},
+		{
+			name:     "tab-indented code block is stripped like a four-space one",
+			body:     "Prose.\n\n\t- [ ] example\n\n- [ ] real",
+			expected: "Prose.\n\n- [ ] real",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if result := stripCodeBlocks(tt.body); result != tt.expected {
+				t.Errorf("stripCodeBlocks() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestStripCodeBlocks_RecordedRegressionBody exercises the real body that
+// surfaced both defects — rubrical-worker/idpf-praxis-dev#2600 — rather than a
+// reduction of it. A reduction is what the existing fixture space already was,
+// and it is why neither defect was caught: every prior case used flat,
+// column-0 fences containing a single unindented checkbox.
+//
+// Measured across all three states of the tree, so the number below is a
+// verified change rather than a restatement of current behaviour:
+//
+//	neither fix   1 unchecked ("quoted example box")
+//	#907 only     0 unchecked
+//	both          0 unchecked
+//
+// Note the middle row. This issue's Dependency section states that the body
+// "only yields 0 unchecked once both land". That is not what the tree does:
+// #907 alone is sufficient for this body, and #908 changes nothing about it.
+// The ordering #907 before #908 was still the right call, but not for the
+// reason recorded — see the correction on the issue.
+func TestStripCodeBlocks_RecordedRegressionBody(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "idpf-praxis-dev-2600.md"))
+	if err != nil {
+		t.Fatalf("Failed to read the recorded body: %v", err)
+	}
+	body := string(data)
+
+	if got := countUncheckedBoxes(body); got != 0 {
+		t.Errorf("countUncheckedBoxes() = %d, want 0. Unchecked: %v", got, getUncheckedItems(body))
+	}
+
+	// A body that strips down to nothing would also report 0 unchecked, which
+	// would pass the assertion above for entirely the wrong reason. Asserting
+	// the checked count holds the stripping to removing only the examples.
+	if got := countCheckedBoxes(body); got != 18 {
+		t.Errorf("countCheckedBoxes() = %d, want 18 — stripping removed real content", got)
+	}
+}
+
+// The Open Question on #911 was answered "do not count it": a blockquote is
+// quoted content, so its checkboxes are not criteria of the issue quoting them.
+// Implemented as a stripping rule rather than a blockquote-tolerant regex.
+//
+// These cases assert on stripCodeBlocks OUTPUT, not on the counting functions,
+// and that is deliberate — see TestBlockquoteRuleDoesNotChangeAnyCount below
+// for why counting cannot show this change.
+func TestStripCodeBlocks_BlockquotedContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected string
+	}{
+		{
+			name:     "single blockquote marker",
+			body:     "- [ ] real\n> - [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			name:     "nested blockquote markers",
+			body:     "- [ ] real\n> > - [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			// No space after the marker is still a blockquote in CommonMark.
+			name:     "no space after the marker",
+			body:     "- [ ] real\n>- [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			name:     "two spaces after the marker",
+			body:     "- [ ] real\n>  - [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			// Symmetry: the checked form is excluded by the same mechanism. Before
+			// this rule both forms scored zero, but for unrelated reasons — the
+			// unchecked one unmatched, the checked one unmatched differently.
+			name:     "checked and unchecked quoted forms are both removed",
+			body:     "- [ ] real\n> - [ ] quoted unchecked\n> - [x] quoted checked",
+			expected: "- [ ] real",
+		},
+		{
+			// Three spaces is still a blockquote; four is indented code and is
+			// handled by the other branch, which must keep its list-context test.
+			name:     "blockquote indented three spaces",
+			body:     "- [ ] real\n   > - [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			// The rule must not consume a blockquoted FENCE, which is a delimiter
+			// (#907). Consuming it here would leave the block unclosed and swallow
+			// everything after it.
+			name:     "blockquoted fence still delimits rather than being stripped",
+			body:     "Before\n> ```\n- [ ] example\n> ```\nAfter",
+			expected: "Before\nAfter",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if result := stripCodeBlocks(tt.body); result != tt.expected {
+				t.Errorf("stripCodeBlocks() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestBlockquoteRuleDoesNotChangeAnyCount records what the blockquote rule is
+// and is not worth. Measured against the tree with and without it: all four
+// counting functions return identical values either way.
+//
+// The reason is that the checkbox patterns anchor to ^\\s*[-*+], and \\s does not
+// match >. A blockquoted checkbox was never matched, so it was never counted,
+// so removing it from the count removes nothing. The rule buys two things
+// instead: the exclusion becomes a stated mechanism rather than an accident of
+// regex anchoring, and it survives any future change that teaches those
+// patterns a > prefix — at which point this test would start failing loudly
+// rather than quoted examples silently becoming criteria.
+//
+// This is the honest version of the sixth acceptance criterion. Asserting a
+// count changed here would have required a fixture the rule does not actually
+// affect.
+func TestBlockquoteRuleDoesNotChangeAnyCount(t *testing.T) {
+	body := "- [ ] real unchecked\n- [x] real checked\n> - [ ] quoted unchecked\n> - [x] quoted checked"
+
+	if got := countUncheckedBoxes(body); got != 1 {
+		t.Errorf("countUncheckedBoxes() = %d, want 1", got)
+	}
+	if got := countCheckedBoxes(body); got != 1 {
+		t.Errorf("countCheckedBoxes() = %d, want 1", got)
+	}
+	// Zero, not two. countCodeBlockCheckboxes subtracts a post-strip count from
+	// a pre-strip count using the same patterns, so a box the patterns never
+	// matched cannot appear in either operand.
+	if got := countCodeBlockCheckboxes(body); got != 0 {
+		t.Errorf("countCodeBlockCheckboxes() = %d, want 0", got)
+	}
+	items := getUncheckedItems(body)
+	if len(items) != 1 || !strings.Contains(items[0], "real unchecked") {
+		t.Errorf("getUncheckedItems() = %v, want just the real criterion", items)
+	}
+
+	// Where the rule IS observable: the quoted lines are gone from the stripped
+	// document, so anything reading that output sees the exclusion.
+	if got := stripCodeBlocks(body); got != "- [ ] real unchecked\n- [x] real checked" {
+		t.Errorf("stripCodeBlocks() = %q, want the quoted lines removed", got)
 	}
 }

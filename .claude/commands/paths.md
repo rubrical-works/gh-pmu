@@ -1,5 +1,5 @@
 ---
-version: "v0.96.2"
+version: "v0.97.0"
 description: Collaborative path analysis for proposals and enhancements (project)
 argument-hint: "#issue"
 copyright: "Rubrical Works (c) 2026"
@@ -152,5 +152,13 @@ Path Analysis complete for Issue #$ISSUE: $TITLE
 | `--from-code` broad scope | Warn, proceed |
 | Flag conflict | Preamble error → STOP |
 | Invalid `--categories` | Preamble error with valid list → STOP |
+### Closing Cleanup
+Two parts, in order. The prune is **part of** this step, not a trailing step a reader can stop before — the closing output makes a run *feel* finished, so a prune placed after it never runs.
+**(1) Emit the closing output** described by the final step above.
+**(2) Prune the task list** (unconditional — every path, including early-exit paths where Phase 1 created tasks and later phases never ran):
+1. `TaskList` — enumerate all tasks.
+2. For every task owned by this `/paths` invocation, `TaskUpdate status=deleted`.
+3. Do **not** delete tasks created outside this invocation (user TODOs).
+
 
 **End of /paths Command**

@@ -2,11 +2,13 @@ package config
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -24,6 +26,132 @@ type Config struct {
 	Triage       map[string]Triage `yaml:"triage,omitempty" json:"triage,omitempty"`
 	Acceptance   *Acceptance       `yaml:"acceptance,omitempty" json:"acceptance,omitempty"`
 	Metadata     *Metadata         `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+
+	// unknown holds the top-level keys the file carried that this struct does
+	// not model, so Save can put them back rather than deleting them (#910).
+	// Unexported on purpose: encoding/json ignores it, so the overflow can never
+	// itself become a config key.
+	//
+	// Populated on the JSON path only. FindConfigFile resolves .gh-pmu.json and
+	// Save writes JSON, so no reachable path round-trips YAML.
+	unknown map[string]json.RawMessage
+}
+
+// modeledConfigKeys is the set of top-level JSON keys Config models, derived
+// from the struct tags rather than listed by hand. A hand-kept list would fall
+// out of date the first time a field was added, and the failure would be quiet:
+// the new field would be marshalled by the struct *and* replayed from the
+// overflow map, emitting the same key twice.
+var modeledConfigKeys = jsonObjectKeys(reflect.TypeOf(Config{}))
+
+// jsonObjectKeys returns the JSON key each exported field of t encodes to.
+func jsonObjectKeys(t reflect.Type) map[string]struct{} {
+	keys := make(map[string]struct{}, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.PkgPath != "" {
+			continue // unexported — never a JSON key
+		}
+		name := field.Name
+		if tag, ok := field.Tag.Lookup("json"); ok {
+			if tag == "-" {
+				continue // explicitly not encoded
+			}
+			if tagName, _, _ := strings.Cut(tag, ","); tagName != "" {
+				name = tagName
+			}
+		}
+		keys[name] = struct{}{}
+	}
+	return keys
+}
+
+// UnmarshalJSON decodes a config and captures every top-level key Config does
+// not model, so a later Save can write it back unchanged (#910).
+//
+// The read side stays exactly as tolerant as it was — unmodeled keys are still
+// accepted with no error and no warning, which is what #902's fourth acceptance
+// criterion requires of a config still carrying a populated `release` block.
+// What changes is only that the keys are now remembered instead of discarded.
+func (c *Config) UnmarshalJSON(data []byte) error {
+	// The alias sheds Config's methods, so this does not recurse.
+	type alias Config
+	if err := json.Unmarshal(data, (*alias)(c)); err != nil {
+		return err
+	}
+
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(data, &all); err != nil {
+		return err
+	}
+	for key := range all {
+		if _, modeled := modeledConfigKeys[key]; modeled {
+			delete(all, key)
+		}
+	}
+	if len(all) == 0 {
+		all = nil
+	}
+	c.unknown = all
+
+	return nil
+}
+
+// MarshalJSON writes the modeled fields followed by any keys captured at decode
+// time (#910).
+//
+// Those keys are spliced into the encoded struct rather than merged into a map
+// first. encoding/json emits struct fields in declaration order but map keys in
+// sorted order, so merging would silently realphabetise every existing config —
+// a diff in every repository on the next write, for no reason a user could see.
+// Splicing leaves the modeled keys where they have always been and appends the
+// rest.
+//
+// The result is compact. Save marshals through json.MarshalIndent, which
+// re-indents whatever this returns, so the captured values pick up the
+// surrounding indentation rather than keeping the whitespace they had on disk.
+func (c *Config) MarshalJSON() ([]byte, error) {
+	type alias Config
+	encoded, err := json.Marshal((*alias)(c))
+	if err != nil {
+		return nil, err
+	}
+	if len(c.unknown) == 0 {
+		return encoded, nil
+	}
+	// Splicing assumes an object; a struct always encodes to one. Checked so a
+	// future change to that assumption fails here rather than writing a
+	// corrupted config file.
+	if len(encoded) == 0 || encoded[len(encoded)-1] != '}' {
+		return nil, fmt.Errorf("failed to marshal %s: expected a JSON object, got %q", ConfigFileName, encoded)
+	}
+
+	// Sorted for determinism. The order these keys had in the file is not
+	// recoverable from encoding/json without a token-level decoder, and nothing
+	// depends on it.
+	keys := make([]string, 0, len(c.unknown))
+	for key := range c.unknown {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var buf bytes.Buffer
+	buf.Write(encoded[:len(encoded)-1])
+	for _, key := range keys {
+		if buf.Len() > 1 { // not the first member of the object
+			buf.WriteByte(',')
+		}
+		encodedKey, err := json.Marshal(key)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encodedKey)
+		buf.WriteByte(':')
+		buf.Write(c.unknown[key])
+	}
+	buf.WriteByte('}')
+
+	return buf.Bytes(), nil
 }
 
 // Project contains GitHub project configuration
@@ -98,10 +226,6 @@ type OptionMetadata struct {
 
 // ConfigFileName is the configuration file name
 const ConfigFileName = ".gh-pmu.json"
-
-// LegacyYAMLFileName is the pre-JSON configuration file name, retained for the
-// one-time MigrateYAML path and for rejecting stale Save call sites.
-const LegacyYAMLFileName = ".gh-pmu.yml"
 
 // Load reads and parses a configuration file from the given path.
 // Detects format (YAML or JSON) based on file extension.
@@ -323,7 +447,7 @@ func (c *Config) ApplyEnvOverrides() {
 func (c *Config) Save(dir string) error {
 	// Changing the parameter from a path to a directory is not compile-enforced
 	// — both are strings — so catch the most likely stale call directly.
-	if filepath.Base(dir) == ConfigFileName || filepath.Base(dir) == LegacyYAMLFileName {
+	if filepath.Base(dir) == ConfigFileName {
 		return fmt.Errorf("Save expects the directory containing %s, got a file path: %s", ConfigFileName, dir)
 	}
 
@@ -341,36 +465,36 @@ func (c *Config) Save(dir string) error {
 	return nil
 }
 
-// MigrateYAML performs a one-time migration: if .gh-pmu.yml exists alongside
-// the JSON config, it deletes the YAML file, updates the version in the JSON
-// config, and saves. If no YAML file exists, this is a no-op.
-func MigrateYAML(jsonConfigPath string, currentVersion string, w io.Writer) error {
-	dir := filepath.Dir(jsonConfigPath)
-	yamlPath := filepath.Join(dir, LegacyYAMLFileName)
+// RefreshVersion stamps the running version into the config in dir, recording
+// which gh pmu version last wrote the file.
+//
+// The comparison runs on every call; the write does not. When the stored version
+// already equals currentVersion the file is left untouched and false is returned.
+// That matters because Save rewrites the whole document: an unconditional save
+// would bump the file's mtime on every command and re-normalize line endings each
+// time (Save writes LF; Windows checkouts normalize to CRLF), producing
+// working-tree churn no user asked for.
+//
+// Only the top-level version field moves. acceptance.version is a separate field
+// with its own re-acceptance gating and is not touched here.
+func RefreshVersion(dir string, currentVersion string) (bool, error) {
+	configPath := filepath.Join(dir, ConfigFileName)
 
-	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
-		return nil // No YAML file — nothing to do
-	}
-
-	// Verify and update the JSON config BEFORE removing the legacy YAML. If the
-	// JSON is corrupt or unparsable, the YAML is the only intact copy of the user's
-	// configuration and must not be destroyed by a migration that then fails.
-	cfg, err := Load(jsonConfigPath)
+	cfg, err := Load(configPath)
 	if err != nil {
-		return fmt.Errorf("failed to load config for version update: %w", err)
+		return false, fmt.Errorf("failed to load config for version refresh: %w", err)
 	}
+
+	if cfg.Version == currentVersion {
+		return false, nil
+	}
+
 	cfg.Version = currentVersion
 	if err := cfg.Save(dir); err != nil {
-		return fmt.Errorf("failed to save updated config: %w", err)
+		return false, fmt.Errorf("failed to save refreshed config: %w", err)
 	}
 
-	// JSON config verified and saved — now safe to remove the legacy YAML.
-	if err := os.Remove(yamlPath); err != nil {
-		return fmt.Errorf("failed to remove legacy config %s: %w", LegacyYAMLFileName, err)
-	}
-	fmt.Fprintf(w, "Removed legacy config %s\n", LegacyYAMLFileName)
-
-	return nil
+	return true, nil
 }
 
 // IsIDPF returns true if the config uses IDPF framework validation.

@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-08-25
+
+Released as a patch rather than the minor `recommend-version.js` suggested, for
+the third release running. The script classifies #905 as a feature because the
+issue carries the `enhancement` label, and on the merits it has a case — the
+`version` key now rewrites itself, and the YAML migration path is gone. It is
+still stabilization work: `version` recorded which binary *created* a config and
+then drifted permanently, and `MigrateYAML` was the vestigial carrier of that
+one-shot stamp. Nothing here adds a capability.
+
+Four of the five issues are correctness fixes in code that decides whether an
+issue may close, or whether a config write loses data.
+
+### Added
+- `.gh-pmu.json`'s top-level `version` is refreshed to the running binary's version whenever it is stale. The check runs on every non-exempt command; the *write* happens only on mismatch, so an up-to-date config is never rewritten and the file's mtime is left alone (#905)
+- `Config.Save` preserves top-level keys the running binary does not model, rather than dropping them. Unknown keys are captured on load and spliced back on write, so a config written by a newer gh-pmu survives a round-trip through an older one (#910)
+
+### Fixed
+- `stripCodeBlocks` tested the *trimmed* line for a fence delimiter, so a fence indented by one to three spaces toggled fence state where CommonMark says it opens a block, and a four-space-indented line inside a list was read as a fence. Delimiters are now matched against the raw line under CommonMark's rules: 0–3 spaces of indent, a closer at least as long as its opener, and blockquote prefixes handled (#907)
+- `isIndentedCode` carried a carve-out exempting any line that looked like a checkbox from indented-code stripping, so a checkbox nested under a list item was counted while its neighbours were not. Indented code is now discriminated by list context — whether the line continues a shallower list item — instead of by the presence of a `- [ ]` glyph (#908)
+- Blockquoted content is stripped before checkbox counting. The three checkbox patterns anchor to `^\s*[-*+]` and `\s` does not match `>`, so a quoted `- [ ]` was already invisible to the count; the rule makes that exclusion a stated mechanism rather than an accident of regex anchoring, and a regression test fails loudly if a future change teaches the patterns a `>` prefix (#911)
+
+### Changed
+- `version` joins `driftExcludedKeys`, so the config integrity check no longer reports a tool-written version stamp as unauthorized local modification (#905)
+- `README.md` pointed at `.gh-pmu.yml` in its documentation table. The YAML config has not been read since `FindConfigFile` stopped falling back to it, and #905 removed the last code path that touched the file at all (#905)
+
+### Removed
+- `config.MigrateYAML` and its invocation from `PersistentPreRunE`. It short-circuited to a no-op unless a legacy `.gh-pmu.yml` sat beside the JSON, and deleted that file on first hit, so it fired at most once per repository ever. A repository still carrying a `.gh-pmu.yml` is no longer auto-migrated (#905)
+
+### Compatibility
+- Repurposing `version` as a last-written stamp forecloses its original use as a staleness *signal*. #700 introduced the field so an upgrade could detect that `init` needed re-running; that consumer was never built, and now cannot be — the field always equals the running binary. Init-staleness detection would need a second field. Recorded in `Construction/Design-Decisions/2026-08-20-config-version-refresh-semantics.md` (#905)
+- Unknown-key preservation is a splice into the encoded struct, not a merge into one map, specifically so key order in existing files is left untouched. A merge would have silently re-alphabetized every `.gh-pmu.json` on its next write. Byte-for-byte output equality against the pre-change binary is asserted by a golden test (#910)
+
+### Documentation
+- Proposal: Multi-Provider Support, covering a GitLab provider behind the existing GitHub-shaped interfaces (#909)
+- IDPF-Praxis framework upgraded to 0.97.0
+
 ## [1.5.2] - 2026-08-19
 
 Released as a patch rather than the minor `recommend-version.js` suggested,
