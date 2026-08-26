@@ -257,6 +257,63 @@ func parseFenceDelimiter(line string) (fenceDelimiter, bool) {
 	return fenceDelimiter{char: char, length: length}, true
 }
 
+// listItemIndent returns the visual indent of a markdown list item line and
+// whether the line is one. A tab counts as four columns, matching the width
+// the indented-code test uses.
+func listItemIndent(line string) (int, bool) {
+	indent := 0
+	i := 0
+	for i < len(line) {
+		if line[i] == 0x20 {
+			indent++
+		} else if line[i] == 0x09 {
+			indent += 4
+		} else {
+			break
+		}
+		i++
+	}
+
+	rest := line[i:]
+	if len(rest) < 2 || rest[1] != 0x20 {
+		return 0, false
+	}
+	if rest[0] != 0x2d && rest[0] != 0x2a && rest[0] != 0x2b {
+		return 0, false
+	}
+
+	return indent, true
+}
+
+// continuesShallowerListItem reports whether the line at index i is a nested
+// list item rather than the start of an indented code block: an indented list
+// item whose nearest preceding non-blank line is itself a list item at a
+// shallower indent.
+//
+// This is the discriminator that replaced the checkbox carve-out (#908). The
+// carve-out exempted any line containing "- [ ]" or "- [x]" from indented-code
+// stripping, which disabled the branch for exactly the lines it exists to
+// strip. It was protecting something real — the originating proposal requires
+// that nested and indented checkboxes be validated equally — but it read the
+// glyph instead of the structure, so it also exempted prose that merely
+// mentioned a checkbox.
+func continuesShallowerListItem(lines []string, i int) bool {
+	indent, isItem := listItemIndent(lines[i])
+	if !isItem {
+		return false
+	}
+
+	for j := i - 1; j >= 0; j-- {
+		if strings.TrimSpace(lines[j]) == "" {
+			continue // a blank line separates a loose list, it does not end one
+		}
+		prevIndent, prevIsItem := listItemIndent(lines[j])
+		return prevIsItem && prevIndent < indent
+	}
+
+	return false
+}
+
 // stripCodeBlocks removes content inside fenced code blocks (``` or ~~~) and
 // indented code blocks (4 spaces or tab) from the body. This prevents example
 // checkboxes in code blocks from being counted as acceptance criteria.
@@ -298,8 +355,12 @@ func stripCodeBlocks(body string) string {
 
 		// Check for indented code block (4+ spaces or tab at start)
 		// But not if it's a list item (- [ ] or - [x] pattern)
-		isIndentedCode := (strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t")) &&
-			!strings.Contains(line, "- [ ]") && !strings.Contains(line, "- [x]")
+		isIndented := strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t")
+
+		// List context, not the checkbox glyph, decides whether an indented line
+		// is code (#908). A nested list item is legitimately indented and must
+		// keep counting; a line following a paragraph is code and must not.
+		isIndentedCode := isIndented && !continuesShallowerListItem(lines, i)
 
 		// Check if previous line was blank (indented code blocks are preceded by blank line)
 		prevLineBlank := i == 0 || strings.TrimSpace(lines[i-1]) == ""
