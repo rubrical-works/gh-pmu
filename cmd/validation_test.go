@@ -1220,3 +1220,98 @@ func TestBuildValidationContext(t *testing.T) {
 		t.Errorf("Expected 2 active releases, got %d", len(ctx.ActiveReleases))
 	}
 }
+
+// stripCodeBlocks tested the fence delimiter against the TRIMMED line, so any
+// indentation was invisible to it and a fence indented to any depth toggled the
+// block state (#907). It also compared only the first three characters, so a
+// short quoted fence closed a longer outer one. The cases below are the four
+// the issue's acceptance criteria name; the existing five in TestStripCodeBlocks
+// cover the flat, column-0 shapes and stay green.
+func TestStripCodeBlocks_FenceDelimiterRules(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected string
+	}{
+		{
+			// A closing fence may be indented 0-3 spaces. At 4+ it is content,
+			// so the block stays open and everything after it belongs to the
+			// block — including a checkbox that would otherwise be counted.
+			name:     "fence indented four spaces while a block is open is content",
+			body:     "```\n- [ ] example\n    ```\n- [ ] swallowed",
+			expected: "",
+		},
+		{
+			// A quoted fence shorter than its opener must not close it. This is
+			// how a markdown sample containing a fence is written.
+			name:     "closing fence shorter than its opener does not close",
+			body:     "````\n- [ ] example\n```\n- [ ] still inside\n````\n- [ ] real",
+			expected: "- [ ] real",
+		},
+		{
+			// The 0-3 bound is a bound, not a requirement of column 0.
+			name:     "fence at three spaces is still a delimiter",
+			body:     "Before\n   ```\n- [ ] example\n   ```\nAfter",
+			expected: "Before\nAfter",
+		},
+		{
+			// A fence written inside a blockquote delimits a block like any
+			// other. Without this, its contents are never stripped.
+			name:     "blockquote-prefixed fence is recognized",
+			body:     "Before\n> ```\n> - [ ] example\n> ```\nAfter",
+			expected: "Before\nAfter",
+		},
+		{
+			// The case that keeps this criterion earning its place after #911
+			// strips blockquoted lines: the fence lines carry the > prefix but
+			// the content does not, so a blockquote-stripping rule would leave
+			// the checkbox behind and only fence recognition reaches it.
+			name:     "blockquote-prefixed fence strips non-blockquoted content",
+			body:     "> ```\n- [ ] example\n> ```",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if result := stripCodeBlocks(tt.body); result != tt.expected {
+				t.Errorf("stripCodeBlocks() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestFenceRulesReachTheCountingFunctions asserts the shared-path inheritance
+// rather than assuming it. All four counters call stripCodeBlocks, but
+// countCodeBlockCheckboxes is the one that could still be wrong when the other
+// three are right: it subtracts a post-strip count from a pre-strip count, so a
+// change in stripping moves both of its operands.
+func TestFenceRulesReachTheCountingFunctions(t *testing.T) {
+	// One real unchecked criterion, one real checked one, and two examples
+	// inside a blockquoted fence that the old delimiter test never recognized.
+	//
+	// The example lines deliberately carry NO blockquote prefix. Prefixing them
+	// would make them invisible to the checkbox patterns themselves (#911), and
+	// countCodeBlockCheckboxes would then correctly report 0 — it counts boxes
+	// the patterns can see that stripping removed, so a box the patterns never
+	// matched cannot be one of them. Leaving them unprefixed also makes this the
+	// mixed-fence case, which is the one blockquote stripping alone cannot reach.
+	body := "- [ ] real unchecked\n- [x] real checked\n> ```\n- [ ] example one\n- [x] example two\n> ```"
+
+	if got := countUncheckedBoxes(body); got != 1 {
+		t.Errorf("countUncheckedBoxes() = %d, want 1", got)
+	}
+	if got := countCheckedBoxes(body); got != 1 {
+		t.Errorf("countCheckedBoxes() = %d, want 1", got)
+	}
+	if got := countCodeBlockCheckboxes(body); got != 2 {
+		t.Errorf("countCodeBlockCheckboxes() = %d, want 2", got)
+	}
+	items := getUncheckedItems(body)
+	if len(items) != 1 {
+		t.Fatalf("getUncheckedItems() returned %d items, want 1: %v", len(items), items)
+	}
+	if !strings.Contains(items[0], "real unchecked") {
+		t.Errorf("getUncheckedItems() = %v, want the real criterion", items)
+	}
+}

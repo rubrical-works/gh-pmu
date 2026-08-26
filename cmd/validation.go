@@ -189,6 +189,74 @@ func isBodyEmpty(body string) bool {
 	return strings.TrimSpace(body) == ""
 }
 
+// fenceDelimiter describes a line that opens or closes a fenced code block.
+type fenceDelimiter struct {
+	char   byte // '`' or '~'
+	length int  // how many fence characters the run holds
+}
+
+// stripBlockquotePrefix removes a leading blockquote marker run and returns the
+// rest of the line. Nested markers ("> > ") are consumed together, and the one
+// optional space after the final marker belongs to the marker rather than to
+// the content.
+func stripBlockquotePrefix(line string) string {
+	i := 0
+	for {
+		j := i
+		for j < len(line) && line[j] == ' ' {
+			j++
+		}
+		if j >= len(line) || line[j] != '>' {
+			break
+		}
+		i = j + 1
+	}
+	if i > 0 && i < len(line) && line[i] == ' ' {
+		i++
+	}
+	return line[i:]
+}
+
+// parseFenceDelimiter reports whether line is a fenced-code delimiter.
+//
+// The test runs against the RAW line, not a trimmed one. Trimming first was the
+// defect (#907): it made indentation invisible, so a fence at any depth toggled
+// the block state, and a fence indented inside an open block closed it early.
+//
+// The rules implemented are the ones the issue names: an optional blockquote
+// prefix, then at most three spaces of indent, then a run of at least three
+// backticks or tildes. A run indented four or more is content, and a leading
+// tab counts as indented code for the same reason.
+func parseFenceDelimiter(line string) (fenceDelimiter, bool) {
+	rest := stripBlockquotePrefix(line)
+
+	indent := 0
+	for indent < len(rest) && rest[indent] == ' ' {
+		indent++
+	}
+	if indent > 3 {
+		return fenceDelimiter{}, false
+	}
+	rest = rest[indent:]
+	if len(rest) < 3 {
+		return fenceDelimiter{}, false
+	}
+
+	char := rest[0]
+	if char != '`' && char != '~' {
+		return fenceDelimiter{}, false
+	}
+	length := 0
+	for length < len(rest) && rest[length] == char {
+		length++
+	}
+	if length < 3 {
+		return fenceDelimiter{}, false
+	}
+
+	return fenceDelimiter{char: char, length: length}, true
+}
+
 // stripCodeBlocks removes content inside fenced code blocks (``` or ~~~) and
 // indented code blocks (4 spaces or tab) from the body. This prevents example
 // checkboxes in code blocks from being counted as acceptance criteria.
@@ -196,31 +264,34 @@ func stripCodeBlocks(body string) string {
 	lines := strings.Split(body, "\n")
 	var filteredLines []string
 	inFencedCodeBlock := false
-	fenceChar := ""
+	var openFence fenceDelimiter
 	inIndentedCodeBlock := false
 
 	for i, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
 
-		// Check for fenced code block start/end (``` or ~~~)
-		if strings.HasPrefix(trimmedLine, "```") || strings.HasPrefix(trimmedLine, "~~~") {
-			currentFence := trimmedLine[:3]
+		// Fenced code block start/end (``` or ~~~), tested against the raw line
+		// so indentation and any blockquote prefix are visible (#907).
+		if fence, isDelimiter := parseFenceDelimiter(line); isDelimiter {
 			if !inFencedCodeBlock {
-				// Starting a fenced code block
 				inFencedCodeBlock = true
-				fenceChar = currentFence
+				openFence = fence
 				continue // Skip the opening fence line
-			} else if currentFence == fenceChar {
-				// Ending a fenced code block (matching fence)
+			}
+			// A closer must use the same character and be at least as long as
+			// its opener, so a longer outer fence encloses a shorter quoted one.
+			if fence.char == openFence.char && fence.length >= openFence.length {
 				inFencedCodeBlock = false
-				fenceChar = ""
+				openFence = fenceDelimiter{}
 				continue // Skip the closing fence line
 			}
-			// Different fence inside a code block - just skip it
+			// Too short, or the other fence character: content, not a delimiter.
 			continue
 		}
 
-		// Skip content inside fenced code blocks
+		// Skip content inside fenced code blocks. A fence indented four or more
+		// spaces reaches here rather than the branch above, which is what makes
+		// it content instead of an early closer.
 		if inFencedCodeBlock {
 			continue
 		}
