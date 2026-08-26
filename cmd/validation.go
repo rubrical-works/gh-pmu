@@ -314,6 +314,21 @@ func continuesShallowerListItem(lines []string, i int) bool {
 	return false
 }
 
+// isBlockquoted reports whether line begins with a blockquote marker, allowing
+// the same 0-3 spaces of indent CommonMark allows before one. Four or more is
+// indented code and is handled by that branch instead.
+func isBlockquoted(line string) bool {
+	indent := 0
+	for indent < len(line) && line[indent] == 0x20 {
+		indent++
+	}
+	if indent > 3 {
+		return false
+	}
+
+	return indent < len(line) && line[indent] == 0x3e
+}
+
 // stripCodeBlocks removes content inside fenced code blocks (``` or ~~~) and
 // indented code blocks (4 spaces or tab) from the body. This prevents example
 // checkboxes in code blocks from being counted as acceptance criteria.
@@ -350,6 +365,19 @@ func stripCodeBlocks(body string) string {
 		// spaces reaches here rather than the branch above, which is what makes
 		// it content instead of an early closer.
 		if inFencedCodeBlock {
+			continue
+		}
+
+		// A blockquote is quoted content — an example, a citation, or someone
+		// else's criterion — so its checkboxes are not criteria of this issue
+		// (#911). Excluding them here rather than teaching the checkbox patterns
+		// a > prefix keeps the exclusion symmetric and stated: a quoted - [x] and
+		// a quoted - [ ] are removed by one named mechanism instead of both
+		// happening to score zero for unrelated reasons.
+		//
+		// This runs AFTER the fence branch on purpose. A blockquoted fence is a
+		// delimiter (#907), and consuming it here would leave its block unclosed.
+		if isBlockquoted(line) {
 			continue
 		}
 

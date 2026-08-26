@@ -1421,3 +1421,113 @@ func TestStripCodeBlocks_RecordedRegressionBody(t *testing.T) {
 		t.Errorf("countCheckedBoxes() = %d, want 18 — stripping removed real content", got)
 	}
 }
+
+// The Open Question on #911 was answered "do not count it": a blockquote is
+// quoted content, so its checkboxes are not criteria of the issue quoting them.
+// Implemented as a stripping rule rather than a blockquote-tolerant regex.
+//
+// These cases assert on stripCodeBlocks OUTPUT, not on the counting functions,
+// and that is deliberate — see TestBlockquoteRuleDoesNotChangeAnyCount below
+// for why counting cannot show this change.
+func TestStripCodeBlocks_BlockquotedContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected string
+	}{
+		{
+			name:     "single blockquote marker",
+			body:     "- [ ] real\n> - [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			name:     "nested blockquote markers",
+			body:     "- [ ] real\n> > - [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			// No space after the marker is still a blockquote in CommonMark.
+			name:     "no space after the marker",
+			body:     "- [ ] real\n>- [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			name:     "two spaces after the marker",
+			body:     "- [ ] real\n>  - [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			// Symmetry: the checked form is excluded by the same mechanism. Before
+			// this rule both forms scored zero, but for unrelated reasons — the
+			// unchecked one unmatched, the checked one unmatched differently.
+			name:     "checked and unchecked quoted forms are both removed",
+			body:     "- [ ] real\n> - [ ] quoted unchecked\n> - [x] quoted checked",
+			expected: "- [ ] real",
+		},
+		{
+			// Three spaces is still a blockquote; four is indented code and is
+			// handled by the other branch, which must keep its list-context test.
+			name:     "blockquote indented three spaces",
+			body:     "- [ ] real\n   > - [ ] quoted",
+			expected: "- [ ] real",
+		},
+		{
+			// The rule must not consume a blockquoted FENCE, which is a delimiter
+			// (#907). Consuming it here would leave the block unclosed and swallow
+			// everything after it.
+			name:     "blockquoted fence still delimits rather than being stripped",
+			body:     "Before\n> ```\n- [ ] example\n> ```\nAfter",
+			expected: "Before\nAfter",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if result := stripCodeBlocks(tt.body); result != tt.expected {
+				t.Errorf("stripCodeBlocks() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestBlockquoteRuleDoesNotChangeAnyCount records what the blockquote rule is
+// and is not worth. Measured against the tree with and without it: all four
+// counting functions return identical values either way.
+//
+// The reason is that the checkbox patterns anchor to ^\\s*[-*+], and \\s does not
+// match >. A blockquoted checkbox was never matched, so it was never counted,
+// so removing it from the count removes nothing. The rule buys two things
+// instead: the exclusion becomes a stated mechanism rather than an accident of
+// regex anchoring, and it survives any future change that teaches those
+// patterns a > prefix — at which point this test would start failing loudly
+// rather than quoted examples silently becoming criteria.
+//
+// This is the honest version of the sixth acceptance criterion. Asserting a
+// count changed here would have required a fixture the rule does not actually
+// affect.
+func TestBlockquoteRuleDoesNotChangeAnyCount(t *testing.T) {
+	body := "- [ ] real unchecked\n- [x] real checked\n> - [ ] quoted unchecked\n> - [x] quoted checked"
+
+	if got := countUncheckedBoxes(body); got != 1 {
+		t.Errorf("countUncheckedBoxes() = %d, want 1", got)
+	}
+	if got := countCheckedBoxes(body); got != 1 {
+		t.Errorf("countCheckedBoxes() = %d, want 1", got)
+	}
+	// Zero, not two. countCodeBlockCheckboxes subtracts a post-strip count from
+	// a pre-strip count using the same patterns, so a box the patterns never
+	// matched cannot appear in either operand.
+	if got := countCodeBlockCheckboxes(body); got != 0 {
+		t.Errorf("countCodeBlockCheckboxes() = %d, want 0", got)
+	}
+	items := getUncheckedItems(body)
+	if len(items) != 1 || !strings.Contains(items[0], "real unchecked") {
+		t.Errorf("getUncheckedItems() = %v, want just the real criterion", items)
+	}
+
+	// Where the rule IS observable: the quoted lines are gone from the stripped
+	// document, so anything reading that output sees the exclusion.
+	if got := stripCodeBlocks(body); got != "- [ ] real unchecked\n- [x] real checked" {
+		t.Errorf("stripCodeBlocks() = %q, want the quoted lines removed", got)
+	}
+}
